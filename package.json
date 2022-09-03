@@ -1,0 +1,25 @@
+{
+  "name": "WebVPN",
+  "version": "0.5.0",
+  "description": "WebVPN, proxy third-party website",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "push": "git add . && git commit -m \"add\" && git push origin master",
+    "pull": "git checkout . && git pull origin master",
+    "cloc": "cloc *.js public/append.js index.html"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LiebeU/WebVPN"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^5.0.1",
+    "iconv-lite": "^0.6.3",
+    "koa": "^2.13.4",
+    "koa-bodyparser": "^4.3.0",
+    "node-fetch": "^3.1.0"
+  }
+}

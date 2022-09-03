@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>WebVPN</title>
+	<style>
+		* {
+			box-sizing: border-box;
+		}
+		body {
+			text-align: center;
+			color: #303333;
+			padding-top: 10vh;
+		}
+		input {
+			padding: 7px 10px;
+			border-radius: 4px;
+			outline: none;
+			border: 1px solid #606666;
+			display: block;
+			margin: 20px auto;
+			width: 90%;
+		}
+		input:hover, input:focus {
+			border-color: skyblue;
+		}
+		.button {
+			display: inline-block;
+			border: 1px solid steelblue;
+			background-color: skyblue;
+			color: white;
+			width: 90%;
+			height: 32px;
+			line-height: 30px;
+			border-radius: 4px;
+			cursor: pointer;
+		}
+		.button:hover {
+			opacity: 0.8;
+		}
+	</style>
+</head>
+<body>
+<h2>WebVPN</h2>
+
+<input type="text" id="input-url" autofocus placeholder="Enter the URL of the website you want to visit">
+<input type="text" id="output-url" placeholder="The above input will be automatically converted to the WebVPN service URL here">
+<div class="row button" id="goto">Goto</div>
+
+<script>
+
+const urlInput = document.querySelector('#input-url')
+const outputInput = document.querySelector('#output-url')
+const button = document.querySelector('#goto')
+
+urlInput.addEventListener('change', () => {
+	let url = urlInput.value.trim()
+	if (url.indexOf('http') < 0 && url.indexOf('ptth') < 0) {
+		if (url.split('.').length === 1) {
+			url = 'www.' + url + '.com'
+		}
+		url = 'https://' + url
+	}
+	if (url.endsWith('ptth')) {
+		if (url.startsWith('http')) {
+			const { pathname } = new URL(url)
+			url = pathname.split('/').slice(3).join('/')
+		}
+		url = reverseUrl(decodeURIComponent(url))
+	} else {
+		url = transformUrl(url)
+	}
+	outputInput.value = url
+})
+
+outputInput.addEventListener('keyup', (e) => {
+	if (e.keyCode === 13) {
+		window.open(outputInput.value)
+	}
+})
+
+button.addEventListener('click', () => {
+	window.open(outputInput.value)
+})
+
+function reverseUrl (url) {
+	return url.split('').reverse().join('')
+}
+
+function transformUrl (url) {
+	const { hostname, pathname, origin, protocol } = window.location
+	const site = origin + '/proxy'
+	const proxyType = pathname.split('/')[2] || 'all'
+
+	url = url.trim()
+	if (url.startsWith(site)) {
+		return url
+	}
+	if (url.startsWith('/proxy/')) {
+		return origin + url
+	}
+	if (url.startsWith('//')) {
+		url = protocol + url;
+	}
+	if (!url.startsWith('http')) {
+		url = origin + url;
+	}
+	var encodeUrl = encodeURIComponent(reverseUrl(url))
+	return origin + '/proxy/' + proxyType + '/' + encodeUrl
+}
+
+</script>
+</body>
+</html>
