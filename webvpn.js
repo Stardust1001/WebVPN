@@ -736,6 +736,8 @@ class WebVPN {
 			serviceBase = [serviceHost, ...pathnameParts.slice(1, -1)].join('/')
 		}
 
+		url = this.escapeUrl(url)
+
 		Object.assign(ctx.meta, {
 			url,
 			mime: ctx.meta.suffixMime || this.getResponseType(ctx, url),
@@ -763,6 +765,21 @@ class WebVPN {
 			serviceBase,
 			target
 		})
+	}
+
+	escapeUrl (url) {
+		const chars = ' <>+{}|\\^~[]‘@$'
+		for (let char of chars) {
+			if (url.indexOf(char) >= 0) {
+				return encodeURI(url)
+			}
+		}
+		for (let char of url) {
+			if (char.charCodeAt(0) > 127) {
+				return encodeURI(url)
+			}
+		}
+		return url
 	}
 
 	getResponseType (ctx, url) {
