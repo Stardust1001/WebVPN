@@ -68,16 +68,17 @@
 		getAttacher
 	});
 
+	var ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:'];
+
 	function transformUrl (url) {
 		if (url == null) {
 			return url;
 		}
 		url = url.toString().trim();
-		if (url.startsWith('javascript:')) {
-			return url;
-		}
-		if (url.startsWith('data:')) {
-			return url;
+		for (var prefix of ignoredPrefixes) {
+			if (url.startsWith(prefix)) {
+				return url;
+			}
 		}
 		if (url.startsWith('http')) {
 			var u = null;
