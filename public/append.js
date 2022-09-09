@@ -505,6 +505,9 @@
 	});
 
 	function canJump (url) {
+		if (window.webvpn.disableJump) {
+			return false;
+		}
 		if (window.webvpn.confirmJump) {
 			var ok = confirm('允许跳转到 ' + url + ' 吗？');
 			if (!ok) {
