@@ -578,6 +578,7 @@ class WebVPN {
 					siteHostname: '${site.hostname}',
 					siteOrigin: '${site.origin}',
 					sitePathname: '${site.pathname}',
+					siteUrl: '${target.href}',
 					origin: '${target.origin}',
 					protocol: '${target.protocol}',
 					hostname: '${target.hostname}',
