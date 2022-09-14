@@ -542,13 +542,10 @@ class WebVPN {
 		const { site } = this.config
 		data = data.replaceAll(/window\.location\s*\=/g, 'window.location._href=')
 		data = data.replaceAll(/window\.navigate\(/g, 'window._navigate(')
-		data = data.replaceAll(/window\.location\.href\s*\=/g, 'window.location._href=')
-		data = data.replaceAll(/window\.location\.assign\(/g, 'window.location._assign(')
-		data = data.replaceAll(/window\.location\.replace\(/g, 'window.location._replace(')
 		const matchGroups = [
-			[/[,;?:\{\s]location\.href\s*\=/g, 'window.location._href='],
-			[/[,;?:\{\s]location\.assign\(/g, 'window.location._assign('],
-			[/[,;?:\{\s]location\.replace\(/g, 'window.location._replace(']
+			[/[\.,;?:\{\s]location\.href\s*\=/g, 'window.location._href='],
+			[/[\.,;?:\{\s]location\.assign\(/g, 'window.location._assign('],
+			[/[\.,;?:\{\s]location\.replace\(/g, 'window.location._replace(']
 		]
 		matchGroups.forEach(group => {
 			const matches = Array.from(new Set(data.match(group[0]) || []))
