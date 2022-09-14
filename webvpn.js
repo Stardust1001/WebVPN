@@ -603,8 +603,11 @@ class WebVPN {
 		const { serviceHost, serviceBase, isUrlReversed, target, proxyType } = ctx.meta
 		const source = match.slice(index)
 		let suffix = match.slice(index + 1)
+		if (suffix.indexOf('&amp;') >= 0) {
+			suffix = suffix.replaceAll('&amp;', '&')
+		}
 		if (suffix.indexOf('&#x') >= 0) {
-			suffix = unescape(suffix.replace(/&#x/g, '%').replace(/;/g, ''))
+			suffix = unescape(suffix.replaceAll('&#x', '%').replaceAll(';', ''))
 		}
 		suffix = suffix.replaceAll(/\\\//g, '/')
 
