@@ -103,7 +103,6 @@
 					}
 					url = origin + pathDir + path;
 				}
-				url = url.slice(u.origin.length);
 			}
 		}
 		if (url.startsWith('/proxy/')) {
