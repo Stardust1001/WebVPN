@@ -784,13 +784,14 @@ class WebVPN {
 	}
 
 	getResponseType (ctx, url) {
-		const link = url.split('?')[0]
+		const index = url.indexOf('?')
+		const link = index < 0 ? url : url.slice(0, index)
 		for (let reg of this.mimeRegs) {
-			if (reg[0].test(url)) {
+			if (reg[0].test(link)) {
 				return reg[1]
 			}
 		}
-		if (new URL(url).pathname === '/') {
+		if (new URL(link).pathname === '/') {
 			return 'html'
 		}
 		return 'text'
