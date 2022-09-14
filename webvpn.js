@@ -553,6 +553,11 @@ class WebVPN {
 				data = data.replaceAll(match.slice(1), group[1])
 			})
 		})
+		data = data.replaceAll(/[\.,;?:\{\s]location\s*\=[^,;]+/g, match => {
+			const [prefix, right] = match.split('location=')
+			// TODO, 这里有可能会有问题，赋值表达式的右边部分，目前做的比较简单
+			return prefix + `(location === window.location) ? (window.location._href=${right}) : (location=${right})`
+		})
 		data = data.replaceAll(/window\.location\.href/g, 'window.location._href')
 
 		Array.from(data.matchAll(/document.domain\s*=\s*(\"|\')[^\"\']*/g)).forEach(match => {
