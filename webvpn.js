@@ -428,7 +428,7 @@ class WebVPN {
 
 	getCssUrlMatches (ctx, res) {
 		// 替换 url( 链接
-		const regexp = /url\([^\"\')]+/g
+		const regexp = /url\([\"\']?[^\"\')]+/g
 		return this.getRegExpMatches(ctx, res, regexp, (match) => {
 			const symbol = '('
 			// match = match.replace(/('|")/g, '')
