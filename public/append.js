@@ -12,9 +12,14 @@
 	var sitePathname = window.webvpn.sitePathname;
 	var origin = window.webvpn.origin;
 	var protocol = window.webvpn.protocol;
+	var targetUrl = window.webvpn.targetUrl;
 	var hostname = window.webvpn.hostname;
+	var pathname = window.webvpn.pathname;
 	var proxyType = window.webvpn.proxyType;
 	var ajaxDomLog = window.webvpn.ajaxDomLog;
+	var disableJump = window.webvpn.disableJump;
+	var confirmJump = window.webvpn.confirmJump;
+	var pathDir = pathname.endsWith('/') ? pathname : (pathname.split('/').slice(0, -1).join('/') + '/');
 
 	var linkTags = ['a', 'img', 'script', 'link', 'video', 'audio', 'source', 'iframe', 'form', 'embed', 'object'];
 	var urlAttrs = ['href', 'src', 'srcset', 'poster', 'action', 'data', 'codebase'];
@@ -88,9 +93,15 @@
 				console.log('%c 链接转换错误：' + url, 'background-color: red; color: white; padding: 5px 10px;');
 				return url;
 			}
-			if (u.hostname === window.webvpn.siteHostname) {
-				if (url.startsWith(siteOrigin + '/public/') || url.startsWith(siteOrigin + '/proxy/')) {
+			if (u.hostname === siteHostname) {
+				if (url.startsWith(siteOrigin + '/public/')) {
 					return url;
+				} else if (url.startsWith(siteOrigin + '/proxy/')) {
+					var path = url.split('/proxy/' + proxyType + '/')[1];
+					if (path.indexOf('%3Aptth') > 0 || path.indexOf('%3Asptth') > 0) {
+						return url;
+					}
+					url = origin + pathDir + path;
 				}
 				url = url.slice(u.origin.length);
 			}
@@ -102,7 +113,7 @@
 			url = protocol + url;
 		}
 		if (!url.startsWith('http')) {
-			url = origin + (url[0] === '/' ? '' : '/') + url;
+			url = url[0] === '/' ? (origin + url) : (origin + pathDir + url);
 		}
 		var encodeUrl = encodeURIComponent(url.split('').reverse().join(''));
 		return sitePathname + '/' + proxyType + (url[0] === '/' ? '' : '/') + encodeUrl;
@@ -505,10 +516,10 @@
 	});
 
 	function canJump (url) {
-		if (window.webvpn.disableJump) {
+		if (disableJump) {
 			return false;
 		}
-		if (window.webvpn.confirmJump) {
+		if (confirmJump) {
 			var ok = confirm('允许跳转到 ' + url + ' 吗？');
 			if (!ok) {
 				return false;
@@ -673,7 +684,7 @@
 
 	function convertChinease () {
 		var root = document.documentElement;
-		const has = hasChinease(root.innerHTML);
+		var has = hasChinease(root.innerHTML);
 		if (!has) {
 			return ;
 		}
