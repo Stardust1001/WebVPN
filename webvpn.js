@@ -779,7 +779,7 @@ class WebVPN {
 		if (/[\u0100-\uffff]/.test(url)) {
 			return encodeURI(url)
 		}
-		const chars = ' <>+{}|\\^~[]‘@$'
+		const chars = ' <>{}|\\^~[]‘@$'
 		for (let char of chars) {
 			if (url.indexOf(char) >= 0) {
 				return encodeURI(url)
