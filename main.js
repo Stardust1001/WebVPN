@@ -6,7 +6,7 @@ import WebVPN from './webvpn.js'
 // main.js 是个示例，如果要创建一个 WebVPN 服务，需要继承并实例化 WebVPN 类
 // 有些网站需要特殊处理，那么可以覆盖父类的某个方法，加上自定义的实现，来自定义处理
 
-class Proxy extends WebVPN {
+class VPN extends WebVPN {
 	constructor (config) {
 		super(config)
 	}
@@ -98,10 +98,10 @@ const config = {
 }
 
 // 实例化
-const proxy = new Proxy(config)
+const vpn = new VPN(config)
 
 // 启动 WebVPN 服务
-proxy.start()
+vpn.start()
 
 if (!isProd && cluster.isMaster) {
 	setTimeout(() => {
