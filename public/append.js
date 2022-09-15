@@ -541,6 +541,20 @@
 		});
 	});
 
+	// style.backgroundImage 拦截
+	// 因为底层用了 background 属性进行赋值，所以现在拦截不了 background 了
+	Object.defineProperty(CSSStyleDeclaration.prototype, 'backgroundImage', {
+		set (value) {
+			var url = value.replace(/(url\(|\)|\'|\")/g, '');
+			ajaxDomLog && console.log(
+				'%cstyle 操作 拦截 backgroundImage : ' + url,
+				'color: #606666;background-color: lime;padding: 5px 10px;'
+			);
+			url = transformUrl(url);
+			this.background = 'url("' + url + '")';
+		}
+	});
+
 	// document.write 拦截
 	var write = document.write;
 	document.write = function () {
