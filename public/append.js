@@ -505,6 +505,17 @@
 		window._location[key] = target[key];
 	}
 
+	// Worker 创建拦截
+	var _Worker = window.Worker;
+	window.Worker = function (url, options) {
+		ajaxDomLog && console.log(
+			'%cnew 拦截 Worker : ' + url,
+			'color: #606666;background-color: lime;padding: 5px 10px;'
+		);
+		url = transformUrl(url);
+		return new _Worker(url, options);
+	}
+
 	// pushState replaceState 拦截
 	Array.from(['pushState', 'replaceState']).forEach(function (name) {
 		var origin = History.prototype[name];
