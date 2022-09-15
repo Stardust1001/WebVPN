@@ -197,7 +197,7 @@ class WebVPN {
 			return
 		}
 		this.setResponseHeaders(ctx, res)
-		if (res.status >= 300) {
+		if (res.status >= 300 && res.status < 400) {
 			ctx.body = res.data
 			return
 		}
