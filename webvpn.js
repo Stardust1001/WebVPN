@@ -47,6 +47,7 @@ class WebVPN {
 			/report-to/,
 			/x-frame-options/
 		]
+		this.ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:']
 
 		this.noTransformMimes = ['font', 'json', 'image', 'video', 'audio', 'pdf']
 		this.cacheMimes = ['js', 'css', 'font', 'image', 'video', 'audio', 'pdf']
@@ -431,7 +432,7 @@ class WebVPN {
 		// 替换 url( 链接
 		const urlMatches = this.getRegExpMatches(ctx, res, /url\([\"\']?[^\"\')]+/g, (match) => {
 			const symbol = match.indexOf('"') > 0 ? '"' : (match.indexOf('\'') > 0 ? '\'' : '')
-			const index = symbol ? match.indexOf(symbol) : (match.indexOf('(') + 1)
+			const index = symbol ? match.indexOf(symbol) : match.indexOf('(')
 			return [match, index, symbol]
 		})
 		// 替换 @import 链接
@@ -496,8 +497,8 @@ class WebVPN {
 			if (url === '/') {
 				return false
 			}
-			// 清除脚本链接
-			if (url.indexOf('javascript:void') >= 0) {
+			// 清除无效协议链接
+			if (this.ignoredPrefixes.some(prefix => url.indexOf(prefix) >= 0)) {
 				return false
 			}
 			if (ctx.meta.proxyType === 'single') {
@@ -505,10 +506,6 @@ class WebVPN {
 				if (url.indexOf('//') >= 0 && url.split('//')[1].split('/')[0] !== ctx.meta.target.hostname) {
 					return false
 				}
-			}
-			// 排除 base64 图片
-			if (url.indexOf('data:') >= 0) {
-				return false
 			}
 			return true
 		}).map(match => {
@@ -648,24 +645,20 @@ class WebVPN {
 			suffix = target.protocol + suffix
 		}
 
-		let isValidUrl = suffix.startsWith('http:') || suffix.startsWith('https:')
+		let isValidUrl = suffix.startsWith('http')
 
-		if (suffix.indexOf('../') >= 0) {
-			const parts = suffix.split('../')
-			const levelCount = parts.length - 1
-			if (isValidUrl) {
-				console.log(chalk.yellow('2222222222222') + '\n')
+		suffix = suffix.replace(/^\.\//, '').replaceAll(/\/\.\//g, '')
+		if (!isValidUrl) {
+			const { origin, pathname } = ctx.meta.target
+			if (suffix[0] === '/') {
+				suffix = origin + suffix
 			} else {
-				const { origin, pathname } = ctx.meta.target
-				suffix = origin + pathname.split('/').slice(0, -levelCount - 1).join('/') + '/' + parts.pop()
-				isValidUrl = true
+				const pathDir = pathname.endsWith('/') ? pathname : (pathname.split('/').slice(0, -1).join('/') + '/')
+				suffix = origin + pathDir + suffix
 			}
-		} else if (suffix.indexOf('./') >= 0) {
-			suffix = suffix.replaceAll('./', '')
-			if (!isValidUrl) {
-				suffix = ctx.meta.target.pathname.split('/').slice(0, -1).join('/') + '/' + suffix
-			}
+			isValidUrl = true
 		}
+		suffix = suffix.replace(/\/[^/]*\/\.\.\//g, '/')
 
 		let desti = (suffix[0] === '/' ? serviceHost : (serviceBase + '/')) + suffix
 
