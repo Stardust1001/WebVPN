@@ -154,7 +154,11 @@ class WebVPN {
 	}
 
 	async proxyRoute (ctx, next) {
-		if (ctx.url.endsWith('.js.map') || ctx.url.endsWith('.js.sourcemap')) {
+		if (
+			/^\/favicon.*\.(ico|png)$/.test(ctx.url) ||
+			ctx.url.endsWith('.js.map') ||
+			ctx.url.endsWith('.js.sourcemap')
+		) {
 			return
 		}
 
