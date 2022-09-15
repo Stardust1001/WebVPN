@@ -68,6 +68,12 @@ urlInput.addEventListener('change', () => {
 			url = pathname.split('/').slice(3).join('/')
 		}
 		url = reverseUrl(decodeURIComponent(url))
+		while (true) {
+			if (url.startsWith('http:') || url.startsWith('https:')) {
+				break
+			}
+			url = decodeURIComponent(url)
+		}
 	} else {
 		url = transformUrl(url)
 	}
