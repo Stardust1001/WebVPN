@@ -429,13 +429,19 @@ class WebVPN {
 
 	getCssUrlMatches (ctx, res) {
 		// 替换 url( 链接
-		const regexp = /url\([\"\']?[^\"\')]+/g
-		return this.getRegExpMatches(ctx, res, regexp, (match) => {
+		const urlMatches = this.getRegExpMatches(ctx, res, /url\([\"\']?[^\"\')]+/g, (match) => {
 			const symbol = '('
 			// match = match.replace(/('|")/g, '')
 			const index = match.indexOf(symbol)
 			return [match, index, symbol]
 		})
+		// 替换 @import 链接
+		const importMatches = this.getRegExpMatches(ctx, res, /@import\s[\"\'][^\"\']+/g, (match) => {
+			const symbol = match.indexOf('"') > 0 ? '"' : '\''
+			const index = match.indexOf(symbol)
+			return [match, index, symbol]
+		})
+		return [...urlMatches, ...importMatches]
 	}
 
 	getImportUrlMatches (ctx, res) {
