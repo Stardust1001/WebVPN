@@ -430,9 +430,8 @@ class WebVPN {
 	getCssUrlMatches (ctx, res) {
 		// 替换 url( 链接
 		const urlMatches = this.getRegExpMatches(ctx, res, /url\([\"\']?[^\"\')]+/g, (match) => {
-			const symbol = '('
-			// match = match.replace(/('|")/g, '')
-			const index = match.indexOf(symbol)
+			const symbol = match.indexOf('"') > 0 ? '"' : (match.indexOf('\'') > 0 ? '\'' : '')
+			const index = symbol ? match.indexOf(symbol) : (match.indexOf('(') + 1)
 			return [match, index, symbol]
 		})
 		// 替换 @import 链接
