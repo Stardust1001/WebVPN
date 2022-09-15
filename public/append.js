@@ -10,16 +10,15 @@
 	var siteHostname = window.webvpn.siteHostname;
 	var siteOrigin = window.webvpn.siteOrigin;
 	var sitePathname = window.webvpn.sitePathname;
-	var origin = window.webvpn.origin;
-	var protocol = window.webvpn.protocol;
+
 	var targetUrl = window.webvpn.targetUrl;
-	var hostname = window.webvpn.hostname;
-	var pathname = window.webvpn.pathname;
+	var target = new URL(targetUrl);
+
 	var proxyType = window.webvpn.proxyType;
 	var ajaxDomLog = window.webvpn.ajaxDomLog;
 	var disableJump = window.webvpn.disableJump;
 	var confirmJump = window.webvpn.confirmJump;
-	var pathDir = pathname.endsWith('/') ? pathname : (pathname.split('/').slice(0, -1).join('/') + '/');
+	var pathDir = target.pathname.endsWith('/') ? target.pathname : (target.pathname.split('/').slice(0, -1).join('/') + '/');
 
 	var linkTags = ['a', 'img', 'script', 'link', 'video', 'audio', 'source', 'iframe', 'form', 'embed', 'object'];
 	var urlAttrs = ['href', 'src', 'srcset', 'poster', 'action', 'data', 'codebase'];
@@ -101,7 +100,7 @@
 					if (path.indexOf('%3Aptth') > 0 || path.indexOf('%3Asptth') > 0) {
 						return url;
 					}
-					url = origin + pathDir + path;
+					url = target.origin + pathDir + path;
 				}
 			}
 		}
@@ -109,10 +108,10 @@
 			return url;
 		}
 		if (url.startsWith('//')) {
-			url = protocol + url;
+			url = target.protocol + url;
 		}
 		if (!url.startsWith('http')) {
-			url = url[0] === '/' ? (origin + url) : (origin + pathDir + url);
+			url = url[0] === '/' ? (target.origin + url) : (target.origin + pathDir + url);
 		}
 		var encodeUrl = encodeURIComponent(url.split('').reverse().join(''));
 		return sitePathname + '/' + proxyType + (url[0] === '/' ? '' : '/') + encodeUrl;
@@ -296,7 +295,7 @@
 			return false
 		}
 		if (proxyType === 'single') {
-			if (url.indexOf('//') >= 0 && (url.split('//')[1] || '').split('/')[0] !== hostname) {
+			if (url.indexOf('//') >= 0 && (url.split('//')[1] || '').split('/')[0] !== target.hostname) {
 				return false;
 			}
 		}
@@ -316,7 +315,7 @@
 		try {
 			domain = new URL(newUrl).hostname;
 		} catch {}
-		if (domain !== hostname && domain !== siteHostname) {
+		if (domain !== target.hostname && domain !== siteHostname) {
 			if (url !== newUrl) {
 				node[urlAttr] = newUrl;
 			}
@@ -499,6 +498,12 @@
 			window.location.href = url;
 		}
 	});
+
+	// window._location
+	window._location = Object.assign({}, window.location);
+	for (var key in target) {
+		window._location[key] = target[key];
+	}
 
 	// pushState replaceState 拦截
 	Array.from(['pushState', 'replaceState']).forEach(function (name) {

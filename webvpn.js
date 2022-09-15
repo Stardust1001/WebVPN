@@ -396,6 +396,7 @@ class WebVPN {
 		res.data = this.replaceMatches(ctx, res, matches)
 
 		if (['html', 'js'].includes(mime)) {
+			res.data = this.replaceLocationOperations(ctx, res)
 			res.data = this.customReplace(ctx, res)
 		}
 
@@ -516,15 +517,15 @@ class WebVPN {
 
 	replaceMatches (ctx, res, matches) {
 		const set = new Set()
-		const unitMatches = []
+		const uniqueMatches = []
 		matches.forEach(item => {
 			if (!set.has(item[0])) {
-				unitMatches.push(item)
+				set.add(item[0])
+				uniqueMatches.push(item)
 			}
-			set.add(item[0])
 		})
-		unitMatches.sort((a, b) => b[0].length - a[0].length)
-		unitMatches.forEach(item => {
+		uniqueMatches.sort((a, b) => b[0].length - a[0].length)
+		uniqueMatches.forEach(item => {
 			const [match, index, symbol] = item
 			const source = match.slice(index)
 			if (!source.length) {
@@ -537,32 +538,56 @@ class WebVPN {
 		return res.data
 	}
 
-	customReplace (ctx, res) {
+	replaceLocationOperations (ctx, res) {
 		let data = res.data
-		const { site } = this.config
+		const site = this.config.site
+
 		data = data.replaceAll(/window\.location\s*\=/g, 'window.location._href=')
 		data = data.replaceAll(/window\.navigate\(/g, 'window._navigate(')
+
 		const matchGroups = [
 			[/[\.,;?:\{\s]location\.href\s*\=/g, 'window.location._href='],
 			[/[\.,;?:\{\s]location\.assign\(/g, 'window.location._assign('],
 			[/[\.,;?:\{\s]location\.replace\(/g, 'window.location._replace(']
 		]
 		matchGroups.forEach(group => {
-			const matches = Array.from(new Set(data.match(group[0]) || []))
-			matches.forEach(match => {
+			new Set(data.match(group[0])).forEach(match => {
 				data = data.replaceAll(match.slice(1), group[1])
 			})
 		})
-		data = data.replaceAll(/[\.,;?:\{\s]location\s*\=[^,;]+/g, match => {
-			const [prefix, right] = match.split('location=')
-			// TODO, 这里有可能会有问题，赋值表达式的右边部分，目前做的比较简单
-			return prefix + `(location === window.location) ? (window.location._href=${right}) : (location=${right})`
-		})
+
 		data = data.replaceAll(/window\.location\.href/g, 'window.location._href')
 
-		Array.from(data.matchAll(/document.domain\s*=\s*(\"|\')[^\"\']*/g)).forEach(match => {
-			const symbol = match[0].indexOf('"') > 0 ? '"' : '\''
-			data = data.replaceAll(match[0], `document.domain=${symbol}${site.hostname}`)
+		new Set(data.match(/document.domain\s*=\s*(\"|\')[^\"\']*/g)).forEach(match => {
+			const symbol = match.indexOf('"') > 0 ? '"' : '\''
+			data = data.replaceAll(match, `document.domain=${symbol}${site.hostname}`)
+		})
+		return data
+	}
+
+	customReplace (ctx, res) {
+		// 上面的 location 转换大概比较成熟，这里的不怎么成熟，所以放到 customReplace 方法里
+		let data = res.data
+
+		// 这里是为了转换 location = 'http://xxx' 跳转，因为 js 无法拦截 location，所以这里替换 location 赋值操作
+		new Set(data.match(/[,;?:\s\(\{]location\s*\=[^,;\)\}]+/g)).forEach(match => {
+			const left = match.slice(match.indexOf('location'), match.indexOf('=') + 1)
+			const [prefix, right] = match.split(left)
+			// 如果右值是 window.location，说明这是赋值给变量 location，这个不需要转换
+			if (right.indexOf('window.location') >= 0) {
+				return
+			}
+			// TODO, 这里有可能会有问题，赋值表达式的右边部分，目前做的比较简单
+			const result = prefix + `(location === window.location) ? window.location._href=${right} : location=${right}`
+			data = data.replaceAll(match, result)
+		})
+
+		// 这里是为了替换获取 location 的代码，要让网站源码获取到的是我给的 "location"，不要他们检测到网址不是他们的网址
+		// window['location'] 或者其他变量赋值的操作就不处理了，可能太繁琐，目前不值得
+		new Set(data.match(/(window\.|\s|,|;|:|\?|\(|\{)location\s*[,;]/g)).forEach(match => {
+			const left = match.slice(0, match.indexOf('location') + 8)
+			const result = match.replace(left, `(${left} === window.location ? window._location : ${left})`)
+			data = data.replaceAll(match, result)
 		})
 		return data
 	}
@@ -580,11 +605,9 @@ class WebVPN {
 					siteHostname: '${site.hostname}',
 					siteOrigin: '${site.origin}',
 					sitePathname: '${site.pathname}',
+
 					targetUrl: '${target.href}',
-					origin: '${target.origin}',
-					protocol: '${target.protocol}',
-					hostname: '${target.hostname}',
-					pathname: '${target.pathname}',
+
 					proxyType: '${proxyType}',
 					ajaxDomLog: ${ajaxDomLog},
 					disableJump: ${disableJump},
