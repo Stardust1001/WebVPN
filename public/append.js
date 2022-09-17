@@ -15,7 +15,7 @@
 	var target = new URL(targetUrl);
 
 	var proxyType = window.webvpn.proxyType;
-	var ajaxDomLog = window.webvpn.ajaxDomLog;
+	var interceptLog = window.webvpn.interceptLog;
 	var disableJump = window.webvpn.disableJump;
 	var confirmJump = window.webvpn.confirmJump;
 	var pathDir = target.pathname.endsWith('/') ? target.pathname : (target.pathname.split('/').slice(0, -1).join('/') + '/');
@@ -328,7 +328,7 @@
 	var xhrOpen = XMLHttpRequest.prototype.open;
 	XMLHttpRequest.prototype.open = function (method, url, async, user, password) {
 		var newUrl = transformUrl(url);
-		ajaxDomLog && console.log('%cAJAX 请求 拦截 : ' + url, 'color: white;background-color: orange;padding: 5px 10px;');
+		console.log('%cAJAX 请求 拦截 : ' + url, 'color: white;background-color: orange;padding: 5px 10px;');
 		window.ajaxUrls.push(url);
 		return xhrOpen.bind(this)(method, newUrl, async, user, password);
 	}
@@ -339,7 +339,7 @@
 		var isInputUrl = typeof input === 'string';
 		var url = isInputUrl ? input : input.url;
 		var newUrl = transformUrl(url);
-		ajaxDomLog && console.log('%cfetch 请求 拦截 : ' + url, 'color: white;background-color: orange;padding: 5px 10px;');
+		console.log('%cfetch 请求 拦截 : ' + url, 'color: white;background-color: orange;padding: 5px 10px;');
 		window.fetchUrls.push(url);
 		if (isInputUrl) {
 			input = newUrl;
@@ -393,7 +393,7 @@
 	var setAttribute = Element.prototype.setAttribute;
 	Element.prototype.setAttribute = function (attr, value, type) {
 		if (type !== 'custom' && urlAttrs.includes(attr)) {
-			ajaxDomLog && console.log(
+			console.log(
 				'%cDOM 操作 拦截 setAttribute : ' + value,
 				'color: #606666;background-color: lime;padding: 5px 10px;'
 			);
@@ -405,7 +405,7 @@
 	// insertAdjacentHTML 拦截
 	var insertAdjacentHTML = Element.prototype.insertAdjacentHTML;
 	Element.prototype.insertAdjacentHTML = function (position, html) {
-		ajaxDomLog && console.log(
+		console.log(
 			'%cDOM 操作 拦截 insertAdjacentHTML : ' + html,
 			'color: #606666;background-color: lime;padding: 5px 10px;'
 		);
@@ -416,7 +416,7 @@
 	// a 元素 click 拦截
 	var aOnClick = HTMLAnchorElement.prototype.click;
 	HTMLAnchorElement.prototype.click = function () {
-		ajaxDomLog && console.log(
+		console.log(
 			'%cDOM History 操作 拦截 a click : ' + a.href,
 			'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
 		);
@@ -427,7 +427,7 @@
 	// open 拦截
 	var open = window.open;
 	window.open = function (url, name, specs, replace) {
-		ajaxDomLog && console.log(
+		console.log(
 			'%copen 拦截 : ' + url,
 			'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
 		);
@@ -440,7 +440,7 @@
 	var go = History.prototype.go;
 	History.prototype.go = function (value) {
 		if ((value + '') !== (parseInt(value) + '')) {
-			ajaxDomLog && console.log(
+			console.log(
 				'%cHistory 操作 拦截 go : ' + value,
 				'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
 			);
@@ -452,7 +452,7 @@
 
 	// _navigate 拦截
 	window.location._navigate = function (url) {
-		ajaxDomLog && console.log(
+		console.log(
 			'%c_navigate 拦截 : ' + url,
 			'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
 		);
@@ -463,7 +463,7 @@
 
 	// location _assign 拦截
 	window.location._assign = function (url) {
-		ajaxDomLog && console.log(
+		console.log(
 			'%clocation 操作 拦截 _assign : ' + url,
 			'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
 		);
@@ -474,7 +474,7 @@
 
 	// location _replace 拦截
 	window.location._replace = function (url) {
-		ajaxDomLog && console.log(
+		console.log(
 			'%clocation 操作 拦截 _replace : ' + url,
 			'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
 		);
@@ -489,7 +489,7 @@
 			return window._location.href;
 		},
 		set (url) {
-			ajaxDomLog && console.log(
+			console.log(
 				'%clocation 拦截 _href : ' + url,
 				'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
 			);
@@ -518,7 +518,7 @@
 	// Worker 创建拦截
 	var _Worker = window.Worker;
 	window.Worker = function (url, options) {
-		ajaxDomLog && console.log(
+		console.log(
 			'%cnew 拦截 Worker : ' + url,
 			'color: #606666;background-color: lime;padding: 5px 10px;'
 		);
@@ -530,7 +530,7 @@
 	Array.from(['pushState', 'replaceState']).forEach(function (name) {
 		var origin = History.prototype[name];
 		History.prototype[name] = function (state, title, url) {
-			ajaxDomLog && console.log(
+			console.log(
 				'%cHistory 操作 拦截 ' + name + ' : ' + url,
 				'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
 			);
@@ -567,7 +567,7 @@
 	Object.defineProperty(CSSStyleDeclaration.prototype, 'backgroundImage', {
 		set (value) {
 			var url = value.replace(/(url\(|\)|\'|\")/g, '');
-			ajaxDomLog && console.log(
+			console.log(
 				'%cstyle 操作 拦截 backgroundImage : ' + url,
 				'color: #606666;background-color: lime;padding: 5px 10px;'
 			);
@@ -583,7 +583,7 @@
 		for (var html of arguments) {
 			htmls.push(transformHtml(html));
 		}
-		ajaxDomLog && console.log(
+		console.log(
 			'%cDOM 操作 拦截 document.write : ' + htmls,
 			'color: #606666;background-color: lightblue;padding: 5px 10px;'
 		);
@@ -597,7 +597,7 @@
 		for (var html of arguments) {
 			htmls.push(transformHtml(html));
 		}
-		ajaxDomLog && console.log(
+		console.log(
 			'%cDOM 操作 拦截 document.writeln : ' + htmls,
 			'color: #606666;background-color: lightblue;padding: 5px 10px;'
 		);
@@ -621,7 +621,7 @@
 			}
 			var json = html2json(html);
 			var childs = json2dom(json);
-			ajaxDomLog && console.log(
+			console.log(
 				'%cDOM 操作 拦截 innerHTML : ' + (html.length > 100 ? (html.slice(0, 100) + '...') : html),
 				'color: #606666;background-color: lightblue;padding: 5px 10px;'
 			);
@@ -640,7 +640,7 @@
 			var parent = node.parentNode;
 			var json = html2json(html);
 			var childs = json2dom(json);
-			ajaxDomLog && console.log(
+			console.log(
 				'%cDOM 操作 拦截 outerHTML : ' + (html.length > 100 ? (html.slice(0, 100) + '...') : html),
 				'color: #606666;background-color: lightblue;padding: 5px 10px;'
 			);
@@ -694,7 +694,7 @@
 	function domLog (node, funcName) {
 		var link = getNodeUrl(node)[0];
 		if (link) {
-			ajaxDomLog && console.log(
+			console.log(
 				'%cDOM 操作 拦截 ' + funcName + ' : ' + link,
 				'color: #606666;background-color: yellow;padding: 5px 10px;'
 			);
@@ -703,7 +703,7 @@
 	}
 
 	function srcLog (tag, urlAttr, url) {
-		ajaxDomLog && console.log(
+		console.log(
 			`%cDOM 操作 拦截 ${tag} ${urlAttr} : ` + url,
 			'color: #606666;background-color: lime;padding: 5px 10px;'
 		);
@@ -790,7 +790,7 @@
 		}
 		if (title) {
 			groupLogs(title, arguments);
-			if (!shouldLog) {
+			if (!interceptLog || !shouldLog) {
 				return ;
 			}
 		}
