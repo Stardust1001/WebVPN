@@ -601,7 +601,7 @@ class WebVPN {
 		new Set(data.match(/[^\.](window\.|document\.|globalThis\.|parent\.|self\.|top\.|\s|,|;|:|\?|\(|\{)location\s*[,;\?\)\}]/g)).forEach(match => {
 			const prefix = match.slice(1).split('location')[0]
 			let left = 'location'
-			if (prefix === 'window.' || prefix === 'document.') {
+			if (/(window|document|globalThis|parent|self|top)\./.test(prefix)) {
 				left = prefix + 'location'
 			}
 			const result = match.replace(left, `(${left} === window.location ? window._location : ${left})`)
