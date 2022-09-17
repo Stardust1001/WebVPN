@@ -583,6 +583,10 @@ class WebVPN {
 			if (right.indexOf('window.location') >= 0) {
 				return
 			}
+			// location=no 是设置滚动条的东西（虽然，这种手动判断的方式并不优雅，先这样吧）
+			if (right.trim().startsWith('no')) {
+				return
+			}
 			// TODO, 这里有可能会有问题，赋值表达式的右边部分，目前做的比较简单
 			const result = prefix + `(location === window.location) ? window.location._href=${right} : location=${right}`
 			data = data.replaceAll(match, result)
