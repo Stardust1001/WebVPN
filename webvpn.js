@@ -599,7 +599,7 @@ class WebVPN {
 		// 这里是为了替换获取 location 的代码，要让网站源码获取到的是我给的 "location"，不要他们检测到网址不是他们的网址
 		// window['location'] 或者其他变量赋值的操作就不处理了，可能太繁琐，目前不值得
 		new Set(data.match(/[^\.](window\.|document\.|globalThis\.|parent\.|self\.|top\.|\s|,|;|:|\?|\(|\{)location\s*[,;\?\)\}]/g)).forEach(match => {
-			const prefix = match.split('location')[0]
+			const prefix = match.slice(1).split('location')[0]
 			let left = 'location'
 			if (prefix === 'window.' || prefix === 'document.') {
 				left = prefix + 'location'
