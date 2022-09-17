@@ -82,7 +82,7 @@ const config = {
 	// 缓存文件夹地址
 	cacheDir: 'cache',
 	// 是否在浏览器控制台打印拦截接口调用、拦截DOM操作的日志
-	ajaxDomLog: true,
+	ajaxDomLog: false,
 	// 是否禁止跳转
 	disableJump: false,
 	// 是否在页面跳转前询问用户，由用户决定是否允许网页跳转
