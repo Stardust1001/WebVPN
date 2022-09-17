@@ -561,8 +561,9 @@ class WebVPN {
 				data = data.replaceAll(match.slice(1), group[1])
 			})
 		})
-
-		data = data.replaceAll(/window\.location\.href/g, 'window.location._href')
+		data = data.replaceAll(/(window\.|[,;?:\{\s}])location\.(hash|port|hostname|href|origin|pathname|port|protocol)\s*[^=]/g, match => {
+			return match.replace('location', '_location')
+		})
 
 		new Set(data.match(/document.domain\s*=\s*(\"|\')[^\"\']*/g)).forEach(match => {
 			const symbol = match.indexOf('"') > 0 ? '"' : '\''
