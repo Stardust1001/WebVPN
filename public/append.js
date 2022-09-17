@@ -505,6 +505,12 @@
 		window._location[key] = target[key];
 	}
 
+	// document._location
+	document._location = Object.assign({}, document.location);
+	for (var key in target) {
+		document._location[key] = target[key];
+	}
+
 	// Worker 创建拦截
 	var _Worker = window.Worker;
 	window.Worker = function (url, options) {
