@@ -507,7 +507,7 @@
 			continue ;
 		}
 		window[con]._location = Object.assign({}, window[con].location);
-		for (var key of target) {
+		for (var key in target) {
 			window[con]._location[key] = target[key];
 		}
 	}
