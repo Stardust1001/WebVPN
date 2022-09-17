@@ -563,7 +563,7 @@ class WebVPN {
 				data = data.replaceAll(match.slice(1), group[1])
 			})
 		})
-		data = data.replaceAll(/(window\.|document\.|globalThis\.|parent\.|self\.|top\.|[,;?:\{\s}])location\.(hash|port|hostname|href|origin|pathname|port|protocol)\s*[^=]/g, match => {
+		data = data.replaceAll(/(window\.|document\.|globalThis\.|parent\.|self\.|top\.|[,;\?:\{\s\}\(]|==)location\.(hash|port|hostname|href|origin|pathname|port|protocol)\s*[^=]/g, match => {
 			return match.replace('location', '_location')
 		})
 		data = data.replaceAll(/document\.domain\s*[^=]/g, match => 'document._' + match.slice(9))
