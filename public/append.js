@@ -511,6 +511,9 @@
 		document._location[key] = target[key];
 	}
 
+	// document._domain
+	document._domain = target.hostname;
+
 	// Worker 创建拦截
 	var _Worker = window.Worker;
 	window.Worker = function (url, options) {
