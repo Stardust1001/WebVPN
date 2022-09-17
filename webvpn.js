@@ -550,7 +550,7 @@ class WebVPN {
 		let data = res.data
 		const site = this.config.site
 
-		data = data.replaceAll(/(window|document)\.location\s*\=/g, 'window.location._href=')
+		data = data.replaceAll(/(window|document|globalThis|parent|self|top)\.location\s*\=/g, 'window.location._href=')
 		data = data.replaceAll(/window\.navigate\(/g, 'window._navigate(')
 
 		const matchGroups = [
@@ -563,7 +563,7 @@ class WebVPN {
 				data = data.replaceAll(match.slice(1), group[1])
 			})
 		})
-		data = data.replaceAll(/(window\.|document\.|[,;?:\{\s}])location\.(hash|port|hostname|href|origin|pathname|port|protocol)\s*[^=]/g, match => {
+		data = data.replaceAll(/(window\.|document\.|globalThis\.|parent\.|self\.|top\.|[,;?:\{\s}])location\.(hash|port|hostname|href|origin|pathname|port|protocol)\s*[^=]/g, match => {
 			return match.replace('location', '_location')
 		})
 		data = data.replaceAll(/document\.domain\s*[^=]/g, match => 'document._' + match.slice(9))
@@ -583,8 +583,8 @@ class WebVPN {
 		new Set(data.match(/[,;?:\s\(\{]location\s*\=[^,;\)\}]+/g)).forEach(match => {
 			const left = match.slice(match.indexOf('location'), match.indexOf('=') + 1)
 			const [prefix, right] = match.split(left)
-			// 如果右值是 window.location 或 document.location，说明这是赋值给变量 location，这个不需要转换
-			if (right.indexOf('window.location') >= 0 || right.indexOf('document.location') >= 0) {
+			// 如果右值是 window.location ...，说明这是赋值给变量 location，这个不需要转换
+			if (/(window|document|globalThis|parent|self|top)\.location/.test(right)) {
 				return
 			}
 			// location=no 是设置滚动条的东西（虽然，这种手动判断的方式并不优雅，先这样吧）
@@ -598,7 +598,7 @@ class WebVPN {
 
 		// 这里是为了替换获取 location 的代码，要让网站源码获取到的是我给的 "location"，不要他们检测到网址不是他们的网址
 		// window['location'] 或者其他变量赋值的操作就不处理了，可能太繁琐，目前不值得
-		new Set(data.match(/(window\.|document\.|\s|,|;|:|\?|\(|\{)location\s*[,;]/g)).forEach(match => {
+		new Set(data.match(/[^\.](window\.|document\.|globalThis\.|parent\.|self\.|top\.|\s|,|;|:|\?|\(|\{)location\s*[,;\?\)\}]/g)).forEach(match => {
 			const prefix = match.split('location')[0]
 			let left = 'location'
 			if (prefix === 'window.' || prefix === 'document.') {

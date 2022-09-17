@@ -499,16 +499,17 @@
 		}
 	});
 
-	// window._location
-	window._location = Object.assign({}, window.location);
-	for (var key in target) {
-		window._location[key] = target[key];
-	}
-
-	// document._location
-	document._location = Object.assign({}, document.location);
-	for (var key in target) {
-		document._location[key] = target[key];
+	// window._location, document._location, globalThis._locatioin
+	// parent._location, self._location, top._location
+	var locationCon = ['window', 'document', 'globalThis', 'parent', 'self', 'top'];
+	for (var con of locationCon) {
+		if (!window[con]) {
+			continue ;
+		}
+		window[con]._location = Object.assign({}, window[con].location);
+		for (var key of target) {
+			window[con]._location[key] = target[key];
+		}
 	}
 
 	// document._domain
