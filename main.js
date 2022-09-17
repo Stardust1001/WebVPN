@@ -28,14 +28,8 @@ class VPN extends WebVPN {
 
 	// 获取请求之后
 	afterRequest (ctx, res) {
-		if (ctx.meta.url.indexOf('https://oa.') >= 0) {
-			ctx.meta.confirmJump = true
-		}
 		if (ctx.url.indexOf('v.qq.com') > 0) {
 			ctx.meta.confirmJump = true
-		}
-		if (ctx.meta.url.startsWith('https://oa')) {
-			ctx.meta.disableJump = true
 		}
 	}
 

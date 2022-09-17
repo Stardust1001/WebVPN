@@ -486,7 +486,7 @@
 	// location._href 拦截
 	Object.defineProperty(window.location, '_href', {
 		get () {
-			return window.location.href;
+			return window._location.href;
 		},
 		set (url) {
 			ajaxDomLog && console.log(
