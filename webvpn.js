@@ -42,10 +42,9 @@ class WebVPN {
 		}
 		this.ignoreRequestHeaderRegexps = []
 		this.ignoreResponseHeaderRegexps = [
-			/content-length/,
-			/-policy/,
-			/report-to/,
-			/x-frame-options/
+			/-policy/i,
+			/report-to/i,
+			/(content-length|x-content-type-options|x-xss-protection|x-frame-options)/i,
 		]
 		this.ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:']
 
@@ -201,7 +200,9 @@ class WebVPN {
 			ctx.body = err
 			return
 		}
-		this.setResponseHeaders(ctx, res)
+		this.deleteIgnoreHeaders(this.ignoreResponseHeaderRegexps, res.headers)
+		Object.keys(res.headers).forEach(key => ctx.set(key, res.headers[key]))
+
 		if (res.status >= 300 && res.status < 400) {
 			ctx.body = res.data
 			return
@@ -268,7 +269,7 @@ class WebVPN {
 	async respondPipe (ctx) {
 		const headers = { ...ctx.headers }
 		this.setOriginHeaders(ctx, headers)
-		this.deleteIgnoreHeaders(headers)
+		this.deleteIgnoreHeaders(this.ignoreRequestHeaderRegexps, headers)
 
 		const method = ctx.request.method.toLowerCase()
 		const { protocol, hostname, port } = ctx.meta.target
@@ -297,6 +298,7 @@ class WebVPN {
 				if (res.headers['access-control-allow-origin'] && res.headers['access-control-allow-origin'] !== '*') {
 					res.headers['access-control-allow-origin'] = this.config.site.origin
 				}
+				this.deleteIgnoreHeaders(this.ignoreResponseHeaderRegexps, res.headers)
 				ctx.res.writeHead(res.statusCode, res.headers)
 				res.pipe(ctx.res)
 				res.on('end', resolve)
@@ -307,7 +309,7 @@ class WebVPN {
 	async request (ctx) {
 		const { method, header } = ctx.request
 		this.setOriginHeaders(ctx, header)
-		this.deleteIgnoreHeaders(header)
+		this.deleteIgnoreHeaders(this.ignoreRequestHeaderRegexps, header)
 
 		if (ctx.meta.userAgent) {
 			header['user-agent'] = ctx.meta.userAgent
@@ -869,12 +871,6 @@ class WebVPN {
 		return mime
 	}
 
-	setResponseHeaders (ctx, res) {
-		Object.keys(res.headers).filter(header => {
-			return !this.ignoreResponseHeaderRegexps.some(reg => reg.test(header.toLowerCase()))
-		}).forEach(name => ctx.set(name, res.headers[name]))
-	}
-
 	encodeUrl (url) {
 		return encodeURIComponent(this.reverseText(url))
 	}
@@ -978,14 +974,13 @@ class WebVPN {
 		return false
 	}
 
-	deleteIgnoreHeaders (headers) {
-		this.ignoreRequestHeaderRegexps.forEach(reg => {
-			Object.keys(headers).forEach(name => {
-				if (reg.test(name.toLowerCase())) {
-					delete headers[name]
-				}
-			})
-		})
+	deleteIgnoreHeaders (regexps, headers) {
+		const keys = Object.keys(headers)
+		for (let key of keys) {
+			if (regexps.some(reg => reg.test(key))) {
+				delete headers[key]
+			}
+		}
 	}
 
 	processInvalidUrl (ctx) {
