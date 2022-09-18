@@ -594,8 +594,9 @@ class WebVPN {
 			if (/(window|document|globalThis|parent|self|top)\._?location/.test(right)) {
 				return
 			}
-			// location=no 是设置滚动条的东西（虽然，这种手动判断的方式并不优雅，先这样吧）
-			if (right.trim().startsWith('no')) {
+			// location=no location=1 是设置滚动条的东西（虽然，这种手动判断的方式并不优雅，先这样吧）
+			const trimedRight = right.trim()
+			if (trimedRight.startsWith('no') || trimedRight.startsWith('1')) {
 				return
 			}
 			// TODO, 这里有可能会有问题，赋值表达式的右边部分，目前做的比较简单
