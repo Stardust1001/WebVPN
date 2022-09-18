@@ -38,7 +38,8 @@ class WebVPN {
 			'image': 'image/png, image/jpg, image/jpeg, image/gif',
 			'json': 'application/json',
 			'video': 'video/mp4, application/vnd.apple.mpegurl',
-			'audio': 'audio/webm, audio/mpeg'
+			'audio': 'audio/webm, audio/mpeg',
+			'stream': 'application/octet-stream'
 		}
 		this.ignoreRequestHeaderRegexps = []
 		this.ignoreResponseHeaderRegexps = [
@@ -46,7 +47,7 @@ class WebVPN {
 			/report-to/i,
 			/(content-length|x-content-type-options|x-xss-protection|x-frame-options)/i,
 		]
-		this.ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:']
+		this.ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:']
 
 		this.noTransformMimes = ['font', 'json', 'image', 'video', 'audio', 'pdf']
 		this.cacheMimes = ['js', 'css', 'font', 'image', 'video', 'audio', 'pdf']
@@ -550,28 +551,23 @@ class WebVPN {
 		let data = res.data
 		const site = this.config.site
 
-		data = data.replaceAll(/(window|document|globalThis|parent|self|top)\.location\s*\=/g, 'window.location._href=')
-		data = data.replaceAll(/window\.navigate\(/g, 'window._navigate(')
-
-		const matchGroups = [
-			[/[\.,;?:\{\s]location\.href\s*\=/g, 'window.location._href='],
-			[/[\.,;?:\{\s]location\.assign\(/g, 'window.location._assign('],
-			[/[\.,;?:\{\s]location\.replace\(/g, 'window.location._replace(']
-		]
-		matchGroups.forEach(group => {
-			new Set(data.match(group[0])).forEach(match => {
-				data = data.replaceAll(match.slice(1), group[1])
+		// 要获取 window, document 等，返回给他们 _window, _document 等
+		data = data.replaceAll(/=\s*(window|document|globalThis|parent|self|top)\s*[,;\)\}\:\?]/g, match => {
+			return match.replace(/(window|document|globalThis|parent|self|top)/, m => {
+				return `(${m} === window.${m} ? window._${m} : ${m})`
 			})
 		})
-		data = data.replaceAll(/(window\.|document\.|globalThis\.|parent\.|self\.|top\.|[,;\?:\{\s\}\(]|==)location\.(hash|port|hostname|href|origin|pathname|port|protocol)\s*[^=]/g, match => {
-			return match.replace('location', '_location')
+		// 要访问 window.location, document.location 等，让他们访问 window._location，不管是获取还是赋值，都这样
+		data = data.replaceAll(/[^_](window|document|globalThis|parent|self|top)\.location/g, match => {
+			return match[0] + 'window._location'
 		})
-		data = data.replaceAll(/document\.domain\s*[^=]/g, match => 'document._' + match.slice(9))
 
-		new Set(data.match(/document\.domain\s*=\s*(\"|\')[^\"\']*/g)).forEach(match => {
-			const symbol = match.indexOf('"') > 0 ? '"' : '\''
-			data = data.replaceAll(match, `document.domain=${symbol}${site.hostname}`)
+		// 要访问 location.hash host 等，让访问 window._location 的 hash host 等
+		data = data.replaceAll(/[\s,;\?:\{\(\|]location\.(hash|host|hostname|href|origin|pathname|port|protocol|search|assign|replace)/g, match => {
+			return match[0] + '_' + match.slice(1)
 		})
+
+		data = data.replaceAll(/window\.navigate\(/g, 'window._navigate(')
 		return data
 	}
 
@@ -579,12 +575,23 @@ class WebVPN {
 		// 上面的 location 转换大概比较成熟，这里的不怎么成熟，所以放到 customReplace 方法里
 		let data = res.data
 
-		// 这里是为了转换 location = 'http://xxx' 跳转，因为 js 无法拦截 location，所以这里替换 location 赋值操作
-		new Set(data.match(/[,;?:\s\(\{]location\s*\=[^,;\)\}]+/g)).forEach(match => {
+		// 要直接访问 location 变量，让访问 window._location
+		new Set(data.match(/[\s,;\?:\{\(\|]location\s*[,;\?:\}\)]/g)).forEach(match => {
+			const [left, right] = match.split('location')
+			// 右边是 : ，不一定是三元运算符，可能是 { a: 1 } 这样的属性名:属性值
+			if ((right.trim()[0] === ':') && !left.trim().endsWith('?')) {
+				return match
+			}
+			const result = match.replace('location', `(location == window.location ? window._location : location)`)
+			data = data.replaceAll(match, result)
+		})
+
+		// 要直接给 location 变量赋值，让给 window.location._href 变量赋值
+		new Set(data.match(/[\s,;\?:\{\(]location\s*\=[^,;\}\)]+/g)).forEach(match => {
 			const left = match.slice(match.indexOf('location'), match.indexOf('=') + 1)
 			const [prefix, right] = match.split(left)
-			// 如果右值是 window.location ...，说明这是赋值给变量 location，这个不需要转换
-			if (/(window|document|globalThis|parent|self|top)\.location/.test(right)) {
+			// 如果右值是 window.location ...，说明这是赋值给名为 location 的变量，这个不需要转换
+			if (/(window|document|globalThis|parent|self|top)\._?location/.test(right)) {
 				return
 			}
 			// location=no 是设置滚动条的东西（虽然，这种手动判断的方式并不优雅，先这样吧）
@@ -592,21 +599,10 @@ class WebVPN {
 				return
 			}
 			// TODO, 这里有可能会有问题，赋值表达式的右边部分，目前做的比较简单
-			const result = prefix + `(location === window.location) ? window.location._href=${right} : location=${right}`
+			const result = prefix + `(location == window.location) ? window.location._href=${right} : location=${right}`
 			data = data.replaceAll(match, result)
 		})
 
-		// 这里是为了替换获取 location 的代码，要让网站源码获取到的是我给的 "location"，不要他们检测到网址不是他们的网址
-		// window['location'] 或者其他变量赋值的操作就不处理了，可能太繁琐，目前不值得
-		new Set(data.match(/[^\.](window\.|document\.|globalThis\.|parent\.|self\.|top\.|\s|,|;|:|\?|\(|\{)location\s*[,;\?\)\}]/g)).forEach(match => {
-			const prefix = match.slice(1).split('location')[0]
-			let left = 'location'
-			if (/(window|document|globalThis|parent|self|top)\./.test(prefix)) {
-				left = prefix + 'location'
-			}
-			const result = match.replace(left, `(${left} === window.location ? window._location : ${left})`)
-			data = data.replaceAll(match, result)
-		})
 		return data
 	}
 

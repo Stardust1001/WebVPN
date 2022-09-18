@@ -72,7 +72,7 @@
 		getAttacher
 	});
 
-	var ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:'];
+	var ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:'];
 
 	function transformUrl (url) {
 		if (url == null) {
@@ -302,10 +302,6 @@
 		if (url.indexOf('data:') >= 0) {
 			return false;
 		}
-		// 2022-06-25 更新，这里为啥返回 false ? 忘了，注释掉
-		// if (url.indexOf('..') >= 0 || url.indexOf('./') >= 0) {
-		// 	return false;
-		// }
 		return true;
 	}
 
@@ -483,14 +479,46 @@
 		return window.location.replace(url);
 	}
 
-	// location._href 拦截
-	Object.defineProperty(window.location, '_href', {
+	function copySource (source) {
+		var copied = Object.assign({}, source);
+		for (var key in source) {
+			var value = source[key];
+			copied[key] = typeof value === 'function' ? value.bind(source) : value;
+		}
+		return copied;
+	}
+
+	// window._location
+	window._location = Object.assign({}, copySource(window.location), copySource(target));
+	window._location.assign = window.location._assign;
+	window._location.replace = window.location._replace;
+
+	// location._href, _location._href 拦截
+	for (var key of ['location', '_location']) {
+		Object.defineProperty(window[key], '_href', {
+			get () {
+				return window._location.href;
+			},
+			set (url) {
+				console.log(
+					'%c' + key + ' 拦截 _href : ' + url,
+					'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
+				);
+				if (!canJump(url)) return false;
+				url = transformUrl(url);
+				window.location.href = url;
+			}
+		});
+	}
+	// _location.href 拦截
+	var href = window._location.href;
+	Object.defineProperty(window._location, 'href', {
 		get () {
-			return window._location.href;
+			return href;
 		},
 		set (url) {
 			console.log(
-				'%clocation 拦截 _href : ' + url,
+				'%c_location 拦截 href : ' + url,
 				'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
 			);
 			if (!canJump(url)) return false;
@@ -499,21 +527,62 @@
 		}
 	});
 
-	// window._location, document._location, globalThis._locatioin
-	// parent._location, self._location, top._location
+	// document.domain
+	Object.defineProperty(document, 'domain', {
+		get () {
+			return target.hostname;
+		},
+		set (value) { }
+	});
+
+	// document.referrer
+	var _referrer = decodeUrl(document.referrer);
+	Object.defineProperty(document, 'referrer', {
+		get () {
+			return _referrer;
+		}
+	});
+
+	// _window, _document, _globalThis, _parent, _self, _top
 	var locationCon = ['window', 'document', 'globalThis', 'parent', 'self', 'top'];
 	for (var con of locationCon) {
 		if (!window[con]) {
 			continue ;
 		}
-		window[con]._location = Object.assign({}, window[con].location);
-		for (var key in target) {
-			window[con]._location[key] = target[key];
-		}
+		window['_' + con] = new Proxy(window[con], {
+			get (target, property, receiver) {
+				if (property === 'location') {
+					return window._location;
+				}
+				var value = target[property];
+				// 如果 value 是 function，不一定是真的函数，也可能是 Promise 这种，Promise 有 prototype
+				return (typeof value === 'function' && !value.prototype) ? value.bind(target) : value;
+			},
+			set (target, property, value) {
+				if (property === 'location') {
+					console.log(
+						'%clocation 操作 拦截 location = : ' + value,
+						'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
+					);
+					if (!canJump(url)) return;
+					url = transformUrl(url);
+					window.location.href = url;
+					return url;
+				}
+				target[property] = value;
+				return value;
+			}
+		});
 	}
 
-	// document._domain
-	document._domain = target.hostname;
+	// 因为用 _document 替换了 document, _document 的时候类型跟 document 不一致
+	var observe = MutationObserver.prototype.observe;
+	MutationObserver.prototype.observe = function (target, options) {
+		if (target == window._document) {
+			target = document;
+		}
+		return observe.bind(this)(target, options);
+	}
 
 	// Worker 创建拦截
 	var _Worker = window.Worker;
