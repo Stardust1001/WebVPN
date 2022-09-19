@@ -332,7 +332,7 @@ class WebVPN {
 			return result
 		}
 		try {
-			return this.fetchRequest(ctx, options)
+			return await this.fetchRequest(ctx, options)
 		} catch (err) {
 			const msg = 'request failed: ' + ctx.meta.url + '\n' + err.toString()
 			console.log(chalk.red(msg) + '\n')
