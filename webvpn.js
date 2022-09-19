@@ -582,7 +582,7 @@ class WebVPN {
 			if ((right.trim()[0] === ':') && !left.trim().endsWith('?')) {
 				return match
 			}
-			const result = match.replace('location', `(location == window.location ? window._location : location)`)
+			const result = match.replace('location', '(location == window.location ? window._location : location)')
 			data = data.replaceAll(match, result)
 		})
 
