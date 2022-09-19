@@ -315,15 +315,15 @@ class WebVPN {
 		if (ctx.meta.userAgent) {
 			header['user-agent'] = ctx.meta.userAgent
 		}
-		const isHttps = ctx.meta.target.protocol.startsWith('https')
+		// const isHttps = ctx.meta.target.protocol.startsWith('https')
 		const options = {
 			method,
 			headers: header,
 			...this.getRequestConfig(ctx)
 		}
-		if (isHttps) {
-			options.agent = httpsAgent
-		}
+		// if (isHttps) {
+		// 	options.agent = httpsAgent
+		// }
 		if (method === 'POST') {
 			options.body = this.processRequestBody(ctx)
 		}
