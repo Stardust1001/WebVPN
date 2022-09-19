@@ -671,7 +671,9 @@ class WebVPN {
 			}
 			isValidUrl = true
 		}
-		suffix = suffix.replace(/\/[^/]*\/\.\.\//g, '/')
+		if (suffix.indexOf('../') > 0) {
+			suffix = new URL(suffix).href
+		}
 
 		let desti = (suffix[0] === '/' ? serviceHost : (serviceBase + '/')) + suffix
 
