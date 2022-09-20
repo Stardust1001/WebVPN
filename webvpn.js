@@ -576,7 +576,8 @@ class WebVPN {
 		let data = res.data
 
 		// 要直接访问 location 变量，让访问 window._location
-		new Set(data.match(/[\s,;\?:\{\(\|]location\s*[,;\?:\}\)]/g)).forEach(match => {
+		// 注意，暂时去掉了右边的小括号判断 )，因为可能这个 location 是函数参数，不能替换为下面的表达式，暂时先这样
+		new Set(data.match(/[\s,;\?:\{\(\|]location\s*[,;\?:\}]/g)).forEach(match => {
 			const [left, right] = match.split('location')
 			// 右边是 : ，不一定是三元运算符，可能是 { a: 1 } 这样的属性名:属性值
 			if ((right.trim()[0] === ':') && !left.trim().endsWith('?')) {
