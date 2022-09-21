@@ -724,7 +724,7 @@ class WebVPN {
 
 	initCtxUrl (ctx) {
 		const parts = ctx.url.split('?')
-		if (parts[0].endsWith('ptth')) {
+		if (parts[0].indexOf('ptth') > 0) {
 			ctx.meta.isUrlReversed = true
 			ctx.url = this.decodeCtxUrl(parts[0])
 			if (parts[1]) {
@@ -888,7 +888,13 @@ class WebVPN {
 		if (!url) {
 			return url
 		}
-		url = this.reverseText(decodeURIComponent(url))
+		url = decodeURIComponent(url)
+		if (url.endsWith('ptth')) {
+			url = this.reverseText(url)
+		} else {
+			const [prefix, suffix] = url.split('ptth')
+			url = this.reverseText(prefix + 'ptth') + suffix
+		}
 		let u = null
 		try {
 			u = new URL(url)
