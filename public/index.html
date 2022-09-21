@@ -56,7 +56,7 @@ const button = document.querySelector('#goto')
 
 urlInput.addEventListener('change', () => {
 	let url = urlInput.value.trim()
-	if (!url) {
+	if (!/\w+\.\w+/.test(url)) {
 		return
 	}
 	if (url.indexOf('http') < 0 && url.indexOf('ptth') < 0) {
