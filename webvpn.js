@@ -849,9 +849,16 @@ class WebVPN {
 
 	initResponseHeaders (res) {
 		const headers = {}
-		Array.from(res.headers.entries()).forEach(item => headers[item[0]] = item[1])
+		const keys = [...res.headers.keys()]
+		for (let key of keys) {
+			headers[key] = res.headers.get(key)
+		}
+		headers['set-cookie'] = res.headers.getAll('set-cookie')
 		if (headers['access-control-allow-origin'] && headers['access-control-allow-origin'] !== '*') {
 			headers['access-control-allow-origin'] = this.config.site.origin
+		}
+		if (headers['set-cookie'].length > 0) {
+			headers['set-cookie'] = headers['set-cookie'].map(c => c.replaceAll('httponly', ''))
 		}
 		headers['content-type'] = headers['content-type'] || 'text/html'
 		return headers
