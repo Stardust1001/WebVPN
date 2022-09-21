@@ -857,9 +857,6 @@ class WebVPN {
 		if (headers['access-control-allow-origin'] && headers['access-control-allow-origin'] !== '*') {
 			headers['access-control-allow-origin'] = this.config.site.origin
 		}
-		if (headers['set-cookie'].length > 0) {
-			headers['set-cookie'] = headers['set-cookie'].map(c => c.replaceAll('httponly', ''))
-		}
 		headers['content-type'] = headers['content-type'] || 'text/html'
 		return headers
 	}
