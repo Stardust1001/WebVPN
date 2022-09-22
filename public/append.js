@@ -113,7 +113,7 @@
 		if (!url.startsWith('http')) {
 			url = url[0] === '/' ? (target.origin + url) : (target.origin + pathDir + url);
 		}
-		var encodeUrl = encodeURIComponent(url.split('').reverse().join(''));
+		var encodeUrl = encodeURIComponent(reverseText(url));
 		return sitePathname + '/' + proxyType + (url[0] === '/' ? '' : '/') + encodeUrl;
 	}
 
@@ -126,7 +126,7 @@
 			}
 		}
 		url = url.split('/').slice(3).join('/');
-		url = decodeURIComponent(url).split('').reverse().join('');
+		url = reverseText(decodeURIComponent(url));
 		url = url.split(' ')[0];
 		return url;
 	}
@@ -229,7 +229,7 @@
 				}
 				var href = node.href.split('(')[1].split(')')[0];
 				var parts = href.indexOf('%25ptth') > 0 ? href.split('%25ptth') : href.split('%25sptth');
-				var func = decodeURIComponent(parts[0]).split(':tpircsavaj')[0].split('').reverse().join('');
+				var func = reverseText(decodeURIComponent(parts[0]).split(':tpircsavaj')[0]);
 				node.href = 'javascript:' + func + '(' + parts[1] + ');';
 			}
 		});
@@ -318,6 +318,10 @@
 			return true;
 		}
 		return false;
+	}
+
+	function reverseText (text) {
+		return text.split('').reverse().join('');
 	}
 
 	// ajax 拦截
@@ -580,6 +584,42 @@
 			target = document;
 		}
 		return observe.bind(this)(target, options);
+	}
+
+	var urlSelectorReg = new RegExp('\\[(' + urlAttrs.join('|') + ').=(\"|\')[^\"\']*', 'ig');
+
+	// document.querySelector 拦截
+	var querySelector = document.querySelector;
+	document.querySelector = function (selector) {
+		var matches = selector.match(urlSelectorReg);
+		if (matches) {
+			console.log(
+				'%cDOM 操作 拦截 document.querySelector : ' + selector,
+				'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
+			);
+			for (var match of matches) {
+				var keyword = match.split(/(\"|\')/)[2];
+				selector = selector.replace(keyword, reverseText(keyword));
+			}
+		}
+		return querySelector.call(this, selector);
+	}
+
+	// document.querySelectorAll 拦截
+	var querySelectorAll = document.querySelectorAll;
+	document.querySelectorAll = function (selector) {
+		var matches = selector.match(urlSelectorReg);
+		if (matches) {
+			console.log(
+				'%cDOM 操作 拦截 document.querySelectorAll : ' + selector,
+				'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
+			);
+			for (var match of matches) {
+				var keyword = match.split(/(\"|\')/)[2];
+				selector = selector.replace(keyword, reverseText(keyword));
+			}
+		}
+		return querySelectorAll.call(this, selector);
 	}
 
 	// Worker 创建拦截
@@ -885,12 +925,12 @@
 		var category = title.split(' ')[0];
 		var type = title.split('拦截')[1].trim();
 		logs[category] = logs[category] || {};
+		logs[category][type] = logs[category][type] || [];
 
 		if (args.length === 2 && args[0].startsWith('%c')) {
 			args = [args[0].slice(2)];
 		}
-
-		logs[category][type] = (logs[category][type] || []).concat(args);
+		logs[category][type].push(args);
 	}
 
 })();
