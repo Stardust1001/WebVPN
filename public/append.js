@@ -544,11 +544,8 @@
 	});
 
 	// _window, _document, _globalThis, _parent, _self, _top
-	var locationCon = ['window', 'document', 'globalThis', 'parent', 'self', 'top'];
+	var locationCon = ['window', 'document'];
 	for (var con of locationCon) {
-		if (!window[con]) {
-			continue ;
-		}
 		window['_' + con] = new Proxy(window[con], {
 			get (target, property, receiver) {
 				if (property === 'location') {
@@ -574,6 +571,7 @@
 			}
 		});
 	}
+	window._globalThis = window._parent = window._self = window._top = window._window;
 
 	// 因为用 _document 替换了 document, _document 的时候类型跟 document 不一致
 	var observe = MutationObserver.prototype.observe;
