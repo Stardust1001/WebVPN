@@ -832,13 +832,6 @@
 	setTimeout(convertChinease, 2000);
 	setInterval(convertChinease, 3000);
 
-	// remove 拦截
-	var remove = Element.prototype.remove;
-	Element.prototype.remove = function () {
-		domLog(this, 'remove');
-		return remove.apply(this, arguments);
-	}
-
 	var logger = console.log;
 	console.log = function () {
 		var isCustom = arguments[0] === 'custom';
