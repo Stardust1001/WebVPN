@@ -39,7 +39,7 @@ class WebVPN {
 			'json': 'application/json',
 			'video': 'video/mp4, application/vnd.apple.mpegurl',
 			'audio': 'audio/webm, audio/mpeg',
-			'stream': 'application/octet-stream'
+			'stream': 'application/octet-stream, application/protobuffer'
 		}
 		this.ignoreRequestHeaderRegexps = []
 		this.ignoreResponseHeaderRegexps = [
