@@ -455,16 +455,16 @@ class WebVPN {
 		// 替换 import 的链接
 		const regexps = [
 			// import ... from
-			/import[A-Za-z0-9\$\_\{\}\s,]*from\s*[\"\'][^\"\']*/g,
+			/import[A-Za-z0-9\$\_\{\}\s,]+from\s*[\"\'][^\"\']+/g,
 			// import(...)
-			/import\s*\([\"\'][^\"\']*/g,
+			/import\s*\([\"\'][^\"\']+/g,
 			// \s; import "|'  这是单单的 import"./1.js" import "2.js" 形式的导入
 			// 避免匹配到无关的字符串，前面加上 \s; 匹配，表明这是一个以 import 开头的导入
 			// 后面匹配 ,; 并且是 + 而非 * 模式，因为要去除 "... import",; 字符串的情况
 			// 但并不完美，有问题再看看处理
-			/[\s;]import\s*[\"\'][^\"\',;]+/g,
+			/[\s;]import\s*[\"\'][^\"\',;\)]+/g,
 			// 以 import"./1.js" import"2.js" 直接开头的形式
-			/^import\s*[\"\'][^\"\',;]+/g,
+			/^import\s*[\"\'][^\"\',;\)]+/g,
 		]
 		const handler = (match) => {
 			match = match.split(')')[0]

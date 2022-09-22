@@ -574,7 +574,7 @@
 					return url;
 				}
 				target[property] = value;
-				return value;
+				return true;
 			}
 		});
 	}
@@ -594,7 +594,7 @@
 	// document.querySelector 拦截
 	var querySelector = document.querySelector;
 	document.querySelector = function (selector) {
-		var matches = selector.match(urlSelectorReg);
+		var matches = typeof selector === 'string' ? selector.match(urlSelectorReg) : null;
 		if (matches) {
 			console.log(
 				'%cDOM 操作 拦截 document.querySelector : ' + selector,
@@ -611,7 +611,7 @@
 	// document.querySelectorAll 拦截
 	var querySelectorAll = document.querySelectorAll;
 	document.querySelectorAll = function (selector) {
-		var matches = selector.match(urlSelectorReg);
+		var matches = typeof selector === 'string' ? selector.match(urlSelectorReg) : null;
 		if (matches) {
 			console.log(
 				'%cDOM 操作 拦截 document.querySelectorAll : ' + selector,
