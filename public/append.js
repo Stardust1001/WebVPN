@@ -622,6 +622,39 @@
 		return querySelectorAll.call(this, selector);
 	}
 
+	// $ 拦截
+	// jQuery 拦截
+	// $ 和 jQuery 都用 _$ 代替，不设 _jQuery 了，没必要
+	function __$ (selector, context) {
+		var matches = typeof selector === 'string' ? selector.match(urlSelectorReg) : null;
+		if (matches) {
+			console.log(
+				'%cDOM 操作 拦截 $ : ' + selector,
+				'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
+			);
+			for (var match of matches) {
+				var keyword = match.split(/(\"|\')/)[2];
+				selector = selector.replace(keyword, reverseText(keyword));
+			}
+		}
+		return window._$(selector, context);
+	}
+	var $_handler = {
+		get () {
+			if (window._$) {
+				return __$;
+			}
+		},
+		set (value) {
+			window._$ = value;
+			for (var key in value) {
+				__$[key] = value[key];
+			}
+		}
+	};
+	Object.defineProperty(window, '$', $_handler);
+	Object.defineProperty(window, 'jQuery', $_handler);
+
 	// getAttribute 拦截
 	var nasUnion = [];
 	for (var item of nodeAttrSetters) {
