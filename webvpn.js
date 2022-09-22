@@ -551,6 +551,12 @@ class WebVPN {
 		let data = res.data
 		const site = this.config.site
 
+		// 下面的获取判断，用了 =，所以 == === 也包含在内了，现在 == === 的左值 window, document 等, 也需要替换
+		data = data.replaceAll(/[^\.](window|document|globalThis|parent|self|top)\s*==/g, match => {
+			return match.replace(/(window|document|globalThis|parent|self|top)/, m => {
+				return `(${m} === window.${m} ? window._${m} : ${m})`
+			})
+		})
 		// 要获取 window, document 等，返回给他们 _window, _document 等
 		data = data.replaceAll(/=\s*(window|document|globalThis|parent|self|top)\s*[,;\)\}\:\?]/g, match => {
 			return match.replace(/(window|document|globalThis|parent|self|top)/, m => {
