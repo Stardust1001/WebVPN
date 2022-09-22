@@ -172,7 +172,7 @@
 		var url = '';
 		var urlAttr = '';
 		for (var attr of urlAttrs) {
-			url = (node.getAttribute(attr) || '').trim();
+			url = (node.getAttribute(attr, 'custom') || '').trim();
 			urlAttr = attr;
 			if (url) {
 				break;
@@ -239,7 +239,7 @@
 		var url = '';
 		var urlAttr = '';
 		if (attr) {
-			url = node.getAttribute(attr);
+			url = node.getAttribute(attr, 'custom');
 			urlAttr = attr;
 		} else {
 			var link = getNodeUrl(node);
@@ -621,6 +621,33 @@
 		}
 		return querySelectorAll.call(this, selector);
 	}
+
+	// getAttribute 拦截
+	var nasUnion = [];
+	for (var item of nodeAttrSetters) {
+		var ele = nasUnion.find(function (ele) {
+			return ele[0] === item[0];
+		});
+		if (!ele) {
+			nasUnion.push([item[0], item[1], [item[2]]]);
+		} else {
+			ele[2].push(item[2]);
+		}
+	}
+	nasUnion.forEach(function (item) {
+		var getAttribute = item[0].prototype.getAttribute;
+		item[0].prototype.getAttribute = function (attr, type) {
+			var value = getAttribute.bind(this)(attr);
+			if (value && type !== 'custom' && item[2].includes(attr)) {
+				console.log(
+					'%cDOM 操作 拦截 getAttribute : ' + item[1] + '-' + item[2] + ' ' + value,
+					'color: #606666;background-color: lime;padding: 5px 10px;'
+				);
+				value = decodeUrl(value);
+			}
+			return value;
+		}
+	});
 
 	// Worker 创建拦截
 	var _Worker = window.Worker;
