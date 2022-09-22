@@ -118,6 +118,7 @@
 	}
 
 	function decodeUrl (url) {
+		if (!url) return url;
 		if (url.startsWith(siteOrigin)) {
 			try {
 				url = new URL(url).pathname;
@@ -182,6 +183,7 @@
 	}
 
 	function replaceNodesUrls (root) {
+		var type = root ? undefined : 'custom';
 		root = root || document.documentElement;
 		if (root.nodeType !== 1) {
 			return ;
@@ -199,43 +201,44 @@
 		all.forEach(function (node) {
 			var attrs = nodeNameAttrsMap[node.node_name];
 			if (!attrs) {
-				replaceNodeUrl(root, node);
+				replaceNodeUrl(root, node, null, type);
 				return ;
 			}
 			attrs.forEach(function (attr) {
-				replaceNodeUrl(root, node, attr);
+				replaceNodeUrl(root, node, attr, type);
 			});
-			customReplaceNodeUrl(node, attrs);
+			customReplaceNodeUrl(node, attrs, type);
 		});
 	}
 
-	function customReplaceNodeUrl (node, attrs) {
+	function customReplaceNodeUrl (node, attrs, type) {
 		// 无法100%完全转发网站并保证原网站代码的100%正常运行
 		// 比如 play.google.com 的图片显示不出来，src 没有，data-src 有
 		// 可能是部分代码运行异常导致图片显示不了，这里就帮着显示下
 		attrs.forEach(function (attr) {
-			if (!node[attr] && node.dataset[attr]) {
-				node[attr] = node.dataset[attr];
+			if (!node.getAttribute(attr, type) && node.dataset[attr]) {
+				node.setAttribute(attr, node.dataset[attr], type);
 			}
+			var href = node.getAttribute('href', type);
 			// 有的网站里面代码生成的链接，原本该是 javascript:func()，因为各种原因，生成了 Http 链接并以 /proxy/ 开头
-			if (node.node_name === 'a' && node.href.indexOf('%3Atpircsavaj') > 0) {
-				if (node.href.indexOf('%3B%3Atpircsavaj') > 0) {
-					node.href = 'javascript:;';
+			if (node.node_name === 'a' && href && href.indexOf('%3Atpircsavaj') > 0) {
+				if (href.indexOf('%3B%3Atpircsavaj') > 0) {
+					node.setAttribute('href', 'javascript:;', type);
 					return ;
 				}
-				if (node.href.indexOf('(') < 0) {
-					node.href = 'javascript:;';
+				if (href.indexOf('(') < 0) {
+					node.setAttribute('href', 'javascript:;', type);
 					return ;
 				}
-				var href = node.href.split('(')[1].split(')')[0];
+				href = href.split('(')[1].split(')')[0];
 				var parts = href.indexOf('%25ptth') > 0 ? href.split('%25ptth') : href.split('%25sptth');
 				var func = reverseText(decodeURIComponent(parts[0]).split(':tpircsavaj')[0]);
-				node.href = 'javascript:' + func + '(' + parts[1] + ');';
+				node.setAttribute('href', 'javascript:' + func + '(' + parts[1] + ');', type);
 			}
 		});
 	}
 
-	function replaceNodeUrl (root, node, attr) {
+	function replaceNodeUrl (root, node, attr, type) {
 		var url = '';
 		var urlAttr = '';
 		if (attr) {
@@ -249,7 +252,7 @@
 		if (!checkUrlShouldReplace(url, attr)) {
 			return ;
 		}
-		if (attr !== 'srcset' && proxyType !== 'single' && replaceThirdDomainUrl(node, urlAttr, url)) {
+		if (attr !== 'srcset' && proxyType !== 'single' && replaceThirdDomainUrl(node, urlAttr, url, type)) {
 			return ;
 		}
 		var newUrl = transformUrl(url);
@@ -267,7 +270,7 @@
 		if (newUrl !== url) {
 			var tag = node.node_name;
 			if (root || tag !== 'script') {
-				node.setAttribute(urlAttr, newUrl);
+				node.setAttribute(urlAttr, newUrl, type);
 			} else {
 				var copy = node.cloneNode(true);
 				copy.src = newUrl;
@@ -305,7 +308,7 @@
 		return true;
 	}
 
-	function replaceThirdDomainUrl (node, urlAttr, url) {
+	function replaceThirdDomainUrl (node, urlAttr, url, type) {
 		var newUrl = transformUrl(url);
 		var domain = '';
 		try {
@@ -313,7 +316,7 @@
 		} catch {}
 		if (domain !== target.hostname && domain !== siteHostname) {
 			if (url !== newUrl) {
-				node[urlAttr] = newUrl;
+				node.setAttribute(urlAttr, newUrl, type)
 			}
 			return true;
 		}
@@ -602,7 +605,7 @@
 				selector = selector.replace(keyword, reverseText(keyword));
 			}
 		}
-		return querySelector.call(this, selector);
+		return querySelector.call(document, selector);
 	}
 
 	// document.querySelectorAll 拦截
@@ -722,6 +725,14 @@
 
 	nodeAttrSetters.forEach(function (item) {
 		Object.defineProperty(item[0].prototype, item[2], {
+			get () {
+				var value = this.getAttribute(item[2], 'custom');
+				console.log(
+					'%cDOM 操作 拦截 ' + item[1] + ' ' + item[2] + ' getter : ' + value,
+					'color: #606666;background-color: lime;padding: 5px 10px;'
+				);
+				return decodeUrl(value);
+			},
 			set (url) {
 				srcLog(item[1], item[2], url);
 				this.setAttribute(item[2], transformUrl(url), 'custom');
