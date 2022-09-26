@@ -118,7 +118,7 @@
 	}
 
 	function decodeUrl (url) {
-		if (!url) return url;
+		if (!url) return '';
 		if (url.startsWith(siteOrigin)) {
 			try {
 				url = new URL(url).pathname;
