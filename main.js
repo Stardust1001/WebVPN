@@ -31,6 +31,9 @@ class VPN extends WebVPN {
 		if (ctx.url.indexOf('v.qq.com') > 0) {
 			ctx.meta.confirmJump = true
 		}
+		if (ctx.url.indexOf('filesaver') > 0) {
+			res.data = res.data.replaceAll(/window\.window===window/g, 'true')
+		}
 	}
 
 	// 返回响应之前
