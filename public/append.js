@@ -583,11 +583,14 @@
 	});
 	// document.cookie
 	// TODO: 这造成 js 客户端无法设置 cookie
-	Object.defineProperty(document, 'cookie', {
-		get () {
-			return document._cookie;
-		}
-	});
+	// Object.defineProperty(document, 'cookie', {
+	// 	get () {
+	// 		return document._cookie;
+	// 	},
+	// 	set (value) {
+	// 		console.log('%c cannot set cookie, value: ' + value, 'color: orange;');
+	// 	}
+	// });
 
 	// _window, _document, _globalThis, _parent, _self, _top
 	var locationCon = ['window', 'document'];
