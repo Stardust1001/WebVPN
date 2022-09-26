@@ -550,6 +550,45 @@
 		}
 	});
 
+	// document._cookie
+	var cookie = document.cookie;
+	var cookies = cookie.split(';').map(function (kv) {
+		return kv.trim();
+	}).filter(function (kv) {
+		return kv.startsWith(target.hostname + '::');
+	});
+	Object.defineProperty(document, '_cookie', {
+		get () {
+			return cookies.map(function (kv) {
+				return kv.slice(target.hostname.length + 2);
+			}).join('; ');
+		},
+		set (value) {
+			if (!value || value.indexOf('=') < 0) return ;
+			var kvs = value.split(';').map(function (kv) {
+				return target.hostname + '::' + kv.trim();
+			});
+			for (var kv of kvs) {
+				var index = cookies.findIndex(function (ele) {
+					return ele.startsWith(kv);
+				});
+				if (index >= 0) {
+					cookies[index] = kv;
+				} else {
+					cookies.push(kv);
+				}
+			}
+			document.cookie = kvs.join('; ');
+		}
+	});
+	// document.cookie
+	// TODO: 这造成 js 客户端无法设置 cookie
+	Object.defineProperty(document, 'cookie', {
+		get () {
+			return document._cookie;
+		}
+	});
+
 	// _window, _document, _globalThis, _parent, _self, _top
 	var locationCon = ['window', 'document'];
 	for (var con of locationCon) {

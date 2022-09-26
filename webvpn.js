@@ -1,3 +1,4 @@
+import fs from 'fs'
 import https from 'https'
 import http from 'http'
 import path from 'path'
@@ -63,7 +64,7 @@ class WebVPN {
 			this.caches = { }
 			const dirs = await fsUtils.listDir(this.cacheDir)
 			dirs.forEach(async dir => {
-				this.caches = await fsUtils.listDir(path.join(this.cacheDir, dir))
+				this.caches[dir] = await fsUtils.listDir(path.join(this.cacheDir, dir))
 			})
 		}
 	}
@@ -98,16 +99,13 @@ class WebVPN {
 		return false
 	}
 
-	async getCache (ctx) {
+	getCache (ctx) {
 		const { hostname, pathname } = ctx.meta.target
-		const dir = path.join(this.cacheDir, hostname)
 		const filename = encodeURIComponent(pathname)
-		if (!this.caches[dir] || !this.caches[dir][filename]) {
+		if (!this.caches[hostname] || !this.caches[hostname].includes(filename)) {
 			return null
 		}
-		const filepath = path.join(dir, filename)
-		const file = await fsUtils.read(filepath)
-		return file
+		return fs.createReadStream(path.join(this.cacheDir, hostname, filename))
 	}
 
 	async setCache (ctx, res) {
@@ -169,22 +167,6 @@ class WebVPN {
 
 		this.routeInit(ctx)
 
-		if (await this.beforeRequest(ctx)) {
-			return
-		}
-
-		if (this.config.cache && ctx.meta.target && ctx.meta.cache !== false) {
-			const file = await this.getCache(ctx)
-			if (file) {
-				ctx.body = file
-				return
-			}
-		}
-
-		if (this.noTransformMimes.includes(ctx.meta.mime)) {
-			return this.respondPipe(ctx)
-		}
-
 		if (!ctx.meta.url) {
 			const err = 'Invalid proxy target : ' + ctx.url
 			if (this.checkLogUrlError(ctx)) {
@@ -192,6 +174,28 @@ class WebVPN {
 			}
 			ctx.body = err
 			return
+		}
+
+		if (this.config.cache && ctx.meta.target && ctx.meta.cache !== false) {
+			const stream = this.getCache(ctx)
+			if (stream) {
+				ctx.res.writeHead(200)
+				await new Promise(resolve => {
+					stream.pipe(ctx.res)
+					stream.on('end', resolve)
+				})
+				return
+			}
+		}
+
+		this.processCookies(ctx)
+
+		if (await this.beforeRequest(ctx)) {
+			return
+		}
+
+		if (this.noTransformMimes.includes(ctx.meta.mime)) {
+			return await this.respondPipe(ctx)
 		}
 
 		let res = null
@@ -296,11 +300,9 @@ class WebVPN {
 			const lib = isHttps ? https : http
 			const func = method === 'get' ? lib.get : lib.request
 			func(options, res => {
-				if (res.headers['access-control-allow-origin'] && res.headers['access-control-allow-origin'] !== '*') {
-					res.headers['access-control-allow-origin'] = this.config.site.origin
-				}
-				this.deleteIgnoreHeaders(this.ignoreResponseHeaderRegexps, res.headers)
-				ctx.res.writeHead(res.statusCode, res.headers)
+				const headers = this.initResponseHeaders(ctx, res)
+				this.deleteIgnoreHeaders(this.ignoreResponseHeaderRegexps, headers)
+				ctx.res.writeHead(res.statusCode, headers)
 				res.pipe(ctx.res)
 				res.on('end', resolve)
 			})
@@ -355,7 +357,7 @@ class WebVPN {
 		if (res.redirected) {
 			this.setRedirectedUrlMeta(ctx, res.url)
 		}
-		const headers = this.initResponseHeaders(res)
+		const headers = this.initResponseHeaders(ctx, res)
 
 		let data = ''
 		ctx.meta.mime = this.getMimeByResponseHeaders(headers) || ctx.meta.mime
@@ -574,6 +576,7 @@ class WebVPN {
 		})
 
 		data = data.replaceAll(/window\.navigate\(/g, 'window._navigate(')
+		data = data.replaceAll(/document\.cookie/g, 'document._cookie')
 		return data
 	}
 
@@ -845,6 +848,18 @@ class WebVPN {
 		return 'text'
 	}
 
+	processCookies (ctx) {
+		const cookie = ctx.headers['cookie']
+		if (!cookie) {
+			return
+		}
+		const { hostname } = ctx.meta.target
+		const kvs = cookie.split('; ').filter(kv => {
+			return kv.startsWith(hostname)
+		}).map(kv => kv.slice(hostname.length + 2))
+		ctx.headers['cookie'] = kvs.join('; ')
+	}
+
 	getRequestConfig (ctx) {
 		const config = { }
 		if (ctx.meta.mime === 'image') {
@@ -853,13 +868,22 @@ class WebVPN {
 		return config
 	}
 
-	initResponseHeaders (res) {
-		const headers = {}
-		const keys = [...res.headers.keys()]
-		for (let key of keys) {
-			headers[key] = res.headers.get(key)
+	initResponseHeaders (ctx, res) {
+		let headers = {}
+		if (typeof res.headers.keys === 'function') {
+			const keys = [...res.headers.keys()]
+			for (let key of keys) {
+				headers[key] = res.headers.get(key)
+			}
+			headers['set-cookie'] = res.headers.getAll('set-cookie')
+		} else {
+			headers = res.headers
+			headers['set-cookie'] = headers['set-cookie'] || []
 		}
-		headers['set-cookie'] = res.headers.getAll('set-cookie')
+		const { hostname } = ctx.meta.target
+		headers['set-cookie'] = headers['set-cookie'].map(cookie => {
+			return hostname + '::' + cookie.replace(/HttpOnly/i, '')
+		})
 		if (headers['access-control-allow-origin'] && headers['access-control-allow-origin'] !== '*') {
 			headers['access-control-allow-origin'] = this.config.site.origin
 		}
