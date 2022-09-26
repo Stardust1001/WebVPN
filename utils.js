@@ -10,7 +10,7 @@ async function mkdir (name) {
 		for (let i = 1; i <= parts.length; i++) {
 			const branch = parts.slice(0, i).join('/')
 			if (!await exists(branch)) {
-				await fs.mkdir(branch, () => {})
+				await new Promise(resolve => fs.mkdir(branch, resolve))
 			}
 		}
 	}
@@ -28,7 +28,7 @@ async function listDir (name) {
 }
 
 async function write (name, data) {
-	await fs.writeFile(name, data, () => {})
+	return new Promise(resolve => fs.writeFile(name, data, resolve))
 }
 
 async function read (name) {
