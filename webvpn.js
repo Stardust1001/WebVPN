@@ -681,6 +681,8 @@ class WebVPN {
 				suffix = origin + pathDir + suffix
 			}
 			isValidUrl = true
+		} else {
+			suffix = ctx.meta.url
 		}
 		if (suffix.indexOf('../') > 0) {
 			suffix = new URL(suffix).href
