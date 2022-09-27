@@ -921,7 +921,8 @@ class WebVPN {
 		const index = url.startsWith('/proxy') ? 3 : 2
 		const parts = url.split('/')
 		const prefix = parts.slice(0, index).join('/')
-		const suffix = this.decodeUrl(parts.slice(index).join(''))
+		const isEncoded = url.indexOf('//') < 0
+		const suffix = this.decodeUrl(parts.slice(index).join(isEncoded ? '' : '/'))
 		return prefix + '/' + suffix
 	}
 
