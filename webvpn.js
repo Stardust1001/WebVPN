@@ -681,8 +681,6 @@ class WebVPN {
 				suffix = origin + pathDir + suffix
 			}
 			isValidUrl = true
-		} else {
-			suffix = ctx.meta.url
 		}
 		if (suffix.indexOf('../') > 0) {
 			suffix = new URL(suffix).href
@@ -691,7 +689,14 @@ class WebVPN {
 		let desti = (suffix[0] === '/' ? serviceHost : (serviceBase + '/')) + suffix
 
 		if (isValidUrl) {
-			const u = new URL(suffix)
+			let u = null
+			try {
+				u = new URL(suffix)
+			} catch {
+				console.log(chalk.red('eeeeeeeeeeeeeeeeee'))
+				console.log(match)
+				return match
+			}
 			if (proxyType === 'single' && target.hostname !== u.hostname) {
 				return source
 			}
