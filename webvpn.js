@@ -15,6 +15,7 @@ const httpsAgent = new https.Agent({ rejectUnauthorized: false })
 
 class WebVPN {
 	constructor (config) {
+		process.env.NODE_TLS_REJECT_UNAUTHORIZED = config.NODE_TLS_REJECT_UNAUTHORIZED || 0
 		this.config = config
 		this.mimes = ['json', 'js', 'css', 'html', 'image', 'video', 'audio']
 		this.mimeRegs = [
