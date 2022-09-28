@@ -130,7 +130,7 @@
 
 	function decodeUrl (url) {
 		url = url ? url.trim() : '';
-		if (!url) return url;
+		if (!url || url === '/') return url;
 		if (url.startsWith(siteOrigin)) {
 			try {
 				url = new URL(url).pathname;
@@ -145,7 +145,7 @@
 		url = decodeURIComponent(url);
 		if (url.endsWith('ptth')) {
 			url = reverseText(url);
-		} else {
+		} else if (url.indexOf('ptth') > 0) {
 			var parts = url.split('ptth');
 			if (parts[1][0] === '/') {
 				parts[1] = parts[1].slice(1);
