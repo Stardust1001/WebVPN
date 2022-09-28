@@ -10,6 +10,7 @@
 	var siteHostname = window.webvpn.siteHostname;
 	var siteOrigin = window.webvpn.siteOrigin;
 	var sitePathname = window.webvpn.sitePathname;
+	var base = window.webvpn.base;
 
 	var targetUrl = window.webvpn.targetUrl;
 	var target = new URL(targetUrl);
@@ -105,7 +106,17 @@
 			}
 		}
 		if (url.startsWith('/proxy/')) {
-			return url;
+			if (url.endsWith('ptth')) {
+				return url;
+			} else {
+				url = url.split('/').slice(3).join('/');
+				url = decodeURIComponent(url);
+				var parts = url.split('ptth');
+				if (parts[1][0] === '/') {
+					parts[1] = parts[1].slice(1);
+				}
+				url = reverseText(parts[0] + 'ptth') + parts[1];
+			}
 		}
 		if (url.startsWith('//')) {
 			url = target.protocol + url;
@@ -118,7 +129,8 @@
 	}
 
 	function decodeUrl (url) {
-		if (!url) return '';
+		url = url ? url.trim() : '';
+		if (!url) return url;
 		if (url.startsWith(siteOrigin)) {
 			try {
 				url = new URL(url).pathname;
@@ -126,8 +138,20 @@
 				return url;
 			}
 		}
+		if (url.startsWith('/public/')) {
+			return url;
+		}
 		url = url.split('/').slice(3).join('/');
-		url = reverseText(decodeURIComponent(url));
+		url = decodeURIComponent(url);
+		if (url.endsWith('ptth')) {
+			url = reverseText(url);
+		} else {
+			var parts = url.split('ptth');
+			if (parts[1][0] === '/') {
+				parts[1] = parts[1].slice(1);
+			}
+			url = reverseText(parts[0] + 'ptth') + parts[1];
+		}
 		url = url.split(' ')[0];
 		return url;
 	}
@@ -284,26 +308,19 @@
 		if (attr === 'srcset') {
 			return !!url;
 		}
-		if (!url) {
+		url = url ? url.trim() : '';
+		if (!url || url.startsWith(siteOrigin) || url.startsWith('/proxy/') || url.startsWith('/public')) {
 			return false;
 		}
-		if (url.startsWith(siteOrigin)) {
-			return false;
-		}
-		// /proxy/ 开头的是当前网站代理开头的地址，此链接无需转换
-		if (url.startsWith('/proxy/')) {
-			return false;
-		}
-		if (url.indexOf('javascript:') >= 0) {
-			return false
+		for (var prefix of ignoredPrefixes) {
+			if (url.indexOf(prefix) >= 0) {
+				return false;
+			}
 		}
 		if (proxyType === 'single') {
 			if (url.indexOf('//') >= 0 && (url.split('//')[1] || '').split('/')[0] !== target.hostname) {
 				return false;
 			}
-		}
-		if (url.indexOf('data:') >= 0) {
-			return false;
 		}
 		return true;
 	}
@@ -484,6 +501,17 @@
 		if (!canJump(url)) return false;
 		url = transformUrl(url);
 		return window.location.replace(url);
+	}
+
+	// ServiceWorkerContainer register 拦截
+	var register = ServiceWorkerContainer.prototype.register;
+	ServiceWorkerContainer.prototype.register = function (url, options) {
+		console.log(
+			'%cServiceWorkerContainer 操作 拦截 register : ' + url,
+			'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
+		);
+		url = transformUrl(url);
+		return register.call(this, url, options);
 	}
 
 	function copySource (source) {

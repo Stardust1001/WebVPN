@@ -395,6 +395,7 @@ class WebVPN {
 	replaceUrls (ctx, res) {
 		const { mime } = ctx.meta
 		const matches = []
+		ctx.meta.base = this.getBase(ctx, res)
 		if (mime === 'html') {
 			matches.push(...this.getHtmlLinkMatches(ctx, res))
 		}
@@ -415,6 +416,16 @@ class WebVPN {
 		if (hideChinease && typeof res.data === 'string') {
 			res.data = this.chinease2Unicode(ctx, res)
 		}
+	}
+
+	getBase (ctx, res) {
+		const match = res.data.match(/\<base\s+href=(\"|\')[^\"\']+/)
+		if (match) {
+			const text = match[0]
+			const index = Math.max(text.indexOf('"'), text.indexOf('\''))
+			return text.slice(index + 1)
+		}
+		return ctx.meta.target.pathname.split('/').slice(0, -1).join('/') + '/'
 	}
 
 	getHtmlLinkMatches (ctx, res) {
@@ -621,7 +632,7 @@ class WebVPN {
 	appendScript (ctx, res) {
 		const { site, ajaxDomLog } = this.config
 		const { disableJump = this.config.disableJump, confirmJump = this.config.confirmJump } = ctx.meta
-		const { proxyType, target } = ctx.meta
+		const { proxyType, base, target } = ctx.meta
 		const { data } = res
 		const code = `
 		<script>
@@ -631,6 +642,7 @@ class WebVPN {
 					siteHostname: '${site.hostname}',
 					siteOrigin: '${site.origin}',
 					sitePathname: '${site.pathname}',
+					base: '${base}',
 
 					targetUrl: '${target.href}',
 
@@ -654,7 +666,7 @@ class WebVPN {
 	getUrlReplacement (ctx, res, item) {
 		const [match, index, symbol] = item
 		const { site } = this.config
-		const { serviceHost, serviceBase, isUrlReversed, target, proxyType } = ctx.meta
+		const { base, serviceHost, serviceBase, isUrlReversed, target, proxyType } = ctx.meta
 		const source = match.slice(index)
 		let suffix = match.slice(index + 1)
 		if (suffix.indexOf('&amp;') >= 0) {
@@ -677,8 +689,7 @@ class WebVPN {
 			if (suffix[0] === '/') {
 				suffix = origin + suffix
 			} else {
-				const pathDir = pathname.endsWith('/') ? pathname : (pathname.split('/').slice(0, -1).join('/') + '/')
-				suffix = origin + pathDir + suffix
+				suffix = origin + base + suffix
 			}
 			isValidUrl = true
 		}
