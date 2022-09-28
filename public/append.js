@@ -503,17 +503,6 @@
 		return window.location.replace(url);
 	}
 
-	// ServiceWorkerContainer register 拦截
-	var register = ServiceWorkerContainer.prototype.register;
-	ServiceWorkerContainer.prototype.register = function (url, options) {
-		console.log(
-			'%cServiceWorkerContainer 操作 拦截 register : ' + url,
-			'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
-		);
-		url = transformUrl(url);
-		return register.call(this, url, options);
-	}
-
 	function copySource (source) {
 		var copied = Object.assign({}, source);
 		for (var key in source) {
@@ -766,6 +755,17 @@
 		return new _Worker(url, options);
 	}
 
+	// ServiceWorkerContainer register 拦截
+	var register = ServiceWorkerContainer.prototype.register;
+	ServiceWorkerContainer.prototype.register = function (url, options) {
+		console.log(
+			'%cServiceWorkerContainer 操作 拦截 register : ' + url,
+			'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
+		);
+		url = transformUrl(url);
+		return register.call(this, url, options);
+	}
+
 	// pushState replaceState 拦截
 	Array.from(['pushState', 'replaceState']).forEach(function (name) {
 		var origin = History.prototype[name];
@@ -806,6 +806,20 @@
 			set (url) {
 				srcLog(item[1], item[2], url);
 				this.setAttribute(item[2], transformUrl(url), 'custom');
+			}
+		});
+	});
+
+	// a 元素的 pathname host 等 URL 属性 拦截, href 在上面的 get 函数里拦截了
+	var aUrlAttrs = ['hash', 'host', 'hostname', 'origin', 'pathname', 'port', 'protocol', 'search'];
+	aUrlAttrs.forEach(function (attr) {
+		Object.defineProperty(HTMLAnchorElement.prototype, attr, {
+			get () {
+				console.log(
+					'%cDOM 操作 拦截 a ' + attr + ' getter',
+					'color: #606666;background-color: lime;padding: 5px 10px;'
+				);
+				return new URL(decodeUrl(this.getAttribute('href', 'custom')))[attr];
 			}
 		});
 	});
