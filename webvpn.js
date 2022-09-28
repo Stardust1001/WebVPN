@@ -769,37 +769,43 @@ class WebVPN {
 
 	initUrlMeta (ctx) {
 		const parts = ctx.url.split('/')
-		const proxyType = parts[2]
-		const index = ctx.url.startsWith('/proxy') ? 3 : 2
-		let targetStr = decodeURIComponent(parts[index])
-		while (true) {
-			try {
-				new URL(targetStr)
-				break
-			} catch {
-				// TODO 不要过度 decodeURIComponent，需要检查下链接里的 % 是不是合规
-				if (targetStr.indexOf('%') >= 0) {
-					try {
-						targetStr = decodeURIComponent(targetStr)
-					} catch {
-						console.log(chalk.red('dddddddddddddddddd'))
-						console.log(targetStr)
+		let proxyType = 'all'
+		let url = ''
+		if (parts[1] !== 'proxy' && parts[1] !== 'public' && ctx.headers['referer']) {
+			url = new URL(decodeURIComponent(this.decodeUrl(ctx.headers['referer'].split('/proxy/all/')[1]))).origin + ctx.url
+		} else {
+			proxyType = parts[2]
+			const index = ctx.url.startsWith('/proxy') ? 3 : 2
+			let targetStr = decodeURIComponent(parts[index])
+			while (true) {
+				try {
+					new URL(targetStr)
+					break
+				} catch {
+					// TODO 不要过度 decodeURIComponent，需要检查下链接里的 % 是不是合规
+					if (targetStr.indexOf('%') >= 0) {
+						try {
+							targetStr = decodeURIComponent(targetStr)
+						} catch {
+							console.log(chalk.red('dddddddddddddddddd'))
+							console.log(targetStr)
+							return false
+						}
+					} else {
 						return false
 					}
-				} else {
-					return false
 				}
 			}
+			url = targetStr
+			if (parts.length > 4) {
+				url += '/' + parts.slice(4).join('/')
+			}
+			url = url.replaceAll('%25', '%')
 		}
-		let url = targetStr
-		if (parts.length > 4) {
-			url += '/' + parts.slice(4).join('/')
-		}
-		url = url.replaceAll('%25', '%')
 		const target = new URL(url)
 		// 这里需要使用 decodeURIComponent 多次的 targetStr 进行 encodeURIComponent
 		// 不能用 parts[3], 不然字符串里会出现多个 %25
-		let serviceHost = [this.config.site.pathname, proxyType, encodeURIComponent(targetStr)].join('/')
+		let serviceHost = [this.config.site.pathname, proxyType, encodeURIComponent(url)].join('/')
 		if (serviceHost.startsWith('//')) {
 			serviceHost = serviceHost.slice(1)
 		}
