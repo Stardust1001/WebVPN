@@ -45,6 +45,9 @@ class VPN extends WebVPN {
 			res.data = res.data.replace('ua.isiPhone=', 'ua.isiPhone=true||')
 			res.data = res.data.replace('$.qPlayer.isQQDomain=', '$.qPlayer.isQQDomain=true||')
 		}
+		if (ctx.meta.url.indexOf('.9ced5b8d.') > 0) {
+			res.data = res.data.replaceAll('children:"app.pangolin.exchange"', `children:"${this.config.site.hostname}"`)
+		}
 	}
 
 	// 处理无效链接
