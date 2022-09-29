@@ -816,6 +816,7 @@ class WebVPN {
 		}
 
 		url = this.escapeUrl(url)
+		url = url.replaceAll('./', '')
 
 		Object.assign(ctx.meta, {
 			url,
