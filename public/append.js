@@ -756,8 +756,8 @@
 	}
 
 	// ServiceWorkerContainer register 拦截
-	var register = ServiceWorkerContainer.prototype.register;
-	ServiceWorkerContainer.prototype.register = function (url, options) {
+	var register = window.ServiceWorkerContainer.prototype.register;
+	window.ServiceWorkerContainer.prototype.register = function (url, options) {
 		console.log(
 			'%cServiceWorkerContainer 操作 拦截 register : ' + url,
 			'color: #606666;background-color: #f56c6c;padding: 5px 10px;'

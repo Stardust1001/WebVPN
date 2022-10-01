@@ -583,7 +583,7 @@ class WebVPN {
 		})
 
 		// 要访问 location.hash host 等，让访问 window._location 的 hash host 等
-		data = data.replaceAll(/[\s,;\?:\{\(\|]location\.(hash|host|hostname|href|origin|pathname|port|protocol|search|assign|replace)/g, match => {
+		data = data.replaceAll(/[\s,;\?:\{\(\|=]location\.(hash|host|hostname|href|origin|pathname|port|protocol|search|assign|replace)/g, match => {
 			return match[0] + '_' + match.slice(1)
 		})
 
