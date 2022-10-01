@@ -630,7 +630,7 @@ class WebVPN {
 	}
 
 	appendScript (ctx, res) {
-		const { site, ajaxDomLog } = this.config
+		const { site, interceptLog } = this.config
 		const { disableJump = this.config.disableJump, confirmJump = this.config.confirmJump } = ctx.meta
 		const { proxyType, base, target } = ctx.meta
 		const { data } = res
@@ -647,7 +647,7 @@ class WebVPN {
 					targetUrl: '${target.href}',
 
 					proxyType: '${proxyType}',
-					ajaxDomLog: ${ajaxDomLog},
+					interceptLog: ${interceptLog},
 					disableJump: ${disableJump},
 					confirmJump: ${confirmJump}
 				};
