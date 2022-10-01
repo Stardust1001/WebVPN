@@ -945,7 +945,7 @@ class WebVPN {
 	}
 
 	decodeUrl (url) {
-		url = url.trim()
+		url = url ? url.trim() : ''
 		if (!url || url === '/') {
 			return url
 		}
