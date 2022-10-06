@@ -80,7 +80,7 @@
 		}
 		if (url.indexOf(vpnDomain) > 0) {
 			if (url.startsWith('http')) {
-				return url.replace('https', 'http')
+				return url.replace('https://', 'http://')
 			}
 			return url;
 		}

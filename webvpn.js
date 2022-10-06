@@ -580,6 +580,8 @@ class WebVPN {
 		if (acao && acao !== '*') {
 			const hostname = new URL(acao).hostname
 			headers['access-control-allow-origin'] = acao.replace(hostname, base32.encode(hostname) + this.config.vpnDomain)
+		} else {
+			headers['access-control-allow-origin'] = '*'
 		}
 		headers['content-type'] = headers['content-type'] || 'text/html'
 		return headers
