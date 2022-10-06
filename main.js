@@ -69,7 +69,7 @@ class VPN extends WebVPN {
 
 const config = {
 	// WebVPN 服务端口
-	port: 80,
+	port: 1001,
 	// WebVPN 服务网址，访问其他网站，都从这个网址进行转换
 	site: new URL('http://www.webvpn.com'),
 	// cluster 模式用几个进程（为了充分利用CPU核心数）
