@@ -1,13 +1,13 @@
 {
   "name": "WebVPN",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "WebVPN, proxy third-party website",
   "main": "index.js",
   "type": "module",
   "scripts": {
     "push": "git add . && git commit -m \"add\" && git push origin master",
     "pull": "git checkout . && git pull origin master",
-    "cloc": "cloc *.js public/append.js index.html"
+    "cloc": "cloc *.js public/index.html public/append.js"
   },
   "repository": {
     "type": "git",
@@ -16,6 +16,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "base32": "^0.0.7",
     "chalk": "^5.0.1",
     "iconv-lite": "^0.6.3",
     "koa": "^2.13.4",

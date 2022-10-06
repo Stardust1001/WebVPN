@@ -48,6 +48,7 @@
 <input type="text" id="output-url" placeholder="The above input will be automatically converted to the WebVPN service URL here">
 <div class="row button" id="goto">Goto</div>
 
+<script src="/public/base32.js"></script>
 <script>
 
 const urlInput = document.querySelector('#input-url')
@@ -59,24 +60,14 @@ urlInput.addEventListener('change', () => {
 	if (!/\w+\.\w+/.test(url)) {
 		return
 	}
-	if (url.indexOf('http') < 0 && url.indexOf('ptth') < 0) {
+	if (url.indexOf('http') < 0) {
 		if (url.split('.').length === 1) {
 			url = 'www.' + url + '.com'
 		}
 		url = 'https://' + url
 	}
-	if (url.endsWith('ptth')) {
-		if (url.startsWith('http')) {
-			const { pathname } = new URL(url)
-			url = pathname.split('/').slice(3).join('/')
-		}
-		url = reverseUrl(decodeURIComponent(url))
-		while (true) {
-			if (url.startsWith('http:') || url.startsWith('https:')) {
-				break
-			}
-			url = decodeURIComponent(url)
-		}
+	if (url.indexOf(location.hostname.replace('www', '')) > 0) {
+		url = decodeUrl(url)
 	} else {
 		url = transformUrl(url)
 	}
@@ -93,30 +84,16 @@ button.addEventListener('click', () => {
 	window.open(outputInput.value)
 })
 
-function reverseUrl (url) {
-	return url.split('').reverse().join('')
+function transformUrl (url) {
+	const { hostname, pathname, search } = new URL(url)
+	const subdomain = base32.encode(hostname).replaceAll('=', '')
+	return location.origin.replace('www', subdomain) + pathname + search
 }
 
-function transformUrl (url) {
-	const { hostname, pathname, origin, protocol } = window.location
-	const site = origin + '/proxy'
-	const proxyType = pathname.split('/')[2] || 'all'
-
-	url = url.trim()
-	if (url.startsWith(site)) {
-		return url
-	}
-	if (url.startsWith('/proxy/')) {
-		return origin + url
-	}
-	if (url.startsWith('//')) {
-		url = protocol + url;
-	}
-	if (!url.startsWith('http')) {
-		url = origin + url;
-	}
-	var encodeUrl = encodeURIComponent(reverseUrl(url))
-	return origin + '/proxy/' + proxyType + '/' + encodeUrl
+function decodeUrl (url) {
+	const { hostname, pathname, search } = new URL(url)
+	const subdomain = hostname.split('.')[0]
+	return 'https://' + base32.decode(subdomain) + pathname + search
 }
 
 </script>

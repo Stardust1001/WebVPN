@@ -8,6 +8,7 @@ import Koa from 'koa'
 import bodyParser from 'koa-bodyparser'
 import fetch from 'node-fetch'
 import iconv from 'iconv-lite'
+import base32 from 'base32'
 
 import { fsUtils } from './utils.js'
 
@@ -16,6 +17,7 @@ const httpsAgent = new https.Agent({ rejectUnauthorized: false })
 class WebVPN {
 	constructor (config) {
 		process.env.NODE_TLS_REJECT_UNAUTHORIZED = config.NODE_TLS_REJECT_UNAUTHORIZED || 0
+		config.vpnDomain = config.site.hostname.replace('www', '')
 		this.config = config
 		this.mimes = ['json', 'js', 'css', 'html', 'image', 'video', 'audio']
 		this.mimeRegs = [
@@ -25,7 +27,7 @@ class WebVPN {
 			[/\.(png|jpg|ico|svg|gif|webp|jpeg)/, 'image'],
 			[/\.(mp4|m3u8|ts|flv)[^a-zA-Z]/, 'video'],
 			[/\.(mp3|wav|ogg)/, 'audio'],
-			[/\.(html|php|do|asp|htm)/, 'html'],
+			[/\.(html|php|do|asp|htm|shtml)/, 'html'],
 			[/\.(ttf|eot|woff|woff2)/, 'font'],
 			[/\.pdf/, 'pdf'],
 			[/\.(doc|docx)/, 'doc'],
@@ -49,7 +51,6 @@ class WebVPN {
 			/report-to/i,
 			/(content-length|x-content-type-options|x-xss-protection|x-frame-options)/i,
 		]
-		this.ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:']
 
 		this.noTransformMimes = ['font', 'json', 'image', 'video', 'audio', 'pdf']
 		this.cacheMimes = ['js', 'css', 'font', 'image', 'video', 'audio', 'pdf']
@@ -84,36 +85,40 @@ class WebVPN {
 		}
 	}
 
+	async serveWww (ctx) {
+		if (ctx.url === '/') {
+			await this.respondFile(ctx, path.join('public', 'index.html'))
+		} else {
+			await this.checkPublic(ctx)
+		}
+	}
+
 	async checkPublic (ctx) {
 		const parts = ctx.url.split('/public/')
 		let filepath = parts[1] && path.join('public', parts[1]) || ''
 		filepath = filepath.split('?')[0]
 
-		if (ctx.url.split('/').every(part => ['', 'proxy', 'all', 'single'].includes(part))) {
-			filepath = path.join('public', 'index.html')
-		}
-
 		if (this.public.includes(filepath)) {
-			ctx.body = await fsUtils.read(filepath)
+			await this.respondFile(ctx, filepath)
 			return true
 		}
 		return false
 	}
 
-	getCache (ctx) {
+	async getCache (ctx) {
 		const { hostname, pathname } = ctx.meta.target
 		const filename = encodeURIComponent(pathname)
 		if (!this.caches[hostname] || !this.caches[hostname].includes(filename)) {
 			return null
 		}
-		return fs.createReadStream(path.join(this.cacheDir, hostname, filename))
+		await this.respondFile(ctx, path.join(this.cacheDir, hostname, filename))
+		return true
 	}
 
 	async setCache (ctx, res) {
 		if (
 			!this.config.cache
 			|| !this.cacheMimes.includes(ctx.meta.mime)
-			// || typeof res.data !== 'string'
 			|| !res.data
 			|| ctx.meta.cache === false
 		) {
@@ -125,8 +130,7 @@ class WebVPN {
 		if (!await fsUtils.exists(dir)) {
 			await fsUtils.mkdir(dir)
 		}
-		const filepath = path.join(dir, encodeURIComponent(pathname))
-		await fsUtils.write(filepath, res.data)
+		await fsUtils.write(path.join(dir, encodeURIComponent(pathname)), res.data)
 	}
 
 	fork () {
@@ -153,12 +157,10 @@ class WebVPN {
 	}
 
 	async proxyRoute (ctx, next) {
-		if (
-			/^\/favicon.*\.(ico|png)$/.test(ctx.url) ||
-			ctx.url.endsWith('.js.map') ||
-			ctx.url.endsWith('.js.sourcemap')
-		) {
-			return
+		ctx.subdomain = ctx.headers['host'].split('.')[0]
+
+		if (ctx.subdomain === 'www') {
+			return await this.serveWww(ctx)
 		}
 
 		const isPublic = await this.checkPublic(ctx)
@@ -168,28 +170,11 @@ class WebVPN {
 
 		this.routeInit(ctx)
 
-		if (!ctx.meta.url) {
-			const err = 'Invalid proxy target : ' + ctx.url
-			if (this.checkLogUrlError(ctx)) {
-				console.log(chalk.red(err) + '\n')
-			}
-			ctx.body = err
-			return
-		}
-
-		if (this.config.cache && ctx.meta.target && ctx.meta.cache !== false) {
-			const stream = this.getCache(ctx)
-			if (stream) {
-				ctx.res.writeHead(200)
-				await new Promise(resolve => {
-					stream.pipe(ctx.res)
-					stream.on('end', resolve)
-				})
+		if (this.config.cache && ctx.meta.cache !== false) {
+			if (await this.getCache(ctx)) {
 				return
 			}
 		}
-
-		this.processCookies(ctx)
 
 		if (await this.beforeRequest(ctx)) {
 			return
@@ -206,6 +191,7 @@ class WebVPN {
 			ctx.body = err
 			return
 		}
+
 		this.deleteIgnoreHeaders(this.ignoreResponseHeaderRegexps, res.headers)
 		Object.keys(res.headers).forEach(key => ctx.set(key, res.headers[key]))
 
@@ -214,43 +200,22 @@ class WebVPN {
 			return
 		}
 
-		if (ctx.meta.done) {
-			this.setCache(ctx, res)
+		if (!ctx.meta.done && (await this.afterRequest(ctx, res))) {
 			return
 		}
 
-		if (await this.afterRequest(ctx, res)) {
-			return
-		}
-
-		if (ctx.meta.done) {
-			this.setCache(ctx, res)
-			return
-		}
-
-		if (this.shouldReplaceUrls(ctx, res)) {
+		if (!ctx.meta.done && this.shouldReplaceUrls(ctx, res)) {
 			this.replaceUrls(ctx, res)
 			if (ctx.meta.mime === 'html') {
 				res.data = this.appendScript(ctx, res)
 			}
 		}
-		if (ctx.meta.done) {
-			this.setCache(ctx, res)
-			return
+
+		if (!ctx.meta.done) {
+			this.processOthers(ctx, res)
 		}
 
-		this.processOthers(ctx, res)
-		if (ctx.meta.done) {
-			this.setCache(ctx, res)
-			return
-		}
-
-		if (ctx.meta.done) {
-			this.setCache(ctx, res)
-			return
-		}
-
-		if (await this.beforeResponse(ctx, res)) {
+		if (!ctx.meta.done && (await this.beforeResponse(ctx, res))) {
 			return
 		}
 
@@ -260,16 +225,25 @@ class WebVPN {
 	}
 
 	routeInit (ctx) {
-		ctx.meta = {}
-		ctx.meta.suffixMime = this.getSuffixMime(ctx)
-		this.initCtxUrl(ctx)
-		const ok = this.initUrlMeta(ctx)
-		if (!ok) {
-			if (this.processInvalidUrl(ctx)) {
-				this.initCtxUrl(ctx)
-				this.initUrlMeta(ctx)
-			}
+		const url = 'https://' + base32.decode(ctx.subdomain) + ctx.url
+
+		ctx.meta = {
+			url,
+			mime: this.getResponseType(ctx, url),
+			target:  new URL(url),
+			host: ctx.headers['host'],
+			origin: ctx.headers['origin'],
+			referer: ctx.headers['referer']
 		}
+	}
+
+	async respondFile (ctx, filepath) {
+		ctx.res.writeHead(200)
+		const stream = fs.createReadStream(filepath)
+		await new Promise(resolve => {
+			stream.pipe(ctx.res)
+			stream.on('end', resolve)
+		})
 	}
 
 	async respondPipe (ctx) {
@@ -296,7 +270,6 @@ class WebVPN {
 		if (isHttps) {
 			options.agent = httpsAgent
 		}
-
 		await new Promise(resolve => {
 			const lib = isHttps ? https : http
 			const func = method === 'get' ? lib.get : lib.request
@@ -318,15 +291,11 @@ class WebVPN {
 		if (ctx.meta.userAgent) {
 			header['user-agent'] = ctx.meta.userAgent
 		}
-		// const isHttps = ctx.meta.target.protocol.startsWith('https')
 		const options = {
 			method,
 			headers: header,
 			...this.getRequestConfig(ctx)
 		}
-		// if (isHttps) {
-		// 	options.agent = httpsAgent
-		// }
 		if (method === 'POST') {
 			options.body = this.processRequestBody(ctx)
 		}
@@ -402,9 +371,6 @@ class WebVPN {
 		if (['html', 'css'].includes(mime)) {
 			matches.push(...this.getCssUrlMatches(ctx, res))
 		}
-		if (['html', 'js'].includes(mime)) {
-			matches.push(...this.getImportUrlMatches(ctx, res))
-		}
 		res.data = this.replaceMatches(ctx, res, matches)
 
 		if (['html', 'js'].includes(mime)) {
@@ -429,134 +395,37 @@ class WebVPN {
 	}
 
 	getHtmlLinkMatches (ctx, res) {
-		// 替换 href src action srcset poster 链接
-		// 前面加上 \s-，只匹配 html 元素里的 src=，不匹配如 a.src= 之类的 js 或其他代码，- 是为了 data-src 之类的属性
-		// 2022-06-25 更新，在 http 后面加了 ?，为了匹配 href="css/index.css" 之类的直接同目录路径
-		const regexp = /[\s-](href|src|action|srcset|poster)=(\"|\')?(\.|\/|http)?[^\s\>]*/g
-		return this.getRegExpMatches(ctx, res, regexp, (match) => {
-			let index = 0
-			let symbol = ''
-			const symbols = ['\'', '"', '=']
-			for (let ele of symbols) {
-				const i = match.indexOf(ele)
-				if (i >= 0) {
-					index = i
-					symbol = ele
-					break
-				}
-			}
-			return [match, index, symbol]
-		})
+		return [...new Set(res.data.match(/\s(href|src|action|srcset|poster)=(\"|\')?(http|\/\/)[^\s\>]*/g))]
 	}
 
 	getCssUrlMatches (ctx, res) {
-		// 替换 url( 链接
-		const urlMatches = this.getRegExpMatches(ctx, res, /url\([\"\']?[^\"\')]+/g, (match) => {
-			const symbol = match.indexOf('"') > 0 ? '"' : (match.indexOf('\'') > 0 ? '\'' : '')
-			const index = symbol ? match.indexOf(symbol) : match.indexOf('(')
-			return [match, index, symbol]
-		})
-		// 替换 @import 链接
-		const importMatches = this.getRegExpMatches(ctx, res, /@import\s[\"\'][^\"\']+/g, (match) => {
-			const symbol = match.indexOf('"') > 0 ? '"' : '\''
-			const index = match.indexOf(symbol)
-			return [match, index, symbol]
-		})
-		return [...urlMatches, ...importMatches]
-	}
-
-	getImportUrlMatches (ctx, res) {
-		// 替换 import 的链接
-		const regexps = [
-			// import ... from
-			/import[A-Za-z0-9\$\_\{\}\s,]+from\s*[\"\'][^\"\']+/g,
-			// import(...)
-			/import\s*\([\"\'][^\"\']+/g,
-			// \s; import "|'  这是单单的 import"./1.js" import "2.js" 形式的导入
-			// 避免匹配到无关的字符串，前面加上 \s; 匹配，表明这是一个以 import 开头的导入
-			// 后面匹配 ,; 并且是 + 而非 * 模式，因为要去除 "... import",; 字符串的情况
-			// 但并不完美，有问题再看看处理
-			/[\s;]import\s*[\"\'][^\"\',;\)]+/g,
-			// 以 import"./1.js" import"2.js" 直接开头的形式
-			/^import\s*[\"\'][^\"\',;\)]+/g,
+		return [
+			...new Set(res.data.match(/url\([\"\']?(http|\/\/)[^\"\')]+/g)),
+			...new Set(res.data.match(/@import\s[\"\'](http|\/\/)[^\"\']+/g))
 		]
-		const handler = (match) => {
-			match = match.split(')')[0]
-			let index = 0
-			let symbol = ''
-			const symbols = ['\'', '"']
-			for (let ele of symbols) {
-				const i = match.indexOf(ele)
-				if (i >= 0) {
-					index = i
-					symbol = ele
-					break
-				}
-			}
-			return [match, index, symbol]
-		}
-		return regexps.reduce((all, regexp) => {
-			const matches = this.getRegExpMatches(ctx, res, regexp, handler)
-			return all.concat(matches)
-		}, [])
-	}
-
-	getRegExpMatches (ctx, res, regexp, handler) {
-		let matches = res.data.match(regexp) || []
-		matches = this.processMatches(ctx, res, matches)
-		return Array.from(new Set(matches)).map(handler)
-	}
-
-	processMatches (ctx, res, matches) {
-		return matches.filter(match => {
-			const url = this.getMatchUrl(match).trim()
-			// 排除空链接
-			if (!url) {
-				return false
-			}
-			// 排除根链接
-			if (url === '/') {
-				return false
-			}
-			// 清除无效协议链接
-			if (this.ignoredPrefixes.some(prefix => url.indexOf(prefix) >= 0)) {
-				return false
-			}
-			if (ctx.meta.proxyType === 'single') {
-				// 排除 外部域名 链接
-				if (url.indexOf('//') >= 0 && url.split('//')[1].split('/')[0] !== ctx.meta.target.hostname) {
-					return false
-				}
-			}
-			return true
-		}).map(match => {
-			const parts = match.split(/(\"|\')/)
-			if (parts.length > 4) {
-				return parts.slice(0, 3).join('')
-			}
-			return match
-		})
 	}
 
 	replaceMatches (ctx, res, matches) {
-		const set = new Set()
-		const uniqueMatches = []
-		matches.forEach(item => {
-			if (!set.has(item[0])) {
-				set.add(item[0])
-				uniqueMatches.push(item)
+		const { vpnDomain } = this.config
+		const dict = {}
+		matches.filter(m => m.indexOf(vpnDomain) < 0).forEach(match => {
+			let url = ''
+			let prefix = ''
+			if (match.slice(0, match.indexOf('//')).indexOf('http') >= 0) {
+				url = match.slice(match.indexOf('http'), -1)
+				prefix = match.indexOf('https') > 0 ? 'https://' : 'http://'
+			} else {
+				url = 'https:' + match.slice(match.indexOf('//'), -1)
+				prefix = '//'
 			}
+			const { hostname } = new URL(url)
+			const source = prefix + hostname
+			const desti = prefix.replace('https', 'http') + base32.encode(hostname) + vpnDomain
+			dict[source] = desti
 		})
-		uniqueMatches.sort((a, b) => b[0].length - a[0].length)
-		uniqueMatches.forEach(item => {
-			const [match, index, symbol] = item
-			const source = match[index] === '(' ? match.slice(index + 1) : match.slice(index)
-			if (!source.length) {
-				return
-			}
-			const desti = this.getUrlReplacement(ctx, res, item)
-			const newStr = match.replace(source, symbol + desti)
-			res.data = res.data.replaceAll(match, newStr)
+		Object.entries(dict).sort((a, b) => b[0].length - a[0].length).forEach(ele => {
+			const [key, value] = ele
+			res.data = res.data.replaceAll(key, value)
 		})
 		return res.data
 	}
@@ -582,13 +451,12 @@ class WebVPN {
 			return match[0] + 'window._location'
 		})
 
-		// 要访问 location.hash host 等，让访问 window._location 的 hash host 等
-		data = data.replaceAll(/[\s,;\?:\{\(\|=]location\.(hash|host|hostname|href|origin|pathname|port|protocol|search|assign|replace)/g, match => {
+		// 要访问 location.host 等，让访问 window._location 的 host 等
+		data = data.replaceAll(/[\s,;\?:\{\(\|=]location\.(host|hostname|href|origin|port|protocol|assign|replace)/g, match => {
 			return match[0] + '_' + match.slice(1)
 		})
 
 		data = data.replaceAll(/window\.navigate\(/g, 'window._navigate(')
-		data = data.replaceAll(/document\.cookie/g, 'document._cookie')
 		return data
 	}
 
@@ -632,7 +500,7 @@ class WebVPN {
 	appendScript (ctx, res) {
 		const { site, interceptLog } = this.config
 		const { disableJump = this.config.disableJump, confirmJump = this.config.confirmJump } = ctx.meta
-		const { proxyType, base, target } = ctx.meta
+		const { base, target } = ctx.meta
 		const { data } = res
 		const code = `
 		<script>
@@ -641,12 +509,10 @@ class WebVPN {
 					site: '${site.href}',
 					siteHostname: '${site.hostname}',
 					siteOrigin: '${site.origin}',
-					sitePathname: '${site.pathname}',
 					base: '${base}',
 
 					targetUrl: '${target.href}',
 
-					proxyType: '${proxyType}',
 					interceptLog: ${interceptLog},
 					disableJump: ${disableJump},
 					confirmJump: ${confirmJump}
@@ -657,87 +523,11 @@ class WebVPN {
 		</script>
 		<script src="${site.origin}/public/htmlparser.js"></script>
 		<script src="${site.origin}/public/html2json.js"></script>
+		<script src="${site.origin}/public/base32.js"></script>
 		<script src="${site.origin}/public/append.js"></script>
 		${ctx.meta.appendScriptCode || ''}
 		`
 		return code + data
-	}
-
-	getUrlReplacement (ctx, res, item) {
-		const [match, index, symbol] = item
-		const { site } = this.config
-		const { base, serviceHost, serviceBase, isUrlReversed, target, proxyType } = ctx.meta
-		const source = match.slice(index)
-		let suffix = match.slice(index + 1)
-		if (suffix.indexOf('&amp;') >= 0) {
-			suffix = suffix.replaceAll('&amp;', '&')
-		}
-		if (suffix.indexOf('&#x') >= 0) {
-			suffix = unescape(suffix.replaceAll('&#x', '%').replaceAll(';', ''))
-		}
-		suffix = suffix.replaceAll(/\\\//g, '/')
-
-		if (suffix.startsWith('//')) {
-			suffix = target.protocol + suffix
-		}
-
-		let isValidUrl = suffix.startsWith('http')
-
-		suffix = suffix.replace(/^\.\//, '').replaceAll(/\/\.\//g, '')
-		if (!isValidUrl) {
-			const { origin, pathname } = ctx.meta.target
-			if (suffix[0] === '/') {
-				suffix = origin + suffix
-			} else {
-				suffix = origin + base + suffix
-			}
-			isValidUrl = true
-		}
-		if (suffix.indexOf('../') > 0) {
-			suffix = new URL(suffix).href
-		}
-
-		let desti = (suffix[0] === '/' ? serviceHost : (serviceBase + '/')) + suffix
-
-		if (isValidUrl) {
-			let u = null
-			try {
-				u = new URL(suffix)
-			} catch {
-				console.log(chalk.red('eeeeeeeeeeeeeeeeee'))
-				console.log(match)
-				return match
-			}
-			if (proxyType === 'single' && target.hostname !== u.hostname) {
-				return source
-			}
-			desti = site.pathname + '/' + proxyType + '/'
-			if (isUrlReversed) {
-				desti += u.origin
-			} else {
-				desti += encodeURIComponent(u.origin)
-			}
-			desti += suffix.slice(u.origin.length).replace('%22', '"')
-		}
-
-		if (isUrlReversed) {
-			const quotationMarks = `'"`
-			const qm = quotationMarks[quotationMarks.indexOf(source.slice(-1))] || ''
-			if (qm) {
-				desti = desti.slice(0, -1)
-			}
-			desti = desti.replaceAll('%', '%25')
-			desti = this.encodeReplacementUrl(desti) + qm
-		}
-		return desti
-	}
-
-	encodeReplacementUrl (url) {
-		const parts = url.split('/')
-		const index = url.startsWith('/proxy/') && 3 || 5
-		const prefix = parts.slice(0, index).join('/')
-		const suffix = this.encodeUrl(parts.slice(index).join('/'))
-		return prefix + (suffix ? ('/' + suffix) : '')
 	}
 
 	processOthers (ctx, res) {
@@ -746,118 +536,12 @@ class WebVPN {
 		}
 	}
 
-	getSuffixMime (ctx) {
-		return this.mimes.find(mime => ctx.url.endsWith('??' + mime))
-	}
-
-	initCtxUrl (ctx) {
-		const parts = ctx.url.split('?')
-		if (parts[0].indexOf('ptth') > 0) {
-			ctx.meta.isUrlReversed = true
-			ctx.url = this.decodeCtxUrl(parts[0])
-			if (parts[1]) {
-			 	ctx.url += '?' + parts[1]
-			}
-		} else {
-			ctx.meta.isUrlReversed = false
-		}
-		ctx.url = ctx.url.replaceAll(/\\\//g, '/')
-		if (ctx.meta.suffixMime) {
-			ctx.url = ctx.url.slice(0, -(ctx.meta.suffixMime.length + 2))
-		}
-	}
-
-	initUrlMeta (ctx) {
-		const parts = ctx.url.split('/')
-		let proxyType = 'all'
-		let url = ''
-		if (parts[1] !== 'proxy' && parts[1] !== 'public' && ctx.headers['referer']) {
-			url = new URL(decodeURIComponent(this.decodeUrl(ctx.headers['referer'].split('/proxy/all/')[1]))).origin + ctx.url
-		} else {
-			proxyType = parts[2]
-			const index = ctx.url.startsWith('/proxy') ? 3 : 2
-			let targetStr = decodeURIComponent(parts[index])
-			while (true) {
-				try {
-					new URL(targetStr)
-					break
-				} catch {
-					// TODO 不要过度 decodeURIComponent，需要检查下链接里的 % 是不是合规
-					if (targetStr.indexOf('%') >= 0) {
-						try {
-							targetStr = decodeURIComponent(targetStr)
-						} catch {
-							console.log(chalk.red('dddddddddddddddddd'))
-							console.log(targetStr)
-							return false
-						}
-					} else {
-						return false
-					}
-				}
-			}
-			url = targetStr
-			if (parts.length > 4) {
-				url += '/' + parts.slice(4).join('/')
-			}
-			url = url.replaceAll('%25', '%')
-		}
-		const target = new URL(url)
-		// 这里需要使用 decodeURIComponent 多次的 targetStr 进行 encodeURIComponent
-		// 不能用 parts[3], 不然字符串里会出现多个 %25
-		let serviceHost = [this.config.site.pathname, proxyType, encodeURIComponent(url)].join('/')
-		if (serviceHost.startsWith('//')) {
-			serviceHost = serviceHost.slice(1)
-		}
-		let serviceBase = serviceHost
-		const pathnameParts = target.pathname.split('/')
-		if (pathnameParts.length >= 3) {
-			serviceBase = [serviceHost, ...pathnameParts.slice(1, -1)].join('/')
-		}
-
-		url = this.escapeUrl(url)
-		url = url.replaceAll('./', '')
-
-		Object.assign(ctx.meta, {
-			url,
-			mime: ctx.meta.suffixMime || this.getResponseType(ctx, url),
-			proxyType,
-			serviceHost,
-			serviceBase,
-			target
-		})
-
-		return true
-	}
-
 	setRedirectedUrlMeta (ctx, url) {
-		const target = new URL(url)
-		const serviceHost = [this.config.site.pathname, ctx.meta.proxyType, encodeURIComponent(target.origin)].join('/')
-		let serviceBase = serviceHost
-		const pathnameParts = target.pathname.split('/')
-		if (pathnameParts.length >= 3) {
-			serviceBase = [serviceHost, ...pathnameParts.slice(1, -1)].join('/')
-		}
 		Object.assign(ctx.meta, {
 			url,
-			mime: ctx.meta.suffixMime || this.getResponseType(ctx, url),
-			serviceHost,
-			serviceBase,
-			target
+			mime: this.getResponseType(ctx, url),
+			target: new URL(url)
 		})
-	}
-
-	escapeUrl (url) {
-		if (/[\u0100-\uffff]/.test(url)) {
-			return encodeURI(url)
-		}
-		const chars = ' <>{}|\\^~[]‘@$'
-		for (let char of chars) {
-			if (url.indexOf(char) >= 0) {
-				return encodeURI(url)
-			}
-		}
-		return url
 	}
 
 	getResponseType (ctx, url) {
@@ -872,18 +556,6 @@ class WebVPN {
 			return 'html'
 		}
 		return 'text'
-	}
-
-	processCookies (ctx) {
-		const cookie = ctx.headers['cookie']
-		if (!cookie) {
-			return
-		}
-		const { hostname } = ctx.meta.target
-		const kvs = cookie.split('; ').filter(kv => {
-			return kv.startsWith(hostname)
-		}).map(kv => kv.slice(hostname.length + 2))
-		ctx.headers['cookie'] = kvs.join('; ')
 	}
 
 	getRequestConfig (ctx) {
@@ -901,17 +573,13 @@ class WebVPN {
 			for (let key of keys) {
 				headers[key] = res.headers.get(key)
 			}
-			headers['set-cookie'] = res.headers.getAll('set-cookie')
 		} else {
 			headers = res.headers
-			headers['set-cookie'] = headers['set-cookie'] || []
 		}
-		const { hostname } = ctx.meta.target
-		headers['set-cookie'] = headers['set-cookie'].map(cookie => {
-			return hostname + '::' + cookie.replace(/HttpOnly/i, '')
-		})
-		if (headers['access-control-allow-origin'] && headers['access-control-allow-origin'] !== '*') {
-			headers['access-control-allow-origin'] = this.config.site.origin
+		const acao = headers['access-control-allow-origin']
+		if (acao && acao !== '*') {
+			const hostname = new URL(acao).hostname
+			headers['access-control-allow-origin'] = acao.replace(hostname, base32.encode(hostname) + this.config.vpnDomain)
 		}
 		headers['content-type'] = headers['content-type'] || 'text/html'
 		return headers
@@ -931,64 +599,26 @@ class WebVPN {
 		return mime
 	}
 
-	encodeUrl (url) {
-		return encodeURIComponent(this.reverseText(url))
-	}
-
-	decodeCtxUrl (url) {
-		const index = url.startsWith('/proxy') ? 3 : 2
-		const parts = url.split('/')
-		const prefix = parts.slice(0, index).join('/')
-		const isEncoded = url.indexOf('//') < 0
-		const suffix = this.decodeUrl(parts.slice(index).join(isEncoded ? '' : '/'))
-		return prefix + '/' + suffix
-	}
-
-	decodeUrl (url) {
-		url = url ? url.trim() : ''
-		if (!url || url === '/') {
-			return url
-		}
-		url = decodeURIComponent(url)
-		if (url.endsWith('ptth')) {
-			url = this.reverseText(url)
-		} else {
-			const [prefix, suffix] = url.split('ptth')
-			url = this.reverseText(prefix + 'ptth') + suffix
-		}
-		let u = null
-		try {
-			u = new URL(url)
-		} catch {
-			return url
-		}
-		return encodeURIComponent(u.origin) + url.slice(u.origin.length)
-	}
-
-	getMatchUrl (match) {
-		if (match.startsWith('http')) {
-			return match
-		}
-		let parts = match.split(/('|")/)
-		if (parts.length > 1) {
-			return parts[2]
-		}
-		parts = match.split('(')
-		if (parts.length > 1) {
-			return parts[1]
-		}
-		return match
-	}
-
-	checkLogUrlError (ctx) {
-		let ok = !/\.(min|js|css)?.*\.map/.test(ctx.url)
-		ok = ok && ctx.url !== '/favicon.ico'
-		return ok
-	}
-
 	setOriginHeaders (ctx, headers) {
-		const { host, origin, href } = ctx.meta.target
-		Object.assign(headers, { host, origin, referer: href })
+		if (headers['host']) {
+			headers['host'] = this.convertHostname(headers['host'])
+		}
+		if (headers['origin']) {
+			const hostname = new URL(headers['origin']).hostname
+			headers['origin'] = headers['origin'].replace(hostname, this.convertHostname(hostname))
+		}
+		if (headers['referer']) {
+			if (headers['referer'].indexOf(this.config.vpnDomain) < 0) {
+				delete headers['referer']
+			} else {
+				const hostname = new URL(headers['referer']).hostname
+				headers['referer'] = headers['referer'].replace(hostname, this.convertHostname(hostname))
+			}
+		}
+	}
+
+	convertHostname (hostname) {
+		return base32.decode(hostname.split('.')[0])
 	}
 
 	async convertCharsetData (ctx, headers, res) {
@@ -1050,10 +680,6 @@ class WebVPN {
 		}
 	}
 
-	processInvalidUrl (ctx) {
-		return false
-	}
-
 	shouldReplaceUrls (ctx, res) {
 		return true
 	}
@@ -1077,10 +703,6 @@ class WebVPN {
 
 	isChinese (text) {
 		return /[\u4e00-\u9fa5]/.test(text)
-	}
-
-	reverseText (text) {
-		return text.split('').reverse().join('')
 	}
 
 	convertChinease (text) {

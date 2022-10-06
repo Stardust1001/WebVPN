@@ -50,11 +50,6 @@ class VPN extends WebVPN {
 		}
 	}
 
-	// 处理无效链接
-	processInvalidUrl (ctx) {
-		return false
-	}
-
 	// 是否要替换这个 res 响应里的链接
 	shouldReplaceUrls (ctx, res) {
 		return true
@@ -80,7 +75,7 @@ const config = {
 	// cluster 模式用几个进程（为了充分利用CPU核心数）
 	numProcesses: 4,
 	// 是否启用缓存，会把静态资源缓存到本地文件夹以加速后续的网站访问
-	cache: true,
+	cache: false,
 	// 缓存文件夹地址
 	cacheDir: 'cache',
 	// 是否在浏览器控制台打印拦截操作的日志

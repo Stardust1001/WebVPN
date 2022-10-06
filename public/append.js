@@ -9,17 +9,15 @@
 	var site = window.webvpn.site;
 	var siteHostname = window.webvpn.siteHostname;
 	var siteOrigin = window.webvpn.siteOrigin;
-	var sitePathname = window.webvpn.sitePathname;
 	var base = window.webvpn.base;
+	var vpnDomain = new URL(site).hostname.replace('www', '');
 
 	var targetUrl = window.webvpn.targetUrl;
 	var target = new URL(targetUrl);
 
-	var proxyType = window.webvpn.proxyType;
 	var interceptLog = window.webvpn.interceptLog;
 	var disableJump = window.webvpn.disableJump;
 	var confirmJump = window.webvpn.confirmJump;
-	var pathDir = target.pathname.endsWith('/') ? target.pathname : (target.pathname.split('/').slice(0, -1).join('/') + '/');
 
 	var linkTags = ['a', 'img', 'script', 'link', 'video', 'audio', 'source', 'iframe', 'form', 'embed', 'object'];
 	var urlAttrs = ['href', 'src', 'srcset', 'poster', 'action', 'data', 'codebase'];
@@ -76,84 +74,40 @@
 	var ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:'];
 
 	function transformUrl (url) {
-		if (url == null) {
+		url = (url || '').trim();
+		if (!url || url.split('?')[0].indexOf('//') < 0) {
 			return url;
 		}
-		url = url.toString().trim();
+		if (url.indexOf(vpnDomain) > 0) {
+			if (url.startsWith('http')) {
+				return url.replace('https', 'http')
+			}
+			return url;
+		}
 		for (var prefix of ignoredPrefixes) {
-			if (url.startsWith(prefix)) {
+			if (url.indexOf(prefix) >= 0) {
 				return url;
-			}
-		}
-		if (url.startsWith('http')) {
-			var u = null;
-			try {
-				u = new URL(url);
-			} catch {
-				console.log('%c 链接转换错误：' + url, 'background-color: red; color: white; padding: 5px 10px;');
-				return url;
-			}
-			if (u.hostname === siteHostname) {
-				if (url.startsWith(siteOrigin + '/public/')) {
-					return url;
-				} else if (url.startsWith(siteOrigin + '/proxy/')) {
-					var path = url.split('/proxy/' + proxyType + '/')[1];
-					if (path.indexOf('%3Aptth') > 0 || path.indexOf('%3Asptth') > 0) {
-						return url;
-					}
-					url = target.origin + pathDir + path;
-				}
-			}
-		}
-		if (url.startsWith('/proxy/')) {
-			if (url.endsWith('ptth')) {
-				return url;
-			} else {
-				url = url.split('/').slice(3).join('/');
-				url = decodeURIComponent(url);
-				var parts = url.split('ptth');
-				if (parts[1][0] === '/') {
-					parts[1] = parts[1].slice(1);
-				}
-				url = reverseText(parts[0] + 'ptth') + parts[1];
 			}
 		}
 		if (url.startsWith('//')) {
-			url = target.protocol + url;
+			url = 'https:' + url;
 		}
-		if (!url.startsWith('http')) {
-			url = url[0] === '/' ? (target.origin + url) : (target.origin + pathDir + url);
-		}
-		var encodeUrl = encodeURIComponent(reverseText(url));
-		return sitePathname + '/' + proxyType + (url[0] === '/' ? '' : '/') + encodeUrl;
+		var u = new URL(url);
+		var subdomain = window.base32.encode(u.hostname);
+		return siteOrigin.replace('www', subdomain) + u.pathname + u.search;
 	}
 
 	function decodeUrl (url) {
-		url = url ? url.trim() : '';
-		if (!url || url === '/') return url;
-		if (url.startsWith(siteOrigin)) {
-			try {
-				url = new URL(url).pathname;
-			} catch {
-				return url;
-			}
-		}
-		if (url.startsWith('/public/')) {
+		url = (url || '').trim();
+		if (!url) {
 			return url;
 		}
-		url = url.split('/').slice(3).join('/');
-		url = decodeURIComponent(url);
-		if (url.endsWith('ptth')) {
-			url = reverseText(url);
-		} else if (url.indexOf('ptth') > 0) {
-			var parts = url.split('ptth');
-			if (parts[1][0] === '/') {
-				parts[1] = parts[1].slice(1);
-			}
-			url = reverseText(parts[0] + 'ptth') + parts[1];
+		if (url.split('?')[0].indexOf('http') < 0) {
+			return window.location.origin + url;
 		}
-		url = url.split(' ')[0];
-		return url;
+		var u = new URL(url);
+		var hostname = window.base32.decode(u.hostname.split('.')[0]);
+		return window.location.protocol + '//' + hostname + u.pathname + u.search;
 	}
 
 	function transformArgumentsNodes (nodes, funcName) {
@@ -243,22 +197,6 @@
 			if (!node.getAttribute(attr, type) && node.dataset[attr]) {
 				node.setAttribute(attr, node.dataset[attr], type);
 			}
-			var href = node.getAttribute('href', type);
-			// 有的网站里面代码生成的链接，原本该是 javascript:func()，因为各种原因，生成了 Http 链接并以 /proxy/ 开头
-			if (node.node_name === 'a' && href && href.indexOf('%3Atpircsavaj') > 0) {
-				if (href.indexOf('%3B%3Atpircsavaj') > 0) {
-					node.setAttribute('href', 'javascript:;', type);
-					return ;
-				}
-				if (href.indexOf('(') < 0) {
-					node.setAttribute('href', 'javascript:;', type);
-					return ;
-				}
-				href = href.split('(')[1].split(')')[0];
-				var parts = href.indexOf('%25ptth') > 0 ? href.split('%25ptth') : href.split('%25sptth');
-				var func = reverseText(decodeURIComponent(parts[0]).split(':tpircsavaj')[0]);
-				node.setAttribute('href', 'javascript:' + func + '(' + parts[1] + ');', type);
-			}
 		});
 	}
 
@@ -276,7 +214,7 @@
 		if (!checkUrlShouldReplace(url, attr)) {
 			return ;
 		}
-		if (attr !== 'srcset' && proxyType !== 'single' && replaceThirdDomainUrl(node, urlAttr, url, type)) {
+		if (attr !== 'srcset' && replaceThirdDomainUrl(node, urlAttr, url, type)) {
 			return ;
 		}
 		var newUrl = transformUrl(url);
@@ -305,24 +243,19 @@
 	}
 
 	function checkUrlShouldReplace (url, attr) {
+		url = (url || '').trim();
+		if (!url) {
+			return false;
+		}
 		if (attr === 'srcset') {
 			return !!url;
-		}
-		url = url ? url.trim() : '';
-		if (!url || url.startsWith(siteOrigin) || url.startsWith('/proxy/') || url.startsWith('/public')) {
-			return false;
 		}
 		for (var prefix of ignoredPrefixes) {
 			if (url.indexOf(prefix) >= 0) {
 				return false;
 			}
 		}
-		if (proxyType === 'single') {
-			if (url.indexOf('//') >= 0 && (url.split('//')[1] || '').split('/')[0] !== target.hostname) {
-				return false;
-			}
-		}
-		return true;
+		return url.indexOf(vpnDomain) < 0;
 	}
 
 	function replaceThirdDomainUrl (node, urlAttr, url, type) {
@@ -338,10 +271,6 @@
 			return true;
 		}
 		return false;
-	}
-
-	function reverseText (text) {
-		return text.split('').reverse().join('');
 	}
 
 	// ajax 拦截
@@ -567,48 +496,6 @@
 		}
 	});
 
-	// document._cookie
-	var cookie = document.cookie;
-	var cookies = cookie.split(';').map(function (kv) {
-		return kv.trim();
-	}).filter(function (kv) {
-		return kv.startsWith(target.hostname + '::');
-	});
-	Object.defineProperty(document, '_cookie', {
-		get () {
-			return cookies.map(function (kv) {
-				return kv.slice(target.hostname.length + 2);
-			}).join('; ');
-		},
-		set (value) {
-			if (!value || value.indexOf('=') < 0) return ;
-			var kvs = value.split(';').map(function (kv) {
-				return target.hostname + '::' + kv.trim();
-			});
-			for (var kv of kvs) {
-				var index = cookies.findIndex(function (ele) {
-					return ele.startsWith(kv);
-				});
-				if (index >= 0) {
-					cookies[index] = kv;
-				} else {
-					cookies.push(kv);
-				}
-			}
-			document.cookie = kvs.join('; ');
-		}
-	});
-	// document.cookie
-	// TODO: 这造成 js 客户端无法设置 cookie
-	// Object.defineProperty(document, 'cookie', {
-	// 	get () {
-	// 		return document._cookie;
-	// 	},
-	// 	set (value) {
-	// 		console.log('%c cannot set cookie, value: ' + value, 'color: orange;');
-	// 	}
-	// });
-
 	// _window, _document, _globalThis, _parent, _self, _top
 	var locationCon = ['window', 'document'];
 	for (var con of locationCon) {
@@ -647,75 +534,6 @@
 		}
 		return observe.bind(this)(target, options);
 	}
-
-	var urlSelectorReg = new RegExp('\\[(' + urlAttrs.join('|') + ').=(\"|\')[^\"\']*', 'ig');
-
-	// document.querySelector 拦截
-	var querySelector = document.querySelector;
-	document.querySelector = function (selector) {
-		var matches = typeof selector === 'string' ? selector.match(urlSelectorReg) : null;
-		if (matches) {
-			console.log(
-				'%cDOM 操作 拦截 document.querySelector : ' + selector,
-				'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
-			);
-			for (var match of matches) {
-				var keyword = match.split(/(\"|\')/)[2];
-				selector = selector.replace(keyword, reverseText(keyword));
-			}
-		}
-		return querySelector.call(document, selector);
-	}
-
-	// document.querySelectorAll 拦截
-	var querySelectorAll = document.querySelectorAll;
-	document.querySelectorAll = function (selector) {
-		var matches = typeof selector === 'string' ? selector.match(urlSelectorReg) : null;
-		if (matches) {
-			console.log(
-				'%cDOM 操作 拦截 document.querySelectorAll : ' + selector,
-				'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
-			);
-			for (var match of matches) {
-				var keyword = match.split(/(\"|\')/)[2];
-				selector = selector.replace(keyword, reverseText(keyword));
-			}
-		}
-		return querySelectorAll.call(this, selector);
-	}
-
-	// $ 拦截
-	// jQuery 拦截
-	// $ 和 jQuery 都用 _$ 代替，不设 _jQuery 了，没必要
-	function __$ (selector, context) {
-		var matches = typeof selector === 'string' ? selector.match(urlSelectorReg) : null;
-		if (matches) {
-			console.log(
-				'%cDOM 操作 拦截 $ : ' + selector,
-				'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
-			);
-			for (var match of matches) {
-				var keyword = match.split(/(\"|\')/)[2];
-				selector = selector.replace(keyword, reverseText(keyword));
-			}
-		}
-		return window._$(selector, context);
-	}
-	var $_handler = {
-		get () {
-			if (window._$) {
-				return __$;
-			}
-		},
-		set (value) {
-			window._$ = value;
-			for (var key in value) {
-				__$[key] = value[key];
-			}
-		}
-	};
-	Object.defineProperty(window, '$', $_handler);
-	Object.defineProperty(window, 'jQuery', $_handler);
 
 	// getAttribute 拦截
 	var nasUnion = [];
@@ -756,14 +574,16 @@
 	}
 
 	// ServiceWorkerContainer register 拦截
-	var register = window.ServiceWorkerContainer.prototype.register;
-	window.ServiceWorkerContainer.prototype.register = function (url, options) {
-		console.log(
-			'%cServiceWorkerContainer 操作 拦截 register : ' + url,
-			'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
-		);
-		url = transformUrl(url);
-		return register.call(this, url, options);
+	if (window.ServiceWorkerContainer) {
+		var register = window.ServiceWorkerContainer.prototype.register;
+		window.ServiceWorkerContainer.prototype.register = function (url, options) {
+			console.log(
+				'%cServiceWorkerContainer 操作 拦截 register : ' + url,
+				'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
+			);
+			url = transformUrl(url);
+			return register.call(this, url, options);
+		}
 	}
 
 	// pushState replaceState 拦截
@@ -810,8 +630,8 @@
 		});
 	});
 
-	// a 元素的 pathname host 等 URL 属性 拦截, href 在上面的 get 函数里拦截了
-	var aUrlAttrs = ['hash', 'host', 'hostname', 'origin', 'pathname', 'port', 'protocol', 'search'];
+	// a 元素的 host 等 URL 属性 拦截, href 在上面的 get 函数里拦截了
+	var aUrlAttrs = ['host', 'hostname', 'origin', 'port', 'protocol'];
 	aUrlAttrs.forEach(function (attr) {
 		Object.defineProperty(HTMLAnchorElement.prototype, attr, {
 			get () {
@@ -819,7 +639,11 @@
 					'%cDOM 操作 拦截 a ' + attr + ' getter',
 					'color: #606666;background-color: lime;padding: 5px 10px;'
 				);
-				return new URL(decodeUrl(this.getAttribute('href', 'custom')))[attr];
+				var url = decodeUrl(this.getAttribute('href', 'custom'));
+				if (!url) {
+					return url;
+				}
+				return new URL(url)[attr];
 			}
 		});
 	});
