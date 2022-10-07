@@ -50,9 +50,8 @@ class WebVPN {
 			/upgrade-insecure-requests/i
 		]
 		this.ignoreResponseHeaderRegexps = [
-			/-policy/i,
 			/report-to/i,
-			/(content-length|x-content-type-options|x-xss-protection|x-frame-options)/i,
+			/(content-length|x-content-type-options|x-xss-protection)/i,
 		]
 
 		this.noTransformMimes = ['font', 'json', 'image', 'video', 'audio', 'pdf']
@@ -416,7 +415,10 @@ class WebVPN {
 			}
 			const { hostname } = new URL(url)
 			const source = prefix + hostname
-			const desti = prefix.replace('https', 'http') + base32.encode(hostname) + vpnDomain
+			let desti = prefix.replace('https', 'http') + base32.encode(hostname) + vpnDomain
+			if (desti.startsWith('//')) {
+				desti = this.config.site.protocol + desti
+			}
 			dict[source] = desti
 		})
 		Object.entries(dict).sort((a, b) => b[0].length - a[0].length).forEach(ele => {
@@ -580,6 +582,10 @@ class WebVPN {
 			headers['access-control-allow-origin'] = '*'
 		}
 		headers['content-type'] = headers['content-type'] || 'text/html'
+		const csp = headers['content-security-policy']
+		if (csp && csp.indexOf('frame-ancestors') >= 0) {
+			headers['content-security-policy'] = csp.replace('frame-ancestors', 'frame-ancestors ' + this.config.site.origin.replace('www', '*'))
+		}
 		return headers
 	}
 
