@@ -609,12 +609,13 @@ class WebVPN {
 			const hostname = new URL(headers['origin']).hostname
 			headers['origin'] = headers['origin'].replace(hostname, this.convertHostname(hostname))
 		}
-		if (headers['referer']) {
-			if (headers['referer'].indexOf(this.config.vpnDomain) < 0) {
+		const referer = headers['referer']
+		if (referer) {
+			if (referer.indexOf(this.config.site.hostname) || referer.indexOf(this.config.vpnDomain) < 0) {
 				delete headers['referer']
 			} else {
-				const hostname = new URL(headers['referer']).hostname
-				headers['referer'] = headers['referer'].replace(hostname, this.convertHostname(hostname))
+				const hostname = new URL(referer).hostname
+				headers['referer'] = referer.replace(hostname, this.convertHostname(hostname))
 			}
 		}
 	}
