@@ -45,7 +45,10 @@ class WebVPN {
 			'audio': 'audio/webm, audio/mpeg',
 			'stream': 'application/octet-stream, application/protobuffer'
 		}
-		this.ignoreRequestHeaderRegexps = []
+		this.ignoreRequestHeaderRegexps = [
+			/^x-/i,
+			/upgrade-insecure-requests/i
+		]
 		this.ignoreResponseHeaderRegexps = [
 			/-policy/i,
 			/report-to/i,
@@ -254,10 +257,6 @@ class WebVPN {
 		const method = ctx.request.method.toLowerCase()
 		const { protocol, hostname, port } = ctx.meta.target
 
-		if (ctx.meta.userAgent) {
-			headers['user-agent'] = ctx.meta.userAgent
-		}
-
 		const isHttps = protocol.startsWith('https')
 		const options = {
 			method,
@@ -285,12 +284,9 @@ class WebVPN {
 
 	async request (ctx) {
 		const { method, header } = ctx.request
-		this.setOriginHeaders(ctx, header)
 		this.deleteIgnoreHeaders(this.ignoreRequestHeaderRegexps, header)
+		this.setOriginHeaders(ctx, header)
 
-		if (ctx.meta.userAgent) {
-			header['user-agent'] = ctx.meta.userAgent
-		}
 		const options = {
 			method,
 			headers: header,
