@@ -51,7 +51,7 @@ class WebVPN {
 		]
 		this.ignoreResponseHeaderRegexps = [
 			/report-to/i,
-			/(content-length|x-content-type-options|x-xss-protection)/i,
+			/(content-length|x-content-type-options|x-xss-protection|content-security-policy)/i,
 		]
 
 		this.noTransformMimes = ['font', 'json', 'image', 'video', 'audio', 'pdf']
