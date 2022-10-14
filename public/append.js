@@ -681,7 +681,7 @@
 				selector = selector.replace(keyword, reverseText(keyword));
 			}
 		}
-		return querySelectorAll.call(this, selector);
+		return querySelectorAll.call(document, selector);
 	}
 
 	// $ 拦截
@@ -849,7 +849,7 @@
 			'%cDOM 操作 拦截 document.write : ' + htmls,
 			'color: #606666;background-color: lightblue;padding: 5px 10px;'
 		);
-		return write.apply(this, htmls);
+		return write.apply(document, htmls);
 	}
 
 	// document.writeln 拦截
@@ -863,7 +863,7 @@
 			'%cDOM 操作 拦截 document.writeln : ' + htmls,
 			'color: #606666;background-color: lightblue;padding: 5px 10px;'
 		);
-		return writeln.apply(this, htmls);
+		return writeln.apply(document, htmls);
 	}
 
 	// innerHTML 拦截
@@ -1050,7 +1050,7 @@
 			}
 		}
 
-		logger.apply(this, arguments);
+		logger.apply(console, arguments);
 	}
 
 	window.logs = {
