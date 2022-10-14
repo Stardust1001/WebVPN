@@ -426,7 +426,6 @@ class WebVPN {
 
 		if (['html', 'js'].includes(mime)) {
 			res.data = this.replaceLocationOperations(ctx, res)
-			// res.data = this.customReplace(ctx, res)
 		}
 
 		const { hideChinease = this.config.hideChinease } = ctx.meta
@@ -606,43 +605,6 @@ class WebVPN {
 
 		data = data.replaceAll(/window\.navigate\(/g, 'window._navigate(')
 		data = data.replaceAll(/document\.cookie/g, 'document._cookie')
-		return data
-	}
-
-	customReplace (ctx, res) {
-		// 上面的 location 转换大概比较成熟，这里的不怎么成熟，所以放到 customReplace 方法里
-		let data = res.data
-
-		// 要直接访问 location 变量，让访问 window._location
-		// 注意，暂时去掉了右边的小括号判断 )，因为可能这个 location 是函数参数，不能替换为下面的表达式，暂时先这样
-		new Set(data.match(/[\s,;\?:\{\(\|]location\s*[,;\?:\}]/g)).forEach(match => {
-			const [left, right] = match.split('location')
-			// 右边是 : ，不一定是三元运算符，可能是 { a: 1 } 这样的属性名:属性值
-			if ((right.trim()[0] === ':') && !left.trim().endsWith('?')) {
-				return match
-			}
-			const result = match.replace('location', '(location == window.location ? window._location : location)')
-			data = data.replaceAll(match, result)
-		})
-
-		// 要直接给 location 变量赋值，让给 window.location._href 变量赋值
-		new Set(data.match(/[\s,;\?:\{\(]location\s*\=[^,;\}\)]+/g)).forEach(match => {
-			const left = match.slice(match.indexOf('location'), match.indexOf('=') + 1)
-			const [prefix, right] = match.split(left)
-			// 如果右值是 window.location ...，说明这是赋值给名为 location 的变量，这个不需要转换
-			if (/(window|document|globalThis|parent|self|top)\._?location/.test(right)) {
-				return
-			}
-			// location=no location=1 是设置滚动条的东西（虽然，这种手动判断的方式并不优雅，先这样吧）
-			const trimedRight = right.trim()
-			if (trimedRight.startsWith('no') || trimedRight.startsWith('1')) {
-				return
-			}
-			// TODO, 这里有可能会有问题，赋值表达式的右边部分，目前做的比较简单
-			const result = prefix + `(location == window.location) ? window.location._href=${right} : location=${right}`
-			data = data.replaceAll(match, result)
-		})
-
 		return data
 	}
 
