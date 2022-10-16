@@ -76,10 +76,10 @@
 	var ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:'];
 
 	function transformUrl (url) {
-		if (url == null) {
+		url = (url ? url.toString() : '').trim();
+		if (!url) {
 			return url;
 		}
-		url = url.toString().trim();
 		for (var prefix of ignoredPrefixes) {
 			if (url.startsWith(prefix)) {
 				return url;
@@ -849,7 +849,7 @@
 			'%cDOM 操作 拦截 document.write : ' + htmls,
 			'color: #606666;background-color: lightblue;padding: 5px 10px;'
 		);
-		return write.apply(this, htmls);
+		return write.apply(document, htmls);
 	}
 
 	// document.writeln 拦截
@@ -863,7 +863,7 @@
 			'%cDOM 操作 拦截 document.writeln : ' + htmls,
 			'color: #606666;background-color: lightblue;padding: 5px 10px;'
 		);
-		return writeln.apply(this, htmls);
+		return writeln.apply(document, htmls);
 	}
 
 	// innerHTML 拦截
@@ -1050,7 +1050,7 @@
 			}
 		}
 
-		logger.apply(this, arguments);
+		logger.apply(console, arguments);
 	}
 
 	window.logs = {
