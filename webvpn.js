@@ -56,7 +56,9 @@ class WebVPN {
 		this.cacheDir = config.cacheDir || 'cache'
 		this.checkCaches()
 
+		this.jsExternalName = '_ext_'
 		this.jsScopePrefixCode = `
+			var ${this.jsExternalName} = {};
 			(function () {
 				var window = _window;
 				var document = _document;
@@ -64,7 +66,7 @@ class WebVPN {
 				var parent = _parent;
 				var self = _self;
 				var top = _top;
-				var location = _location;
+				var location = _location;\n
 		`
 		this.jsScopeSuffixCode = `
 			})();
@@ -245,10 +247,10 @@ class WebVPN {
 		if (this.shouldReplaceUrls(ctx, res)) {
 			this.replaceUrls(ctx, res)
 			if (ctx.meta.mime === 'html') {
-				res.data = this.appendHtmlScopeCode(res.data)
+				res.data = this.processHtmlScopeCodes(res.data)
 				res.data = this.appendScript(ctx, res)
 			} else if (ctx.meta.mime === 'js') {
-				res.data = this.appendJsScopeCode(res.data)
+				res.data = this.processJsScopeCode(res.data)
 			}
 		}
 		if (ctx.meta.done) {
@@ -642,55 +644,63 @@ class WebVPN {
 		return code + data
 	}
 
-	appendHtmlScopeCode (code) {
+	processHtmlScopeCodes (code) {
 		const matches = [...code.matchAll(/<script[^>]*>([\S\s]*?)<\/script>/gi)].filter(match => match[1])
 		matches.sort((a, b) => b.index - a.index)
 		matches.forEach(match => {
 			const index = match[0].length - match[1].length - 9 + match.index
-			code = code.slice(0, index) + this.jsScopePrefixCode + this.hoistGlobalVariables(match[1]) + this.jsScopeSuffixCode + code.slice(index + match[1].length)
+			code = code.slice(0, index) + this.refactorJsScopeCode(match[1]) + code.slice(index + match[1].length)
 		})
 		return code
 	}
 
-	appendJsScopeCode (code) {
-		return this.jsScopePrefixCode + code + this.jsScopeSuffixCode
+	processJsScopeCode (code) {
+		return this.refactorJsScopeCode(code)
 	}
 
-	hoistGlobalVariables (code) {
-		const indices = [
-			...[...code.matchAll(/{/g)].map(m => [m.index, true]),
-			...[...code.matchAll(/}/g)].map(m => [m.index, false])
-		].sort((a, b) => a[0] - b[0])
-		let ranges = []
-		while (indices.length) {
-			for (let i = 0, len = indices.length; i < len - 1; i++) {
-				if (indices[i][1] !== indices[i + 1][1]) {
-					ranges.push([indices[i][0], indices[i + 1][0], false])
-					indices.splice(i, 2)
-					break
-				}
-			}
-		}
-		ranges.sort((a, b) => a[0] - b[0])
-		for (let i = ranges.length - 1; i >= 0; i--) {
-			const j = ranges.slice(0, i).findIndex(r => r[1] >= ranges[i][1])
-			if (j >= 0) {
-				ranges.slice(j, i + 1).forEach(r => r[2] = true)
-			}
-		}
-		ranges = ranges.filter(r => !r[2])
-		let outerCode = ''
-		let left = 0
-		for (let range of ranges) {
-			outerCode += code.slice(left, range[0])
-			left = range[1]
-		}
+	refactorJsScopeCode (code) {
+		const ext = this.jsExternalName
+		const identifiers = this.getGlobalIdentifiers(code)
+		const innerCode = '\n\nObject.assign(' + ext + ', {' + identifiers.join(',') + '});'
+		const outerCode = '\n\n;' + identifiers.map(i => `var ${i}=${ext}.${i};`).join('')
+		return this.jsScopePrefixCode + code + innerCode + this.jsScopeSuffixCode + outerCode
+	}
+
+	getGlobalIdentifiers (code) {
+		// const indices = [
+		// 	...[...code.matchAll(/{/g)].map(m => [m.index, true]),
+		// 	...[...code.matchAll(/}/g)].map(m => [m.index, false])
+		// ].sort((a, b) => a[0] - b[0])
+		// let ranges = []
+		// while (indices.length) {
+		// 	for (let i = 0, len = indices.length; i < len - 1; i++) {
+		// 		if (indices[i][1] !== indices[i + 1][1]) {
+		// 			ranges.push([indices[i][0], indices[i + 1][0], false])
+		// 			indices.splice(i, 2)
+		// 			break
+		// 		}
+		// 	}
+		// }
+		// ranges.sort((a, b) => a[0] - b[0])
+		// for (let i = ranges.length - 1; i >= 0; i--) {
+		// 	const j = ranges.slice(0, i).findIndex(r => r[1] >= ranges[i][1])
+		// 	if (j >= 0) {
+		// 		ranges.slice(j, i + 1).forEach(r => r[2] = true)
+		// 	}
+		// }
+		// ranges = ranges.filter(r => !r[2])
+		// let outerCode = ''
+		// let left = 0
+		// for (let range of ranges) {
+		// 	outerCode += code.slice(left, range[0])
+		// 	left = range[1]
+		// }
+		const outerCode = code
 		const identifiers = [
 			...outerCode.matchAll(/var\s+([a-zA-Z_\$][a-zA-Z0-9_\$]*)[\s=]/g),
 			...outerCode.matchAll(/function\s+([a-zA-Z_\$][a-zA-Z0-9_\$]*)[\s\(]/g)
 		].map(m => m[1])
-		code += ';' + identifiers.map(i => `window.${i} = ${i};`).join('')
-		return code
+		return identifiers
 	}
 
 	getUrlReplacement (ctx, res, item) {
