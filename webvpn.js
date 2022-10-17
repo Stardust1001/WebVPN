@@ -426,10 +426,6 @@ class WebVPN {
 		}
 		res.data = this.replaceMatches(ctx, res, matches)
 
-		if (['html', 'js'].includes(mime)) {
-			res.data = this.replaceLocationOperations(ctx, res)
-		}
-
 		const { hideChinease = this.config.hideChinease } = ctx.meta
 		if (hideChinease && typeof res.data === 'string') {
 			res.data = this.chinease2Unicode(ctx, res)
@@ -579,37 +575,6 @@ class WebVPN {
 		return res.data
 	}
 
-	replaceLocationOperations (ctx, res) {
-		let data = res.data
-		const site = this.config.site
-
-		// 下面的获取判断，用了 =，所以 == === 也包含在内了，现在 == === 的左值 window, document 等, 也需要替换
-		data = data.replaceAll(/[^\.](window|document|globalThis|parent|self|top)\s*==/g, match => {
-			return match.replace(/(window|document|globalThis|parent|self|top)/, m => {
-				return `(${m} === window.${m} ? window._${m} : ${m})`
-			})
-		})
-		// 要获取 window, document 等，返回给他们 _window, _document 等
-		data = data.replaceAll(/=\s*(window|document|globalThis|parent|self|top)\s*[,;\)\}\:\?]/g, match => {
-			return match.replace(/(window|document|globalThis|parent|self|top)/, m => {
-				return `(${m} === window.${m} ? window._${m} : ${m})`
-			})
-		})
-		// 要访问 window.location, document.location 等，让他们访问 window._location，不管是获取还是赋值，都这样
-		data = data.replaceAll(/[^_](window|document|globalThis|parent|self|top)\.location/g, match => {
-			return match[0] + 'window._location'
-		})
-
-		// 要访问 location.hash host 等，让访问 window._location 的 hash host 等
-		data = data.replaceAll(/[\s,;\?:\{\(\|=]location\.(hash|host|hostname|href|origin|pathname|port|protocol|search|assign|replace)/g, match => {
-			return match[0] + '_' + match.slice(1)
-		})
-
-		data = data.replaceAll(/window\.navigate\(/g, 'window._navigate(')
-		data = data.replaceAll(/document\.cookie/g, 'document._cookie')
-		return data
-	}
-
 	appendScript (ctx, res) {
 		const { site, interceptLog } = this.config
 		const { disableJump = this.config.disableJump, confirmJump = this.config.confirmJump } = ctx.meta
@@ -667,40 +632,113 @@ class WebVPN {
 	}
 
 	getGlobalIdentifiers (code) {
-		// const indices = [
-		// 	...[...code.matchAll(/{/g)].map(m => [m.index, true]),
-		// 	...[...code.matchAll(/}/g)].map(m => [m.index, false])
-		// ].sort((a, b) => a[0] - b[0])
-		// let ranges = []
-		// while (indices.length) {
-		// 	for (let i = 0, len = indices.length; i < len - 1; i++) {
-		// 		if (indices[i][1] !== indices[i + 1][1]) {
-		// 			ranges.push([indices[i][0], indices[i + 1][0], false])
-		// 			indices.splice(i, 2)
-		// 			break
-		// 		}
-		// 	}
-		// }
-		// ranges.sort((a, b) => a[0] - b[0])
-		// for (let i = ranges.length - 1; i >= 0; i--) {
-		// 	const j = ranges.slice(0, i).findIndex(r => r[1] >= ranges[i][1])
-		// 	if (j >= 0) {
-		// 		ranges.slice(j, i + 1).forEach(r => r[2] = true)
-		// 	}
-		// }
-		// ranges = ranges.filter(r => !r[2])
-		// let outerCode = ''
-		// let left = 0
-		// for (let range of ranges) {
-		// 	outerCode += code.slice(left, range[0])
-		// 	left = range[1]
-		// }
+		const indices = this.getBraceIndices(code)
+		console.log('00000000000000000000000000000')
+		console.log(indices)
+		console.log(indices.length)
 		const outerCode = code
 		const identifiers = [
 			...outerCode.matchAll(/var\s+([a-zA-Z_\$][a-zA-Z0-9_\$]*)[\s=]/g),
 			...outerCode.matchAll(/function\s+([a-zA-Z_\$][a-zA-Z0-9_\$]*)[\s\(]/g)
 		].map(m => m[1])
 		return identifiers
+	}
+
+	getBraceIndices (code) {
+		const regexpMatches = [...code.matchAll(/[^\/'"]\/[^\/\n]+\/[^'"]/g)]
+		const regexpRanges = regexpMatches.map(m => [m.index + 1, m.index + 1 + m[0].length])
+
+		let indices = []
+		let isStr = false
+		let quote = ''
+		let isComment = false
+		let isSingleComment = false
+		let isMaybeRegexp = false
+
+		const len = code.length
+		let current = ''
+		let last = ''
+		for (let i = 0; i < len; i++) {
+			if (regexpRanges.some(r => r[0] <= i && r[1] > i)) {
+				last = code[i]
+				continue
+			}
+			current = code[i]
+			if (isStr) {
+				if ((current === quote) && (last !== '\\')) {
+					isStr = false
+				}
+				last = current
+				continue
+			} else if (isComment) {
+				if (isSingleComment) {
+					if (current === '\n') {
+						isComment = false
+					}
+				} else {
+					if (current === '/' && last === '*') {
+						isComment = false
+					}
+				}
+				last = current
+				continue
+			}
+			if (current === '\'' || current === '"') {
+				isStr = true
+				quote = current
+				last = current
+				continue
+			}
+			if (last === '/') {
+				if (current === '/') {
+					isComment = true
+					isSingleComment = true
+					isStr = false
+					last = current
+					continue
+				} else if (current === '*') {
+					isComment = true
+					isSingleComment = false
+					isStr = false
+					last = current
+					continue
+				}
+			}
+			if (current === '{') {
+				indices.push([i, true])
+			} else if (current === '}') {
+				indices.push([i, false])
+			}
+			last = current
+		}
+
+		// return indices
+
+		console.log('aaaaaaaaaaaaaaaaaaaaaaaaaa', indices.length)
+		// console.log(indices)
+
+		if (!indices.length) {
+			return indices
+		}
+
+		indices.sort((a, b) => a[0] - b[0])
+
+		let lastCount = 0
+		while (true) {
+			const inner = new Set()
+			for (let i = 0, len = indices.length; i < len - 1; i++) {
+				if (indices[i][1] && !indices[i + 1][1]) {
+					inner.add(i).add(i + 1)
+					i += 1
+				}
+			}
+			if (!inner.size) {
+				break
+			}
+			indices = indices.filter((_, i) => !inner.has(i))
+		}
+
+		return indices
 	}
 
 	getUrlReplacement (ctx, res, item) {
