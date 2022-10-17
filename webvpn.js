@@ -59,6 +59,22 @@ class WebVPN {
 		this.cacheDir = config.cacheDir || 'cache'
 		this.checkCaches()
 
+		this.jsExternalName = '_ext_'
+		this.jsScopePrefixCode = `
+			var ${this.jsExternalName} = {};
+			(function () {
+				var window = _window;
+				var document = _document;
+				var globalThis = _globalThis;
+				var parent = _parent;
+				var self = _self;
+				var top = _top;
+				var location = _location;\n
+		`
+		this.jsScopeSuffixCode = `
+			})();
+		`
+
 		this.public = []
 		this.initPublic()
 	}
@@ -209,7 +225,10 @@ class WebVPN {
 		if (!ctx.meta.done && this.shouldReplaceUrls(ctx, res)) {
 			this.replaceUrls(ctx, res)
 			if (ctx.meta.mime === 'html') {
+				res.data = this.processHtmlScopeCodes(res.data, ctx.meta.url)
 				res.data = this.appendScript(ctx, res)
+			} else if (ctx.meta.mime === 'js') {
+				res.data = this.processJsScopeCode(res.data, ctx.meta.url)
 			}
 		}
 
@@ -368,11 +387,6 @@ class WebVPN {
 		}
 		res.data = this.replaceMatches(ctx, res, matches)
 
-		if (['html', 'js'].includes(mime)) {
-			res.data = this.replaceLocationOperations(ctx, res)
-			res.data = this.customReplace(ctx, res)
-		}
-
 		const { hideChinease = this.config.hideChinease } = ctx.meta
 		if (hideChinease && typeof res.data === 'string') {
 			res.data = this.chinease2Unicode(ctx, res)
@@ -428,71 +442,172 @@ class WebVPN {
 		return res.data
 	}
 
-	replaceLocationOperations (ctx, res) {
-		let data = res.data
-		const site = this.config.site
-
-		// 下面的获取判断，用了 =，所以 == === 也包含在内了，现在 == === 的左值 window, document 等, 也需要替换
-		data = data.replaceAll(/[^\.](window|document|globalThis|parent|self|top)\s*==/g, match => {
-			return match.replace(/(window|document|globalThis|parent|self|top)/, m => {
-				return `(${m} === window.${m} ? window._${m} : ${m})`
-			})
+	processHtmlScopeCodes (code, url) {
+		const matches = [...code.matchAll(/<script[^>]*>([\S\s]*?)<\/script>/gi)].filter(match => match[1])
+		matches.sort((a, b) => b.index - a.index)
+		matches.forEach(match => {
+			const index = match[0].length - match[1].length - 9 + match.index
+			code = code.slice(0, index) + this.refactorJsScopeCode(match[1], url) + code.slice(index + match[1].length)
 		})
-		// 要获取 window, document 等，返回给他们 _window, _document 等
-		data = data.replaceAll(/=\s*(window|document|globalThis|parent|self|top)\s*[,;\)\}\:\?]/g, match => {
-			return match.replace(/(window|document|globalThis|parent|self|top)/, m => {
-				return `(${m} === window.${m} ? window._${m} : ${m})`
-			})
-		})
-		// 要访问 window.location, document.location 等，让他们访问 window._location，不管是获取还是赋值，都这样
-		data = data.replaceAll(/[^_](window|document|globalThis|parent|self|top)\.location/g, match => {
-			return match[0] + 'window._location'
-		})
-
-		// 要访问 location.host 等，让访问 window._location 的 host 等
-		data = data.replaceAll(/[\s,;\?:\{\(\|=]location\.(host|hostname|href|origin|port|protocol|assign|replace)/g, match => {
-			return match[0] + '_' + match.slice(1)
-		})
-
-		data = data.replaceAll(/window\.navigate\(/g, 'window._navigate(')
-		return data
+		return code
 	}
 
-	customReplace (ctx, res) {
-		// 上面的 location 转换大概比较成熟，这里的不怎么成熟，所以放到 customReplace 方法里
-		let data = res.data
+	processJsScopeCode (code, url) {
+		return this.refactorJsScopeCode(code, url)
+	}
 
-		// 要直接访问 location 变量，让访问 window._location
-		// 注意，暂时去掉了右边的小括号判断 )，因为可能这个 location 是函数参数，不能替换为下面的表达式，暂时先这样
-		new Set(data.match(/[\s,;\?:\{\(\|]location\s*[,;\?:\}]/g)).forEach(match => {
-			const [left, right] = match.split('location')
-			// 右边是 : ，不一定是三元运算符，可能是 { a: 1 } 这样的属性名:属性值
-			if ((right.trim()[0] === ':') && !left.trim().endsWith('?')) {
-				return match
+	refactorJsScopeCode (code, url) {
+		// TODO
+		// import export 匹配有问题
+		// import export 匹配有问题
+		// import export 匹配有问题
+		// import export 匹配有问题
+		// import export 匹配有问题
+		// import export 匹配有问题
+		// import export 匹配有问题
+		// import export 匹配有问题
+		// import export 匹配有问题
+		// import export 匹配有问题
+		// import export 匹配有问题
+		// import export 匹配有问题
+		// import export 匹配有问题
+		// import export 匹配有问题
+		// import export 匹配有问题
+		// import export 匹配有问题
+		const importsMatches = [...code.matchAll(/[\s;\n]import[\s{\'\"][\w\s\,\{\}\'\"]+/g)]
+		const exportsMatches = [...code.matchAll(/[\s;\n]export[\s{\'\"][\w\s\,\{\}\'\"]+/g)]
+		const importsCodes = importsMatches.map(m => m[0]).join('')
+		const exportsCodes = exportsMatches.map(m => m[0]).join('')
+		console.log('11111111111111111')
+		console.log(importsMatches.map(m => m[0]))
+		console.log(exportsMatches.map(m => m[0]))
+
+		const ext = this.jsExternalName
+		const identifiers = this.getGlobalIdentifiers(code, url)
+		const innerCode = '\n\nObject.assign(' + ext + ', {' + identifiers.join(',') + '});'
+		const outerCode = '\n\n;' + identifiers.map(i => `var ${i}=${ext}.${i};`).join('')
+		return importsCodes + this.jsScopePrefixCode + code + innerCode + this.jsScopeSuffixCode + outerCode + exportsCodes
+	}
+
+	getGlobalIdentifiers (code, url) {
+		const indices = this.getBraceIndices(code)
+		if (indices.length % 2) {
+			console.log('00000000000000000000000000000')
+			console.log(indices.length, url)
+		}
+		const outerCode = code
+		const identifiers = [
+			...outerCode.matchAll(/var\s+([a-zA-Z_\$][a-zA-Z0-9_\$]*)[\s=]/g),
+			...outerCode.matchAll(/function\s+([a-zA-Z_\$][a-zA-Z0-9_\$]*)[\s\(]/g)
+		].map(m => m[1])
+		return [...new Set(identifiers)]
+	}
+
+	getBraceIndices (code) {
+		const matches = [
+			...code.matchAll(/[\s=!(]\/[^\/\n]+\/[gmi\s,;)]/g),
+			...code.matchAll(/[\s=!(]\/(\(|\.|\)|\{|\}|\||\\\/|\w|\\|\'|\"|\[|\]|\^|\*|\?|\+|\:|\-|\@|\#)+\/[gmi\s,;)]/g)
+		]
+		const indexSet = new Set()
+		const regexpMatches = []
+		matches.forEach(match => {
+			if (!indexSet.has(match.index)) {
+				indexSet.add(match.index)
+				regexpMatches.push(match)
 			}
-			const result = match.replace('location', '(location == window.location ? window._location : location)')
-			data = data.replaceAll(match, result)
 		})
+		const regexpRanges = regexpMatches.map(m => [m.index + 1, m.index + 1 + m[0].length])
 
-		// 要直接给 location 变量赋值，让给 window.location._href 变量赋值
-		new Set(data.match(/[\s,;\?:\{\(]location\s*\=[^,;\}\)]+/g)).forEach(match => {
-			const left = match.slice(match.indexOf('location'), match.indexOf('=') + 1)
-			const [prefix, right] = match.split(left)
-			// 如果右值是 window.location ...，说明这是赋值给名为 location 的变量，这个不需要转换
-			if (/(window|document|globalThis|parent|self|top)\._?location/.test(right)) {
-				return
-			}
-			// location=no location=1 是设置滚动条的东西（虽然，这种手动判断的方式并不优雅，先这样吧）
-			const trimedRight = right.trim()
-			if (trimedRight.startsWith('no') || trimedRight.startsWith('1')) {
-				return
-			}
-			// TODO, 这里有可能会有问题，赋值表达式的右边部分，目前做的比较简单
-			const result = prefix + `(location == window.location) ? window.location._href=${right} : location=${right}`
-			data = data.replaceAll(match, result)
-		})
+		let indices = []
+		let isStr = false
+		let quote = ''
+		let isComment = false
+		let isSingleComment = false
+		let isMaybeRegexp = false
 
-		return data
+		const len = code.length
+		let current = ''
+		let last = ''
+		for (let i = 0; i < len; i++) {
+			if (regexpRanges.some(r => r[0] <= i && r[1] > i)) {
+				last = code[i]
+				continue
+			}
+			current = code[i]
+			if (isStr) {
+				if (current === quote) {
+					if (last !== '\\' || code[i - 2] === '\\') {
+						isStr = false
+					}
+				}
+				last = current
+				continue
+			} else if (isComment) {
+				if (isSingleComment) {
+					if (current === '\n') {
+						isComment = false
+					}
+				} else {
+					if (current === '/' && last === '*') {
+						isComment = false
+					}
+				}
+				last = current
+				continue
+			}
+			if (current === '\'' || current === '"') {
+				isStr = true
+				quote = current
+				last = current
+				continue
+			}
+			if (last === '/') {
+				if (current === '/') {
+					isComment = true
+					isSingleComment = true
+					isStr = false
+					last = current
+					continue
+				} else if (current === '*') {
+					isComment = true
+					isSingleComment = false
+					isStr = false
+					last = current
+					continue
+				}
+			}
+			if (current === '{') {
+				indices.push([i, true])
+			} else if (current === '}') {
+				indices.push([i, false])
+			}
+			last = current
+		}
+
+		// return indices
+
+		if (!indices.length) {
+			return indices
+		}
+
+		indices.sort((a, b) => a[0] - b[0])
+
+		let lastCount = 0
+		while (true) {
+			const inner = new Set()
+			for (let i = 0, len = indices.length; i < len - 1; i++) {
+				if (indices[i][1] && !indices[i + 1][1]) {
+					inner.add(i).add(i + 1)
+					i += 1
+				}
+			}
+			if (!inner.size) {
+				break
+			}
+			indices = indices.filter((_, i) => !inner.has(i))
+		}
+
+		return indices
 	}
 
 	appendScript (ctx, res) {
