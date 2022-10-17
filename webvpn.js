@@ -247,10 +247,10 @@ class WebVPN {
 		if (this.shouldReplaceUrls(ctx, res)) {
 			this.replaceUrls(ctx, res)
 			if (ctx.meta.mime === 'html') {
-				res.data = this.processHtmlScopeCodes(res.data)
+				res.data = this.processHtmlScopeCodes(res.data, ctx.meta.url)
 				res.data = this.appendScript(ctx, res)
 			} else if (ctx.meta.mime === 'js') {
-				res.data = this.processJsScopeCode(res.data)
+				res.data = this.processJsScopeCode(res.data, ctx.meta.url)
 			}
 		}
 		if (ctx.meta.done) {
@@ -609,33 +609,34 @@ class WebVPN {
 		return code + data
 	}
 
-	processHtmlScopeCodes (code) {
+	processHtmlScopeCodes (code, url) {
 		const matches = [...code.matchAll(/<script[^>]*>([\S\s]*?)<\/script>/gi)].filter(match => match[1])
 		matches.sort((a, b) => b.index - a.index)
 		matches.forEach(match => {
 			const index = match[0].length - match[1].length - 9 + match.index
-			code = code.slice(0, index) + this.refactorJsScopeCode(match[1]) + code.slice(index + match[1].length)
+			code = code.slice(0, index) + this.refactorJsScopeCode(match[1], url) + code.slice(index + match[1].length)
 		})
 		return code
 	}
 
-	processJsScopeCode (code) {
-		return this.refactorJsScopeCode(code)
+	processJsScopeCode (code, url) {
+		return this.refactorJsScopeCode(code, url)
 	}
 
-	refactorJsScopeCode (code) {
+	refactorJsScopeCode (code, url) {
 		const ext = this.jsExternalName
-		const identifiers = this.getGlobalIdentifiers(code)
+		const identifiers = this.getGlobalIdentifiers(code, url)
 		const innerCode = '\n\nObject.assign(' + ext + ', {' + identifiers.join(',') + '});'
 		const outerCode = '\n\n;' + identifiers.map(i => `var ${i}=${ext}.${i};`).join('')
 		return this.jsScopePrefixCode + code + innerCode + this.jsScopeSuffixCode + outerCode
 	}
 
-	getGlobalIdentifiers (code) {
+	getGlobalIdentifiers (code, url) {
 		const indices = this.getBraceIndices(code)
-		console.log('00000000000000000000000000000')
-		console.log(indices)
-		console.log(indices.length)
+		if (indices.length % 2) {
+			console.log('00000000000000000000000000000')
+			console.log(indices.length, url)
+		}
 		const outerCode = code
 		const identifiers = [
 			...outerCode.matchAll(/var\s+([a-zA-Z_\$][a-zA-Z0-9_\$]*)[\s=]/g),
@@ -645,7 +646,18 @@ class WebVPN {
 	}
 
 	getBraceIndices (code) {
-		const regexpMatches = [...code.matchAll(/[^\/'"]\/[^\/\n]+\/[^'"]/g)]
+		const matches = [
+			...code.matchAll(/[\s=!(]\/[^\/\n]+\/[gmi\s,;)]/g),
+			...code.matchAll(/[\s=!(]\/(\(|\.|\)|\||\\\/|\w|\\|\'|\"|\[|\]|\^|\*|\?|\+|\:|\-|\@|\#)+\/[gmi\s,;)]/g)
+		]
+		const indexSet = new Set()
+		const regexpMatches = []
+		matches.forEach(match => {
+			if (!indexSet.has(match.index)) {
+				indexSet.add(match.index)
+				regexpMatches.push(match)
+			}
+		})
 		const regexpRanges = regexpMatches.map(m => [m.index + 1, m.index + 1 + m[0].length])
 
 		let indices = []
@@ -665,8 +677,10 @@ class WebVPN {
 			}
 			current = code[i]
 			if (isStr) {
-				if ((current === quote) && (last !== '\\')) {
-					isStr = false
+				if (current === quote) {
+					if (last !== '\\' || code[i - 2] === '\\') {
+						isStr = false
+					}
 				}
 				last = current
 				continue
@@ -713,9 +727,6 @@ class WebVPN {
 		}
 
 		// return indices
-
-		console.log('aaaaaaaaaaaaaaaaaaaaaaaaaa', indices.length)
-		// console.log(indices)
 
 		if (!indices.length) {
 			return indices
