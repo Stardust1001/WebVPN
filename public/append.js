@@ -76,10 +76,10 @@
 	var ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:'];
 
 	function transformUrl (url) {
-		if (url == null) {
+		url = (url ? url.toString() : '').trim();
+		if (!url) {
 			return url;
 		}
-		url = url.toString().trim();
 		for (var prefix of ignoredPrefixes) {
 			if (url.startsWith(prefix)) {
 				return url;
