@@ -484,7 +484,7 @@ class WebVPN {
 		// 替换 import 的链接
 		const regexps = [
 			// import ... from
-			/import[A-Za-z0-9\$\_\{\}\s,]+from\s*[\"\'][^\"\']+/g,
+			/import[\w\$\_\{\}\s,]+from\s*[\"\'][^\"\']+/g,
 			// import(...)
 			/import\s*\([\"\'][^\"\']+/g,
 			// \s; import "|'  这是单单的 import"./1.js" import "2.js" 形式的导入
@@ -669,8 +669,8 @@ class WebVPN {
 			console.log(indices.length, url)
 		}
 		const identifiers = Array.from(new Set([
-			...[...code.matchAll(/function\s+([a-zA-Z_\$][a-zA-Z0-9_\$]*)\s*\(/g)].map(m => m[1]),
-			...[...code.matchAll(/class\s+([a-zA-Z_\$][a-zA-Z0-9_\$]*)\s*\{/g)].map(m => m[1]),
+			...[...code.matchAll(/function\s+([a-zA-Z_\$][\w_\$]*)\s*\(/g)].map(m => m[1]),
+			...[...code.matchAll(/class\s+([a-zA-Z_\$][\w_\$]*)\s*(extends\s*[a-zA-Z_\$][\w_\$]*)?\s*\{/g)].map(m => m[1]),
 			...[...code.matchAll(/(var|const|let)\s+([a-zA-Z_\$][\w_\$]*)[\s=]/g)].map(m => m[2]),
 			...[...code.matchAll(/[,\n]\s*([a-zA-Z_\$][\w_\$]*)\s*=[^\>=]/g)].map(m => m[1])
 		]))
@@ -679,8 +679,8 @@ class WebVPN {
 
 	getBraceIndices (code) {
 		const matches = [
-			...code.matchAll(/[\s=!(]\/[^\/\n]+\/[gmi\s,;)]/g),
-			...code.matchAll(/[\s=!(]\/(\(|\.|\)|\{|\}|\||\\\/|\w|\\|\'|\"|\[|\]|\^|\*|\?|\+|\:|\-|\@|\#)+\/[gmi\s,;)]/g)
+			...code.matchAll(/[\s=!(&]\/[^\n]+?\/[gmi\s\.,;)]/g),
+			...code.matchAll(/[\s=!(&]\/(\(|\.|\)|\{|\}|\||\\\/|\w|\\|\'|\"|\[|\]|\^|\*|\?|\+|\:|\-|\@|\#)+?\/[gmi\.\s,;)]/g)
 		]
 		const indexSet = new Set()
 		const regexpMatches = []
@@ -690,14 +690,13 @@ class WebVPN {
 				regexpMatches.push(match)
 			}
 		})
-		const regexpRanges = regexpMatches.map(m => [m.index + 1, m.index + 1 + m[0].length])
+		const regexpRanges = regexpMatches.map(m => [m.index + 1, m.index + m[0].length])
 
 		let indices = []
 		let isStr = false
 		let quote = ''
 		let isComment = false
 		let isSingleComment = false
-		let isMaybeRegexp = false
 
 		const len = code.length
 		let current = ''
@@ -729,7 +728,7 @@ class WebVPN {
 				last = current
 				continue
 			}
-			if (current === '\'' || current === '"') {
+			if (current === '\'' || current === '"' || current === '`') {
 				isStr = true
 				quote = current
 				last = current
@@ -757,8 +756,6 @@ class WebVPN {
 			}
 			last = current
 		}
-
-		// return indices
 
 		if (!indices.length) {
 			return indices
@@ -1145,7 +1142,7 @@ class WebVPN {
 
 	isJsonpResponse (data, ctx) {
 		if (ctx.meta.mime === 'html') {
-			return /^[a-zA-Z0-9\$_]+\((\{|\[)/.test(data)
+			return /^[\w\$_]+\((\{|\[)/.test(data)
 		}
 		return false
 	}
