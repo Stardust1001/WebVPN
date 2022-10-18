@@ -382,7 +382,7 @@
 		);
 		if (!canJump(url)) return false;
 		url = transformUrl(url);
-		return open.bind(this)(url, name, specs, replace);
+		return open.bind(window)(url, name, specs, replace);
 	}
 
 	// go 拦截
@@ -396,7 +396,7 @@
 			value = transformUrl(value);
 		}
 		if (!canJump(value)) return false;
-		return go.bind(this)(value);
+		return go.bind(History)(value);
 	}
 
 	// _navigate 拦截
