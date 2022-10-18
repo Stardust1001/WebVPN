@@ -56,6 +56,7 @@ class WebVPN {
 		this.cacheDir = config.cacheDir || 'cache'
 		this.checkCaches()
 
+		this.ignoredIdentifiers = ['window', 'document', 'globalThis', 'parent', 'self', 'top', 'location']
 		this.jsExternalName = '_ext_'
 		this.jsScopePrefixCode = `
 			var ${this.jsExternalName} = {};
@@ -624,11 +625,41 @@ class WebVPN {
 	}
 
 	refactorJsScopeCode (code, url) {
+		const importsMatches = [
+			...code.matchAll(/[\s;]import[^'"\w]*['"][^'"]+['"]/g),
+			...code.matchAll(/[\s;]import\s*\{[^}]+\}\s*from\s*['"][^'"]+['"]/g)
+		]
+
+		if (code.startsWith('import')) {
+			const first = code.match(/^import[^'"\w]*['"][^'"]+['"]/) || code.match(/^import\s*\{[^}]+\}\s*from\s*['"][^'"]+['"]/)
+			if (first) {
+				importsMatches.push(first)
+			}
+		}
+		const exportsMatches = [...code.matchAll(/[\s;\}\/]export\s*\{[^}]+\}/g)]
+		let noImportsExportsCode = code
+		let importsCode = ''
+		let exportsCode = ''
+		if (importsMatches.length || exportsMatches.length) {
+			const importsExportsMatches = [...importsMatches, ...exportsMatches].sort((a, b) => a.index - b.index)
+			noImportsExportsCode = ''
+			let left = 0
+			for (let match of importsExportsMatches) {
+				const diff = match[0].startsWith('import') ? 0 : 1
+				noImportsExportsCode += code.slice(left, match.index + diff)
+				left = match.index + 1 + match[0].length
+			}
+			importsCode = importsMatches.map(m => {
+				return m[0].startsWith('import') ? m[0] : m[0].slice(1)
+			}).join(';\n') + '\n\n'
+			exportsCode = '\n\n' + exportsMatches.map(m => m[0].slice(1)).join(';\n')
+		}
+
 		const ext = this.jsExternalName
 		const identifiers = this.getGlobalIdentifiers(code, url)
 		const innerCode = '\n\nObject.assign(' + ext + ', {' + identifiers.join(',') + '});'
 		const outerCode = '\n\n;' + identifiers.map(i => `var ${i}=${ext}.${i};`).join('')
-		return this.jsScopePrefixCode + code + innerCode + this.jsScopeSuffixCode + outerCode
+		return importsCode + this.jsScopePrefixCode + noImportsExportsCode + innerCode + this.jsScopeSuffixCode + outerCode + exportsCode
 	}
 
 	getGlobalIdentifiers (code, url) {
@@ -637,18 +668,19 @@ class WebVPN {
 			console.log('00000000000000000000000000000')
 			console.log(indices.length, url)
 		}
-		const outerCode = code
-		const identifiers = [
-			...outerCode.matchAll(/var\s+([a-zA-Z_\$][a-zA-Z0-9_\$]*)[\s=]/g),
-			...outerCode.matchAll(/function\s+([a-zA-Z_\$][a-zA-Z0-9_\$]*)[\s\(]/g)
-		].map(m => m[1])
-		return identifiers
+		const identifiers = Array.from(new Set([
+			...[...code.matchAll(/function\s+([a-zA-Z_\$][a-zA-Z0-9_\$]*)\s*\(/g)].map(m => m[1]),
+			...[...code.matchAll(/class\s+([a-zA-Z_\$][a-zA-Z0-9_\$]*)\s*\{/g)].map(m => m[1]),
+			...[...code.matchAll(/(var|const|let)\s+([a-zA-Z_\$][\w_\$]*)[\s=]/g)].map(m => m[2]),
+			...[...code.matchAll(/[,\n]\s*([a-zA-Z_\$][\w_\$]*)\s*=[^\>=]/g)].map(m => m[1])
+		]))
+		return identifiers.filter(it => !this.ignoredIdentifiers.includes(it))
 	}
 
 	getBraceIndices (code) {
 		const matches = [
 			...code.matchAll(/[\s=!(]\/[^\/\n]+\/[gmi\s,;)]/g),
-			...code.matchAll(/[\s=!(]\/(\(|\.|\)|\||\\\/|\w|\\|\'|\"|\[|\]|\^|\*|\?|\+|\:|\-|\@|\#)+\/[gmi\s,;)]/g)
+			...code.matchAll(/[\s=!(]\/(\(|\.|\)|\{|\}|\||\\\/|\w|\\|\'|\"|\[|\]|\^|\*|\?|\+|\:|\-|\@|\#)+\/[gmi\s,;)]/g)
 		]
 		const indexSet = new Set()
 		const regexpMatches = []
@@ -1152,9 +1184,9 @@ class WebVPN {
 		if (!text) {
 			return ''
 		}
-		var unicode = ''
-		for (var i = 0; i < text.length; i++) {
-			var temp = text.charAt(i)
+		let unicode = ''
+		for (let i = 0; i < text.length; i++) {
+			const temp = text.charAt(i)
 			if (this.isChinese(temp)) {
 				unicode += this.convertChinease(temp)
 			} else {
