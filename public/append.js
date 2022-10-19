@@ -441,16 +441,16 @@
 		return copied;
 	}
 
-	// window._location
-	window._location = Object.assign({}, copySource(window.location), copySource(target));
-	window._location.assign = window.location._assign;
-	window._location.replace = window.location._replace;
+	// window.__location__
+	window.__location__ = Object.assign({}, copySource(window.location), copySource(target));
+	window.__location__.assign = window.location._assign;
+	window.__location__.replace = window.location._replace;
 
-	// location._href, _location._href 拦截
-	for (var key of ['location', '_location']) {
+	// location._href, __location__._href 拦截
+	for (var key of ['location', '__location__']) {
 		Object.defineProperty(window[key], '_href', {
 			get () {
-				return window._location.href;
+				return window.__location__.href;
 			},
 			set (url) {
 				console.log(
@@ -463,15 +463,15 @@
 			}
 		});
 	}
-	// _location.href 拦截
-	var href = window._location.href;
-	Object.defineProperty(window._location, 'href', {
+	// __location__.href 拦截
+	var href = window.__location__.href;
+	Object.defineProperty(window.__location__, 'href', {
 		get () {
 			return href;
 		},
 		set (url) {
 			console.log(
-				'%c_location 拦截 href : ' + url,
+				'%c__location__ 拦截 href : ' + url,
 				'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
 			);
 			if (!canJump(url)) return false;
@@ -496,13 +496,13 @@
 		}
 	});
 
-	// _window, _document, _globalThis, _parent, _self, _top
+	// __window__, __document__, _globalThis, __parent__, __self__, __top__
 	var locationCon = ['window', 'document'];
 	for (var con of locationCon) {
-		window['_' + con] = new Proxy(window[con], {
+		window['__' + con + '__'] = new Proxy(window[con], {
 			get (target, property, receiver) {
 				if (property === 'location') {
-					return window._location;
+					return window.__location__;
 				}
 				var value = target[property];
 				// 如果 value 是 function，不一定是真的函数，也可能是 Promise 这种，Promise 有 prototype
@@ -524,12 +524,12 @@
 			}
 		});
 	}
-	window._globalThis = window._parent = window._self = window._top = window._window;
+	window.__globalThis__ = window.__parent__ = window.__self__ = window.__top__ = window.__window__;
 
-	// 因为用 _document 替换了 document, _document 的时候类型跟 document 不一致
+	// 因为用 __document__ 替换了 document, __document__ 的时候类型跟 document 不一致
 	var observe = MutationObserver.prototype.observe;
 	MutationObserver.prototype.observe = function (target, options) {
-		if (target == window._document) {
+		if (target == window.__document__) {
 			target = document;
 		}
 		return observe.bind(this)(target, options);
