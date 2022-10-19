@@ -708,6 +708,9 @@
 			}
 		},
 		set (value) {
+			if (value === __$) {
+				return ;
+			}
 			window._$ = value;
 			for (var key in value) {
 				__$[key] = value[key];
