@@ -496,21 +496,30 @@ class WebVPN {
 	}
 
 	getGlobalIdentifiers (code, url) {
-		const indices = this.getBraceIndices(code)
+		const { indices, commentRanges } = this.getCodeBlocks(code)
 		if (indices.length % 2) {
 			console.log('00000000000000000000000000000')
 			console.log(indices.length, url)
 		}
-		const identifiers = Array.from(new Set([
-			...[...code.matchAll(/function\s+([a-zA-Z_\$][\w_\$]*)\s*\(/g)].map(m => m[1]),
-			...[...code.matchAll(/class\s+([a-zA-Z_\$][\w_\$]*)\s*(extends\s*[a-zA-Z_\$][\w_\$]*)?\s*\{/g)].map(m => m[1]),
-			...[...code.matchAll(/(var|const|let)\s+([a-zA-Z_\$][\w_\$]*)[\s=]/g)].map(m => m[2]),
-			...[...code.matchAll(/[,\n]\s*([a-zA-Z_\$][\w_\$]*)\s*=[^\>=]/g)].map(m => m[1])
-		]))
-		return identifiers.filter(it => !this.ignoredIdentifiers.includes(it))
+		const regexps = [
+			[/function\s+([a-zA-Z_\$][\w_\$]*)\s*\(/g, 1],
+			[/class\s+([a-zA-Z_\$][\w_\$]*)\s*(extends\s*[a-zA-Z_\$][\w_\$]*)?\s*\{/g, 1],
+			[/(var|const|let)\s+([a-zA-Z_\$][\w_\$]*)[\s=]/g, 2],
+			[/[,\n]\s*([a-zA-Z_\$][\w_\$]*)\s*=[^\>=]/g, 1]
+		]
+		const identifiers = regexps.map(ele => {
+			const matches = [...code.matchAll(ele[0])]
+			if (!commentRanges.length) {
+				return matches.map(m => m[ele[1]])
+			}
+			return matches.filter(match => {
+				return !commentRanges.some(r => r[0] <= match.index && r[1] > match.index + match[ele[1]].length)
+			}).map(m => m[ele[1]])
+		}).reduce((all, ele) => all.concat(ele), [])
+		return [...new Set(identifiers)].filter(it => !this.ignoredIdentifiers.includes(it))
 	}
 
-	getBraceIndices (code) {
+	getCodeBlocks (code) {
 		const matches = [
 			...code.matchAll(/[\s=!(&]\/[^\n]+?\/[gmi\s\.,;)]/g),
 			...code.matchAll(/[\s=!(&]\/(\(|\.|\)|\{|\}|\||\\\/|\w|\\|\'|\"|\[|\]|\^|\*|\?|\+|\:|\-|\@|\#)+?\/[gmi\.\s,;)]/g)
@@ -530,6 +539,8 @@ class WebVPN {
 		let quote = ''
 		let isComment = false
 		let isSingleComment = false
+
+		const commentRanges = []
 
 		const len = code.length
 		let current = ''
@@ -583,14 +594,18 @@ class WebVPN {
 					isComment = true
 					isSingleComment = true
 					isStr = false
-					i = i + code.slice(i + 1).indexOf('\n')
+					const end = i + code.slice(i + 1).indexOf('\n')
+					commentRanges.push([i, end])
+					i = end
 					last = code[i]
 					continue
 				} else if (current === '*') {
 					isComment = true
 					isSingleComment = false
 					isStr = false
-					i = i + code.slice(i + 1).indexOf('*/')
+					const end = i + code.slice(i + 1).indexOf('*/')
+					commentRanges.push([i, end])
+					i = end
 					last = code[i]
 					continue
 				}
@@ -604,7 +619,7 @@ class WebVPN {
 		}
 
 		if (!indices.length) {
-			return indices
+			return { indices, commentRanges }
 		}
 
 		indices.sort((a, b) => a[0] - b[0])
@@ -624,7 +639,7 @@ class WebVPN {
 			indices = indices.filter((_, i) => !inner.has(i))
 		}
 
-		return indices
+		return { indices, commentRanges }
 	}
 
 	appendScript (ctx, res) {
