@@ -458,23 +458,28 @@ class WebVPN {
 	}
 
 	refactorJsScopeCode (code, url) {
-		const importsMatches = [
+		const { identifiers, strAndCommentRanges } = this.getGlobalIdentifiers(code, url)
+
+		let importMatches = [
 			...code.matchAll(/[\s;]import[^'"\w]*['"][^'"]+['"]/g),
 			...code.matchAll(/[\s;]import\s*\{[^}]+\}\s*from\s*['"][^'"]+['"]/g)
 		]
+		let exportMatches = [...code.matchAll(/[\s;\}\/]export\s*\{[^}]+\}/g)]
+
+		importMatches = this.filterMatchesNotInStrAndComments(importMatches, strAndCommentRanges)
+		exportMatches = this.filterMatchesNotInStrAndComments(exportMatches, strAndCommentRanges)
 
 		if (code.startsWith('import')) {
 			const first = code.match(/^import[^'"\w]*['"][^'"]+['"]/) || code.match(/^import\s*\{[^}]+\}\s*from\s*['"][^'"]+['"]/)
 			if (first) {
-				importsMatches.push(first)
+				importMatches.push(first)
 			}
 		}
-		const exportsMatches = [...code.matchAll(/[\s;\}\/]export\s*\{[^}]+\}/g)]
 		let noImportsExportsCode = code
-		let importsCode = ''
-		let exportsCode = ''
-		if (importsMatches.length || exportsMatches.length) {
-			const importsExportsMatches = [...importsMatches, ...exportsMatches].sort((a, b) => a.index - b.index)
+		let importCode = ''
+		let exportCode = ''
+		if (importMatches.length || exportMatches.length) {
+			const importsExportsMatches = [...importMatches, ...exportMatches].sort((a, b) => a.index - b.index)
 			noImportsExportsCode = ''
 			let left = 0
 			for (let match of importsExportsMatches) {
@@ -482,21 +487,20 @@ class WebVPN {
 				noImportsExportsCode += code.slice(left, match.index + diff)
 				left = match.index + 1 + match[0].length
 			}
-			importsCode = importsMatches.map(m => {
+			importCode = importMatches.map(m => {
 				return m[0].startsWith('import') ? m[0] : m[0].slice(1)
 			}).join(';\n') + '\n\n'
-			exportsCode = '\n\n' + exportsMatches.map(m => m[0].slice(1)).join(';\n')
+			exportCode = '\n\n' + exportMatches.map(m => m[0].slice(1)).join(';\n')
 		}
 
 		const ext = this.jsExternalName
-		const identifiers = this.getGlobalIdentifiers(code, url)
 		const innerCode = '\n\nObject.assign(' + ext + ', {' + identifiers.join(',') + '});'
 		const outerCode = '\n\n;' + identifiers.map(i => `var ${i}=${ext}.${i};`).join('')
-		return importsCode + this.jsScopePrefixCode + noImportsExportsCode + innerCode + this.jsScopeSuffixCode + outerCode + exportsCode
+		return importCode + this.jsScopePrefixCode + noImportsExportsCode + innerCode + this.jsScopeSuffixCode + outerCode + exportCode
 	}
 
 	getGlobalIdentifiers (code, url) {
-		const { indices, commentRanges } = this.getCodeBlocks(code)
+		const { indices, strAndCommentRanges } = this.getCodeBlocks(code)
 		if (indices.length % 2) {
 			console.log('00000000000000000000000000000')
 			console.log(indices.length, url)
@@ -507,16 +511,11 @@ class WebVPN {
 			[/(var|const|let)\s+([a-zA-Z_\$][\w_\$]*)[\s=]/g, 2],
 			[/[,\n]\s*([a-zA-Z_\$][\w_\$]*)\s*=[^\>=]/g, 1]
 		]
-		const identifiers = regexps.map(ele => {
-			const matches = [...code.matchAll(ele[0])]
-			if (!commentRanges.length) {
-				return matches.map(m => m[ele[1]])
-			}
-			return matches.filter(match => {
-				return !commentRanges.some(r => r[0] <= match.index && r[1] > match.index + match[ele[1]].length)
-			}).map(m => m[ele[1]])
+		let identifiers = regexps.map(ele => {
+			return this.filterMatchesNotInStrAndComments([...code.matchAll(ele[0])], strAndCommentRanges).map(m => m[ele[1]])
 		}).reduce((all, ele) => all.concat(ele), [])
-		return [...new Set(identifiers)].filter(it => !this.ignoredIdentifiers.includes(it))
+		identifiers = [...new Set(identifiers)].filter(it => !this.ignoredIdentifiers.includes(it))
+		return { identifiers, strAndCommentRanges }
 	}
 
 	getCodeBlocks (code) {
@@ -540,7 +539,8 @@ class WebVPN {
 		let isComment = false
 		let isSingleComment = false
 
-		const commentRanges = []
+		let strStartIndex = 0
+		const strAndCommentRanges = []
 
 		const len = code.length
 		let current = ''
@@ -565,6 +565,7 @@ class WebVPN {
 				if (current === quote) {
 					if (last !== '\\' || code[i - 2] === '\\') {
 						isStr = false
+						strAndCommentRanges.push([strStartIndex, i])
 					}
 				}
 				last = current
@@ -586,6 +587,7 @@ class WebVPN {
 				isStr = true
 				quote = current
 				last = current
+				strStartIndex = i
 				continue
 			}
 			// 发现注释就直接跳到注释的结尾吧，不循环无意义的注释
@@ -595,7 +597,7 @@ class WebVPN {
 					isSingleComment = true
 					isStr = false
 					const end = i + code.slice(i + 1).indexOf('\n')
-					commentRanges.push([i, end])
+					strAndCommentRanges.push([i, end])
 					i = end
 					last = code[i]
 					continue
@@ -604,7 +606,7 @@ class WebVPN {
 					isSingleComment = false
 					isStr = false
 					const end = i + code.slice(i + 1).indexOf('*/')
-					commentRanges.push([i, end])
+					strAndCommentRanges.push([i, end])
 					i = end
 					last = code[i]
 					continue
@@ -619,7 +621,7 @@ class WebVPN {
 		}
 
 		if (!indices.length) {
-			return { indices, commentRanges }
+			return { indices, strAndCommentRanges }
 		}
 
 		indices.sort((a, b) => a[0] - b[0])
@@ -639,7 +641,16 @@ class WebVPN {
 			indices = indices.filter((_, i) => !inner.has(i))
 		}
 
-		return { indices, commentRanges }
+		return { indices, strAndCommentRanges }
+	}
+
+	filterMatchesNotInStrAndComments (matches, strAndCommentRanges) {
+		if (!strAndCommentRanges.length) {
+			return matches
+		}
+		return matches.filter(match => {
+			return !strAndCommentRanges.some(r => r[0] <= match.index && r[1] > match.index)
+		})
 	}
 
 	appendScript (ctx, res) {
