@@ -704,6 +704,11 @@
 	var $_handler = {
 		get () {
 			if (window._$) {
+				if (Object.keys(window._$).length > Object.keys(__$).length) {
+					for (var key in window._$) {
+						__$[key] = window._$[key];
+					}
+				}
 				return __$;
 			}
 		},
