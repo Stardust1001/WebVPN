@@ -754,7 +754,7 @@
 			for (var ele of json.child) {
 				var dom = json2dom(ele);
 				dom._type_ = 'custom';
-				node.appendChild(json2dom(ele));
+				node.appendChild(dom);
 			}
 		}
 
