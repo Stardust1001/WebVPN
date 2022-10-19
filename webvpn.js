@@ -61,13 +61,13 @@ class WebVPN {
 		this.jsScopePrefixCode = `
 			var ${this.jsExternalName} = {};
 			(function () {
-				var window = _window;
-				var document = _document;
-				var globalThis = _globalThis;
-				var parent = _parent;
-				var self = _self;
-				var top = _top;
-				var location = _location;\n
+				var window = __window__;
+				var document = __document__;
+				var globalThis = __globalThis__;
+				var parent = __parent__;
+				var self = __self__;
+				var top = __top__;
+				var location = __location__;\n
 		`
 		this.jsScopeSuffixCode = `
 			})();
