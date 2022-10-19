@@ -37,7 +37,7 @@ class WebVPN {
 		this.mimeDict = {
 			'html': 'text/html',
 			'text': 'text/plain',
-			'js': 'application/javascript, application/x-javascript',
+			'js': 'application/javascript, application/x-javascript, text/javascript',
 			'css': 'text/css',
 			'image': 'image/png, image/jpg, image/jpeg, image/gif',
 			'json': 'application/json',
@@ -759,7 +759,7 @@ class WebVPN {
 	}
 
 	async convertCharsetData (ctx, headers, res) {
-		if (ctx.meta.mime !== 'html') {
+		if (ctx.meta.mime !== 'html' && ctx.meta.mime !== 'js') {
 			return res.text()
 		}
 		const buffer = Buffer.from(await res.arrayBuffer())
