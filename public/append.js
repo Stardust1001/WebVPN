@@ -1,6 +1,6 @@
 (function () {
 
-	if (window.location._href) {
+	if (window.location.__href__) {
 		return
 	}
 
@@ -446,15 +446,15 @@
 	window.__location__.assign = window.location._assign;
 	window.__location__.replace = window.location._replace;
 
-	// location._href, __location__._href 拦截
+	// location.__href__, __location__.__href__ 拦截
 	for (var key of ['location', '__location__']) {
-		Object.defineProperty(window[key], '_href', {
+		Object.defineProperty(window[key], '__href__', {
 			get () {
 				return window.__location__.href;
 			},
 			set (url) {
 				console.log(
-					'%c' + key + ' 拦截 _href : ' + url,
+					'%c' + key + ' 拦截 __href__ : ' + url,
 					'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
 				);
 				if (!canJump(url)) return false;
