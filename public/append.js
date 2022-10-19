@@ -373,11 +373,11 @@
 
 	// appendChild 拦截
 	var appendChild = Node.prototype.appendChild;
-	Node.prototype.appendChild = function (node, type) {
+	Node.prototype.appendChild = function (node) {
 		if (!(node instanceof Node)) {
 			return
 		}
-		if (type !== 'custom') {
+		if (node._type_ !== 'custom') {
 			domLog(node, 'appendChild');
 			node = transformNode(node);
 		}
@@ -936,7 +936,9 @@
 
 		if (json.child) {
 			for (var ele of json.child) {
-				node.appendChild(json2dom(ele), 'custom');
+				var dom = json2dom(ele);
+				dom._type_ = 'custom';
+				node.appendChild(dom);
 			}
 		}
 
