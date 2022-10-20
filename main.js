@@ -72,7 +72,7 @@ class VPN extends WebVPN {
 // 下面都可以改，这是我自己做的示例
 // 最主要的是继承并实现 WebVPN 类，然后提供一些配置 config
 
-const prodSite = 'http://www.webvpn-proxy.com/proxy'
+const prodSite = 'http://www.webvpn.info/proxy'
 const devSite = 'http://127.0.0.1:1001/proxy'
 const isProd = os.type() !== 'Darwin'
 
