@@ -85,8 +85,9 @@ button.addEventListener('click', () => {
 })
 
 function transformUrl (url) {
-	const { hostname, pathname, search } = new URL(url)
-	const subdomain = base32.encode(hostname).replaceAll('=', '')
+	const { host, hostname, pathname, search } = new URL(url)
+	const isIp = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(hostname)
+	const subdomain = base32.encode(isIp ? host : hostname).replaceAll('=', '')
 	return location.origin.replace('www', subdomain) + pathname + search
 }
 

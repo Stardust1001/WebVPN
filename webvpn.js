@@ -247,7 +247,9 @@ class WebVPN {
 	}
 
 	routeInit (ctx) {
-		const url = 'https://' + base32.decode(ctx.subdomain) + ctx.url
+		const domain = base32.decode(ctx.subdomain)
+		const isIp = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(domain)
+		const url = (isIp ? 'http://' : 'https://') + domain + ctx.url
 
 		ctx.meta = {
 			url,
