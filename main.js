@@ -66,7 +66,7 @@ const config = {
 	// WebVPN 服务端口
 	port: 80,
 	// WebVPN 服务网址，访问其他网站，都从这个网址进行转换
-	site: new URL('http://www.webvpn.com'),
+	site: new URL('http://www.webvpn.info'),
 	// cluster 模式用几个进程（为了充分利用CPU核心数）
 	numProcesses: 4,
 	// 是否启用缓存，会把静态资源缓存到本地文件夹以加速后续的网站访问
