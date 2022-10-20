@@ -93,7 +93,7 @@
 			url = 'https:' + url;
 		}
 		var u = new URL(url);
-		var subdomain = window.base32.encode(u.hostname);
+		var subdomain = window.base32.encode(u.host);
 		return siteOrigin.replace('www', subdomain) + u.pathname + u.search;
 	}
 
@@ -106,8 +106,8 @@
 			return window.location.origin + url;
 		}
 		var u = new URL(url);
-		var hostname = window.base32.decode(u.hostname.split('.')[0]);
-		return window.location.protocol + '//' + hostname + u.pathname + u.search;
+		var host = window.base32.decode(u.host.split('.')[0]);
+		return window.location.protocol + '//' + host + u.pathname + u.search;
 	}
 
 	function transformArgumentsNodes (nodes, funcName) {

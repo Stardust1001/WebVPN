@@ -430,9 +430,9 @@ class WebVPN {
 				url = 'https:' + match.slice(match.indexOf('//'), -1)
 				prefix = '//'
 			}
-			const { hostname } = new URL(url)
+			const { host } = new URL(url)
 			const source = prefix + hostname
-			let desti = prefix.replace('https', 'http') + base32.encode(hostname) + vpnDomain
+			let desti = prefix.replace('https', 'http') + base32.encode(host) + vpnDomain
 			if (desti.startsWith('//')) {
 				desti = this.config.site.protocol + desti
 			}
@@ -736,8 +736,8 @@ class WebVPN {
 		}
 		const acao = headers['access-control-allow-origin']
 		if (acao && acao !== '*') {
-			const hostname = new URL(acao).hostname
-			headers['access-control-allow-origin'] = acao.replace(hostname, base32.encode(hostname) + this.config.vpnDomain)
+			const host = new URL(acao).host
+			headers['access-control-allow-origin'] = acao.replace(hostname, base32.encode(host) + this.config.vpnDomain)
 		} else {
 			headers['access-control-allow-origin'] = '*'
 		}
@@ -765,25 +765,25 @@ class WebVPN {
 
 	setOriginHeaders (ctx, headers) {
 		if (headers['host']) {
-			headers['host'] = this.convertHostname(headers['host'])
+			headers['host'] = this.convertHost(headers['host'])
 		}
 		if (headers['origin']) {
-			const hostname = new URL(headers['origin']).hostname
-			headers['origin'] = headers['origin'].replace(hostname, this.convertHostname(hostname))
+			const host = new URL(headers['origin']).host
+			headers['origin'] = headers['origin'].replace(host, this.convertHost(host))
 		}
 		const referer = headers['referer']
 		if (referer) {
-			if (referer.indexOf(this.config.site.hostname) || referer.indexOf(this.config.vpnDomain) < 0) {
+			if (referer.indexOf(this.config.site.host) || referer.indexOf(this.config.vpnDomain) < 0) {
 				delete headers['referer']
 			} else {
-				const hostname = new URL(referer).hostname
-				headers['referer'] = referer.replace(hostname, this.convertHostname(hostname))
+				const host = new URL(referer).host
+				headers['referer'] = referer.replace(host, this.convertHost(host))
 			}
 		}
 	}
 
-	convertHostname (hostname) {
-		return base32.decode(hostname.split('.')[0])
+	convertHost (host) {
+		return base32.decode(host.split('.')[0])
 	}
 
 	async convertCharsetData (ctx, headers, res) {

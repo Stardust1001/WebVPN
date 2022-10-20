@@ -85,18 +85,16 @@ button.addEventListener('click', () => {
 })
 
 function transformUrl (url) {
-	const { host, hostname, pathname, search } = new URL(url)
-	const isIp = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(hostname)
-	const subdomain = base32.encode(isIp ? host : hostname).replaceAll('=', '')
+	const { host, pathname, search } = new URL(url)
+	const subdomain = base32.encode(host).replaceAll('=', '')
 	return location.origin.replace('www', subdomain) + pathname + search
 }
 
 function decodeUrl (url) {
-	const { hostname, pathname, search } = new URL(url)
-	const subdomain = hostname.split('.')[0]
-	const domain = base32.decode(subdomain)
-	const isIp = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(domain)
-	return (isIp ? 'http://' : 'https://') + domain + pathname + search
+	const { host, pathname, search } = new URL(url)
+	const subdomain = host.split('.')[0]
+	const isIp = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(subdomain)
+	return (isIp ? 'http://' : 'https://') + base32.decode(subdomain) + pathname + search
 }
 
 </script>
