@@ -63,14 +63,17 @@ class WebVPN {
 		this.jsExternalName = '_ext_'
 		this.jsScopePrefixCode = `
 			var ${this.jsExternalName} = {};
+			var __self__ = self;
 			(function () {
-				var window = __window__;
-				var document = __document__;
-				var globalThis = __globalThis__;
-				var parent = __parent__;
-				var self = __self__;
-				var top = __top__;
-				var location = __location__;\n
+				if (__self__.window) {
+					var window = __window__;
+					var document = __document__;
+					var globalThis = __globalThis__;
+					var parent = __parent__;
+					var self = __self__;
+					var top = __top__;
+					var location = __location__;
+				}
 				setInterval(function () {
 					if (typeof location === 'string') {
 						window.location.href = window.webvpn.transformUrl(location);
@@ -355,18 +358,15 @@ class WebVPN {
 		ctx.meta.mime = this.getMimeByResponseHeaders(headers) || ctx.meta.mime
 
 		if (this.noTransformMimes.includes(ctx.meta.mime)) {
-			if (headers['content-encoding'] === 'gzip' && ctx.meta.mime === 'json') {
+			if (headers['content-encoding'] === 'gzip') {
 				delete headers['content-encoding']
-				ctx.body = await res.text()
-				ctx.meta.done = true
-			} else {
-				ctx.res.writeHead(res.status, headers)
-				res.body.pipe(ctx.res)
-				await new Promise((resolve) => {
-					res.body.on('end', resolve)
-				})
-				ctx.meta.done = true
 			}
+			ctx.res.writeHead(res.status, headers)
+			res.body.pipe(ctx.res)
+			await new Promise((resolve) => {
+				res.body.on('end', resolve)
+			})
+			ctx.meta.done = true
 		} else {
 			ctx.status = res.status
 			delete headers['content-encoding']
@@ -515,7 +515,7 @@ class WebVPN {
 		const regexps = [
 			[/function\s+([a-zA-Z_\$][\w_\$]*)\s*\(/g, 1],
 			[/class\s+([a-zA-Z_\$][\w_\$]*)\s*(extends\s*[a-zA-Z_\$][\w_\$]*)?\s*\{/g, 1],
-			[/(var|const|let)\s+([a-zA-Z_\$][\w_\$]*)[\s=]/g, 2],
+			[/(var|const|let)\s+([a-zA-Z_\$][\w_\$]*)\s*=/g, 2],
 			[/[,\n]\s*([a-zA-Z_\$][\w_\$]*)\s*=[^\>=]/g, 1]
 		]
 		let identifiers = regexps.map(ele => {
