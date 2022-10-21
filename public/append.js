@@ -6,13 +6,11 @@
 
 	var logTypes = ['AJAX', 'fetch', 'History'];
 
-	var site = window.webvpn.site;
-	var siteHostname = window.webvpn.siteHostname;
-	var siteOrigin = window.webvpn.siteOrigin;
-	var sitePathname = window.webvpn.sitePathname;
+	var siteUrl = window.webvpn.site;
+	var site = new URL(siteUrl);
 	var base = window.webvpn.base;
 
-	var targetUrl = window.webvpn.targetUrl;
+	var targetUrl = window.webvpn.target;
 	var target = new URL(targetUrl);
 
 	var proxyType = window.webvpn.proxyType;
@@ -53,24 +51,7 @@
 
 	Object.assign(window.webvpn, {
 		transformUrl,
-		decodeUrl,
-		transformArgumentsNodes,
-		transformNode,
-		transformHtml,
-		getNodeUrl,
-		replaceNodesUrls,
-		replaceNodeUrl,
-		customReplaceNodeUrl,
-		checkUrlShouldReplace,
-		replaceThirdDomainUrl,
-		canJump,
-		json2dom,
-		removeChilds,
-		getNodeName,
-		hasChinease,
-		convertChinease,
-		convertChineaseText,
-		getAttacher
+		decodeUrl
 	});
 
 	var ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:'];
@@ -93,10 +74,10 @@
 				console.log('%c 链接转换错误：' + url, 'background-color: red; color: white; padding: 5px 10px;');
 				return url;
 			}
-			if (u.hostname === siteHostname) {
-				if (url.startsWith(siteOrigin + '/public/')) {
+			if (u.host === site.host) {
+				if (url.startsWith(site.origin + '/public/')) {
 					return url;
-				} else if (url.startsWith(siteOrigin + '/proxy/')) {
+				} else if (url.startsWith(site.origin + '/proxy/')) {
 					var path = url.split('/proxy/' + proxyType + '/')[1];
 					if (path.indexOf('%3Aptth') > 0 || path.indexOf('%3Asptth') > 0) {
 						return url;
@@ -125,13 +106,13 @@
 			url = url[0] === '/' ? (target.origin + url) : (target.origin + pathDir + url);
 		}
 		var encodeUrl = encodeURIComponent(reverseText(url));
-		return sitePathname + '/' + proxyType + (url[0] === '/' ? '' : '/') + encodeUrl;
+		return site.pathname + '/' + proxyType + (url[0] === '/' ? '' : '/') + encodeUrl;
 	}
 
 	function decodeUrl (url) {
 		url = url ? url.trim() : '';
 		if (!url || url === '/') return url;
-		if (url.startsWith(siteOrigin)) {
+		if (url.startsWith(site.origin)) {
 			try {
 				url = new URL(url).pathname;
 			} catch {
@@ -236,13 +217,7 @@
 	}
 
 	function customReplaceNodeUrl (node, attrs, type) {
-		// 无法100%完全转发网站并保证原网站代码的100%正常运行
-		// 比如 play.google.com 的图片显示不出来，src 没有，data-src 有
-		// 可能是部分代码运行异常导致图片显示不了，这里就帮着显示下
 		attrs.forEach(function (attr) {
-			if (!node.getAttribute(attr, type) && node.dataset[attr]) {
-				node.setAttribute(attr, node.dataset[attr], type);
-			}
 			var href = node.getAttribute('href', type);
 			// 有的网站里面代码生成的链接，原本该是 javascript:func()，因为各种原因，生成了 Http 链接并以 /proxy/ 开头
 			if (node.node_name === 'a' && href && href.indexOf('%3Atpircsavaj') > 0) {
@@ -276,9 +251,6 @@
 		if (!checkUrlShouldReplace(url, attr)) {
 			return ;
 		}
-		if (attr !== 'srcset' && proxyType !== 'single' && replaceThirdDomainUrl(node, urlAttr, url, type)) {
-			return ;
-		}
 		var newUrl = transformUrl(url);
 		if (attr === 'srcset') {
 			var parts = url.split(/(\\n|,|\s+)/g);
@@ -309,7 +281,7 @@
 			return !!url;
 		}
 		url = url ? url.trim() : '';
-		if (!url || url.startsWith(siteOrigin) || url.startsWith('/proxy/') || url.startsWith('/public')) {
+		if (!url || url.startsWith(site.origin) || url.startsWith('/proxy/') || url.startsWith('/public')) {
 			return false;
 		}
 		for (var prefix of ignoredPrefixes) {
@@ -318,26 +290,11 @@
 			}
 		}
 		if (proxyType === 'single') {
-			if (url.indexOf('//') >= 0 && (url.split('//')[1] || '').split('/')[0] !== target.hostname) {
+			if (url.indexOf('//') >= 0 && (url.split('//')[1] || '').split('/')[0] !== target.host) {
 				return false;
 			}
 		}
 		return true;
-	}
-
-	function replaceThirdDomainUrl (node, urlAttr, url, type) {
-		var newUrl = transformUrl(url);
-		var domain = '';
-		try {
-			domain = new URL(newUrl).hostname;
-		} catch {}
-		if (domain !== target.hostname && domain !== siteHostname) {
-			if (url !== newUrl) {
-				node.setAttribute(urlAttr, newUrl, type)
-			}
-			return true;
-		}
-		return false;
 	}
 
 	function reverseText (text) {
@@ -986,56 +943,6 @@
 	setTimeout(replaceNodesUrls, 1000);
 	setTimeout(replaceNodesUrls, 2000);
 	setInterval(replaceNodesUrls, 3000);
-
-	// [\u4e00-\u9fa5]
-	var chineaseRegexp = /\#[\u4e01-\u9fa6]\#/g;
-	function hasChinease (text) {
-		return chineaseRegexp.test(text);
-	}
-
-	function convertChinease () {
-		var root = document.documentElement;
-		var has = hasChinease(root.innerHTML);
-		if (!has) {
-			return ;
-		}
-		var walker = null;
-		var n = null;
-
-		walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
-		while (n = walker.nextNode()) {
-			var text = n.nodeValue;
-			if (hasChinease(text)) {
-				n.nodeValue = convertChineaseText(text);
-			}
-		}
-
-		walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
-		var attrs = [];
-		while (n = walker.nextNode()) {
-			attrs = Array.from(n.attributes || []);
-			attrs.forEach(function (attr) {
-				var text = attr.value;
-				if (hasChinease(text)) {
-					attr.value = convertChineaseText(text);
-				}
-			});
-		}
-	}
-
-	function convertChineaseText (text) {
-		var matches = Array.from(new Set(text.match(chineaseRegexp)));
-		matches.forEach(function (match) {
-			var chinease = String.fromCharCode(match[1].charCodeAt(0) - 1);
-			text = text.replaceAll(match, chinease);
-		});
-		return text;
-	}
-
-	window.addEventListener('load', convertChinease);
-	setTimeout(convertChinease, 1000);
-	setTimeout(convertChinease, 2000);
-	setInterval(convertChinease, 3000);
 
 	var logger = console.log;
 	console.log = function () {
