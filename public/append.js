@@ -566,13 +566,17 @@
 	// 	}
 	// });
 
-	// __window__, __document__, __globalThis__, __parent__, __self__, __top__
-	var locationCon = ['window', 'document'];
+	// __window__, __document__, _globalThis, __parent__, __self__, __top__
+	var locationCon = ['window', 'document', 'globalThis', 'parent', 'self', 'top'];
 	for (var con of locationCon) {
 		window['__' + con + '__'] = new Proxy(window[con], {
 			get (target, property, receiver) {
+				var win = (target === parent || target === top) ? target : window;
+				if (property === 'window') {
+					return win.__window__;
+				}
 				if (property === 'location') {
-					return window.__location__;
+					return win.__location__;
 				}
 				var value = target[property];
 				// 如果 value 是 function，不一定是真的函数，也可能是 Promise 这种，Promise 有 prototype
@@ -580,6 +584,10 @@
 			},
 			set (target, property, value) {
 				if (property === 'location') {
+					if (target === parent || target === top) {
+						target.__location__.href = value;
+						return true;
+					}
 					console.log(
 						'%clocation 操作 拦截 location = : ' + value,
 						'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
@@ -593,7 +601,6 @@
 			}
 		});
 	}
-	window.__globalThis__ = window.__parent__ = window.__self__ = window.__top__ = window.__window__;
 
 	// 因为用 __document__ 替换了 document, __document__ 的时候类型跟 document 不一致
 	var observe = MutationObserver.prototype.observe;
