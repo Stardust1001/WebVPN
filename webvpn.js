@@ -384,18 +384,15 @@ class WebVPN {
 		ctx.meta.mime = this.getMimeByResponseHeaders(headers) || ctx.meta.mime
 
 		if (this.noTransformMimes.includes(ctx.meta.mime)) {
-			if (headers['content-encoding'] === 'gzip' && ctx.meta.mime === 'json') {
+			if (headers['content-encoding'] === 'gzip') {
 				delete headers['content-encoding']
-				ctx.body = await res.text()
-				ctx.meta.done = true
-			} else {
-				ctx.res.writeHead(res.status, headers)
-				res.body.pipe(ctx.res)
-				await new Promise((resolve) => {
-					res.body.on('end', resolve)
-				})
-				ctx.meta.done = true
 			}
+			ctx.res.writeHead(res.status, headers)
+			res.body.pipe(ctx.res)
+			await new Promise((resolve) => {
+				res.body.on('end', resolve)
+			})
+			ctx.meta.done = true
 		} else {
 			ctx.status = res.status
 			delete headers['content-encoding']
