@@ -6,13 +6,12 @@
 
 	var logTypes = ['AJAX', 'fetch', 'History'];
 
-	var site = window.webvpn.site;
-	var siteHostname = window.webvpn.siteHostname;
-	var siteOrigin = window.webvpn.siteOrigin;
+	var siteUrl = window.webvpn.site;
+	var site = new URL(siteUrl);
 	var base = window.webvpn.base;
-	var vpnDomain = new URL(site).host.replace('www', '');
+	var vpnDomain = site.host.replace('www', '');
 
-	var targetUrl = window.webvpn.targetUrl;
+	var targetUrl = window.webvpn.target;
 	var target = new URL(targetUrl);
 
 	var interceptLog = window.webvpn.interceptLog;
@@ -51,24 +50,7 @@
 
 	Object.assign(window.webvpn, {
 		transformUrl,
-		decodeUrl,
-		transformArgumentsNodes,
-		transformNode,
-		transformHtml,
-		getNodeUrl,
-		replaceNodesUrls,
-		replaceNodeUrl,
-		customReplaceNodeUrl,
-		checkUrlShouldReplace,
-		replaceThirdDomainUrl,
-		canJump,
-		json2dom,
-		removeChilds,
-		getNodeName,
-		hasChinease,
-		convertChinease,
-		convertChineaseText,
-		getAttacher
+		decodeUrl
 	});
 
 	var ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:'];
@@ -94,7 +76,7 @@
 		}
 		var u = new URL(url);
 		var subdomain = window.base32.encode(u.host);
-		return siteOrigin.replace('www', subdomain) + u.pathname + u.search;
+		return site.origin.replace('www', subdomain) + u.pathname + u.search;
 	}
 
 	function decodeUrl (url) {
@@ -185,18 +167,6 @@
 			attrs.forEach(function (attr) {
 				replaceNodeUrl(root, node, attr, type);
 			});
-			customReplaceNodeUrl(node, attrs, type);
-		});
-	}
-
-	function customReplaceNodeUrl (node, attrs, type) {
-		// 无法100%完全转发网站并保证原网站代码的100%正常运行
-		// 比如 play.google.com 的图片显示不出来，src 没有，data-src 有
-		// 可能是部分代码运行异常导致图片显示不了，这里就帮着显示下
-		attrs.forEach(function (attr) {
-			if (!node.getAttribute(attr, type) && node.dataset[attr]) {
-				node.setAttribute(attr, node.dataset[attr], type);
-			}
 		});
 	}
 
@@ -212,9 +182,6 @@
 			urlAttr = link[1];
 		}
 		if (!checkUrlShouldReplace(url, attr)) {
-			return ;
-		}
-		if (attr !== 'srcset' && replaceThirdDomainUrl(node, urlAttr, url, type)) {
 			return ;
 		}
 		var newUrl = transformUrl(url);
@@ -256,21 +223,6 @@
 			}
 		}
 		return url.indexOf(vpnDomain) < 0;
-	}
-
-	function replaceThirdDomainUrl (node, urlAttr, url, type) {
-		var newUrl = transformUrl(url);
-		var domain = '';
-		try {
-			domain = new URL(newUrl).host;
-		} catch {}
-		if (domain !== target.host && domain !== siteHostname) {
-			if (url !== newUrl) {
-				node.setAttribute(urlAttr, newUrl, type)
-			}
-			return true;
-		}
-		return false;
 	}
 
 	// ajax 拦截
@@ -808,61 +760,10 @@
 		);
 	}
 
-
 	window.addEventListener('load', replaceNodesUrls);
 	setTimeout(replaceNodesUrls, 1000);
 	setTimeout(replaceNodesUrls, 2000);
 	setInterval(replaceNodesUrls, 3000);
-
-	// [\u4e00-\u9fa5]
-	var chineaseRegexp = /\#[\u4e01-\u9fa6]\#/g;
-	function hasChinease (text) {
-		return chineaseRegexp.test(text);
-	}
-
-	function convertChinease () {
-		var root = document.documentElement;
-		var has = hasChinease(root.innerHTML);
-		if (!has) {
-			return ;
-		}
-		var walker = null;
-		var n = null;
-
-		walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
-		while (n = walker.nextNode()) {
-			var text = n.nodeValue;
-			if (hasChinease(text)) {
-				n.nodeValue = convertChineaseText(text);
-			}
-		}
-
-		walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
-		var attrs = [];
-		while (n = walker.nextNode()) {
-			attrs = Array.from(n.attributes || []);
-			attrs.forEach(function (attr) {
-				var text = attr.value;
-				if (hasChinease(text)) {
-					attr.value = convertChineaseText(text);
-				}
-			});
-		}
-	}
-
-	function convertChineaseText (text) {
-		var matches = Array.from(new Set(text.match(chineaseRegexp)));
-		matches.forEach(function (match) {
-			var chinease = String.fromCharCode(match[1].charCodeAt(0) - 1);
-			text = text.replaceAll(match, chinease);
-		});
-		return text;
-	}
-
-	window.addEventListener('load', convertChinease);
-	setTimeout(convertChinease, 1000);
-	setTimeout(convertChinease, 2000);
-	setInterval(convertChinease, 3000);
 
 	var logger = console.log;
 	console.log = function () {

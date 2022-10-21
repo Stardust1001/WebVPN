@@ -394,11 +394,6 @@ class WebVPN {
 			matches.push(...this.getCssUrlMatches(ctx, res))
 		}
 		res.data = this.replaceMatches(ctx, res, matches)
-
-		const { hideChinease = this.config.hideChinease } = ctx.meta
-		if (hideChinease && typeof res.data === 'string') {
-			res.data = this.chinease2Unicode(ctx, res)
-		}
 	}
 
 	getBase (ctx, res) {
@@ -670,12 +665,8 @@ class WebVPN {
 			(function () {
 				window.webvpn = {
 					site: '${site.href}',
-					siteHostname: '${site.hostname}',
-					siteOrigin: '${site.origin}',
 					base: '${base}',
-
-					targetUrl: '${target.href}',
-
+					target: '${target.href}',
 					interceptLog: ${interceptLog},
 					disableJump: ${disableJump},
 					confirmJump: ${confirmJump}
@@ -852,31 +843,6 @@ class WebVPN {
 
 	shouldReplaceUrls (ctx, res) {
 		return true
-	}
-
-	chinease2Unicode (ctx, res) {
-		const text = res.data
-		if (!text) {
-			return ''
-		}
-		var unicode = ''
-		for (var i = 0; i < text.length; i++) {
-			var temp = text.charAt(i)
-			if (this.isChinese(temp)) {
-				unicode += this.convertChinease(temp)
-			} else {
-				unicode += temp
-			}
-		}
-		return unicode
-	}
-
-	isChinese (text) {
-		return /[\u4e00-\u9fa5]/.test(text)
-	}
-
-	convertChinease (text) {
-		return text
 	}
 
 	beforeRequest (ctx) { }

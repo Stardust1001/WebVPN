@@ -49,14 +49,6 @@ class VPN extends WebVPN {
 	shouldReplaceUrls (ctx, res) {
 		return true
 	}
-
-	// 转换汉字
-	convertChinease (text) {
-		// 如果需要转换汉字，达到网络传输中隐藏网页汉字内容的功能，可以用这个
-		// 至于你为什么需要隐藏汉字，实际上我也不知道
-		text = String.fromCharCode(text.charCodeAt(0) + 1)
-		return `#${text}#`
-	}
 }
 
 // 下面都可以改，这是我自己做的示例
@@ -79,8 +71,6 @@ const config = {
 	disableJump: false,
 	// 是否在页面跳转前询问用户，由用户决定是否允许网页跳转
 	confirmJump: false,
-	// 是否隐藏汉字（我也不知道你为什么要隐藏汉字，我不知道是出于什么用途）
-	hideChinease: false,
 	// 这个设置 0，可有效避免 Hostname/IP does not match certificate's altnames 错误
 	NODE_TLS_REJECT_UNAUTHORIZED: 0
 }
