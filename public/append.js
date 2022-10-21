@@ -627,10 +627,10 @@
 						'%clocation 操作 拦截 location = : ' + value,
 						'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
 					);
-					if (!canJump(url)) return;
-					url = transformUrl(url);
-					window.location.href = url;
-					return url;
+					if (!canJump(value)) return;
+					value = transformUrl(value);
+					window.location.href = value;
+					return value;
 				}
 				target[property] = value;
 				return true;
