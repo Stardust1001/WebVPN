@@ -17,7 +17,7 @@ const httpsAgent = new https.Agent({ rejectUnauthorized: false })
 class WebVPN {
 	constructor (config) {
 		process.env.NODE_TLS_REJECT_UNAUTHORIZED = config.NODE_TLS_REJECT_UNAUTHORIZED || 0
-		config.vpnDomain = config.site.hostname.replace('www', '')
+		config.vpnDomain = config.site.host.replace('www', '')
 		this.config = config
 		this.mimes = ['json', 'js', 'css', 'html', 'image', 'video', 'audio']
 		this.mimeRegs = [
@@ -125,12 +125,12 @@ class WebVPN {
 	}
 
 	async getCache (ctx) {
-		const { hostname, pathname } = ctx.meta.target
+		const { host, pathname } = ctx.meta.target
 		const filename = encodeURIComponent(pathname)
-		if (!this.caches[hostname] || !this.caches[hostname].includes(filename)) {
+		if (!this.caches[host] || !this.caches[host].includes(filename)) {
 			return null
 		}
-		await this.respondFile(ctx, path.join(this.cacheDir, hostname, filename))
+		await this.respondFile(ctx, path.join(this.cacheDir, host, filename))
 		return true
 	}
 
@@ -144,8 +144,8 @@ class WebVPN {
 			return
 		}
 
-		const { hostname, pathname } = ctx.meta.target
-		const dir = path.join(this.cacheDir, hostname)
+		const { host, pathname } = ctx.meta.target
+		const dir = path.join(this.cacheDir, host)
 		if (!await fsUtils.exists(dir)) {
 			await fsUtils.mkdir(dir)
 		}
@@ -431,7 +431,7 @@ class WebVPN {
 				prefix = '//'
 			}
 			const { host } = new URL(url)
-			const source = prefix + hostname
+			const source = prefix + host
 			let desti = prefix.replace('https', 'http') + base32.encode(host) + vpnDomain
 			if (desti.startsWith('//')) {
 				desti = this.config.site.protocol + desti
@@ -737,7 +737,7 @@ class WebVPN {
 		const acao = headers['access-control-allow-origin']
 		if (acao && acao !== '*') {
 			const host = new URL(acao).host
-			headers['access-control-allow-origin'] = acao.replace(hostname, base32.encode(host) + this.config.vpnDomain)
+			headers['access-control-allow-origin'] = acao.replace(host, base32.encode(host) + this.config.vpnDomain)
 		} else {
 			headers['access-control-allow-origin'] = '*'
 		}

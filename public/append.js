@@ -10,7 +10,7 @@
 	var siteHostname = window.webvpn.siteHostname;
 	var siteOrigin = window.webvpn.siteOrigin;
 	var base = window.webvpn.base;
-	var vpnDomain = new URL(site).hostname.replace('www', '');
+	var vpnDomain = new URL(site).host.replace('www', '');
 
 	var targetUrl = window.webvpn.targetUrl;
 	var target = new URL(targetUrl);
@@ -262,9 +262,9 @@
 		var newUrl = transformUrl(url);
 		var domain = '';
 		try {
-			domain = new URL(newUrl).hostname;
+			domain = new URL(newUrl).host;
 		} catch {}
-		if (domain !== target.hostname && domain !== siteHostname) {
+		if (domain !== target.host && domain !== siteHostname) {
 			if (url !== newUrl) {
 				node.setAttribute(urlAttr, newUrl, type)
 			}
