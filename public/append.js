@@ -489,14 +489,6 @@
 		}
 		return observe.bind(this)(target, options);
 	}
-	// 用 __window__ 在自定义作用域里替换了 window, __window__ 不能被应用于 addEventListener.call
-	var _call = window.addEventListener.call;
-	window.addEventListener.call = function () {
-		if (arguments[0] === window.__window__) {
-			arguments[0] = window;
-		}
-		return _call.apply(this, arguments);
-	}
 
 	// getAttribute 拦截
 	var nasUnion = [];
