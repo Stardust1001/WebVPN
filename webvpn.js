@@ -71,6 +71,11 @@ class WebVPN {
 				var self = __self__;
 				var top = __top__;
 				var location = __location__;\n
+				setInterval(function () {
+					if (typeof location === 'string') {
+						window.location.href = window.webvpn.transformUrl(location);
+					}
+				}, 500);\n
 		`
 		this.jsScopeSuffixCode = `
 			})();
