@@ -82,7 +82,7 @@ class WebVPN {
 				}, 500);\n
 		`
 		this.jsScopeSuffixCode = `
-			})();
+			}).bind(self.__window__ || self)();
 		`
 
 		this.public = []
