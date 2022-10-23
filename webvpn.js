@@ -461,7 +461,11 @@ class WebVPN {
 	}
 
 	refactorJsScopeCode (code, url) {
-		const { identifiers, strAndCommentRanges } = this.getGlobalIdentifiers(code, url)
+		const { indices, strAndCommentRanges } = this.getCodeBlocks(code)
+		if (indices.length % 2) {
+			console.log('00000000000000000000000000000')
+			console.log(indices.length, url)
+		}
 
 		let importMatches = [
 			...code.matchAll(/[\s;]import[^'"\w]*['"][^'"]+['"]/g),
@@ -496,18 +500,15 @@ class WebVPN {
 			exportCode = '\n\n' + exportMatches.map(m => m[0].slice(1)).join(';\n')
 		}
 
+		const identifiers = this.getGlobalIdentifiers(code, strAndCommentRanges)
+
 		const ext = this.jsExternalName
 		const innerCode = '\n\nObject.assign(' + ext + ', {' + identifiers.join(',') + '});'
 		const outerCode = '\n\n;' + identifiers.map(i => `var ${i}=${ext}.${i};`).join('')
 		return importCode + this.jsScopePrefixCode + noImportsExportsCode + innerCode + this.jsScopeSuffixCode + outerCode + exportCode
 	}
 
-	getGlobalIdentifiers (code, url) {
-		const { indices, strAndCommentRanges } = this.getCodeBlocks(code)
-		if (indices.length % 2) {
-			console.log('00000000000000000000000000000')
-			console.log(indices.length, url)
-		}
+	getGlobalIdentifiers (code, strAndCommentRanges) {
 		const regexps = [
 			[/function\s+([a-zA-Z_\$][\w_\$]*)\s*\(/g, 1],
 			[/class\s+([a-zA-Z_\$][\w_\$]*)\s*(extends\s*[a-zA-Z_\$][\w_\$]*)?\s*\{/g, 1],
@@ -518,7 +519,7 @@ class WebVPN {
 			return this.filterMatchesNotInStrAndComments([...code.matchAll(ele[0])], strAndCommentRanges).map(m => m[ele[1]])
 		}).reduce((all, ele) => all.concat(ele), [])
 		identifiers = [...new Set(identifiers)].filter(it => !this.ignoredIdentifiers.includes(it))
-		return { identifiers, strAndCommentRanges }
+		return identifiers
 	}
 
 	getCodeBlocks (code) {
