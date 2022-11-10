@@ -590,7 +590,7 @@ class WebVPN {
 		}
 
 		let importMatches = [
-			...code.matchAll(/[\s;]import[^'"\w]*['"][^'"]+['"]/g),
+			...code.matchAll(/[\s;]import[^'"\w\(]*['"][^'"]+['"]/g),
 			...code.matchAll(/[\s;]import\s*\{[^}]+\}\s*from\s*['"][^'"]+['"]/g)
 		]
 		let exportMatches = [...code.matchAll(/[\s;\}\/]export\s*\{[^}]+\}/g)]
@@ -599,7 +599,7 @@ class WebVPN {
 		exportMatches = this.filterMatchesNotInStrAndComments(exportMatches, strAndCommentRanges)
 
 		if (code.startsWith('import')) {
-			const first = code.match(/^import[^'"\w]*['"][^'"]+['"]/) || code.match(/^import\s*\{[^}]+\}\s*from\s*['"][^'"]+['"]/)
+			const first = code.match(/^import[^'"\w\(]*['"][^'"]+['"]/) || code.match(/^import\s*\{[^}]+\}\s*from\s*['"][^'"]+['"]/)
 			if (first) {
 				importMatches.push(first)
 			}
