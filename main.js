@@ -1,6 +1,3 @@
-import os from 'os'
-import cluster from 'cluster'
-import childProcess from 'child_process'
 import WebVPN from './webvpn.js'
 
 // main.js 是个示例，如果要创建一个 WebVPN 服务，需要继承并实例化 WebVPN 类
@@ -66,10 +63,3 @@ const vpn = new VPN(config)
 
 // 启动 WebVPN 服务
 vpn.start()
-
-if (cluster.isMaster) {
-	setTimeout(() => {
-		// 运行后自动打开 WebVPN 网址
-		// childProcess.exec('open ' + new URL(devSite).origin)
-	}, 500)
-}
