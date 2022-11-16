@@ -23,26 +23,12 @@ class VPN extends WebVPN {
 
 	// 获取请求之后
 	afterRequest (ctx, res) {
-		if (ctx.url.indexOf('v.qq.com') > 0) {
-			ctx.meta.confirmJump = true
-		}
-		if (ctx.url.indexOf('filesaver') > 0) {
-			res.data = res.data.replaceAll(/window\.window===window/g, 'true')
-		}
+
 	}
 
 	// 返回响应之前
 	async beforeResponse (ctx, res) {
-		if (ctx.meta.url.indexOf('hub.com') > 0) {
-			res.data = res.data.replaceAll('request.timeout = 10000;', '')
-		}
-		if (ctx.meta.url.indexOf('module/qplayer.js') > 0) {
-			res.data = res.data.replace('ua.isiPhone=', 'ua.isiPhone=true||')
-			res.data = res.data.replace('$.qPlayer.isQQDomain=', '$.qPlayer.isQQDomain=true||')
-		}
-		if (ctx.meta.url.indexOf('.9ced5b8d.') > 0) {
-			res.data = res.data.replaceAll('children:"app.pangolin.exchange"', `children:"${this.config.site.hostname}"`)
-		}
+
 	}
 
 	// 是否要替换这个 res 响应里的链接
