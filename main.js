@@ -1,6 +1,4 @@
 import os from 'os'
-import cluster from 'cluster'
-import childProcess from 'child_process'
 import WebVPN from './webvpn.js'
 
 // main.js 是个示例，如果要创建一个 WebVPN 服务，需要继承并实例化 WebVPN 类
@@ -28,26 +26,12 @@ class VPN extends WebVPN {
 
 	// 获取请求之后
 	afterRequest (ctx, res) {
-		if (ctx.url.indexOf('v.qq.com') > 0) {
-			ctx.meta.confirmJump = true
-		}
-		if (ctx.url.indexOf('filesaver') > 0) {
-			res.data = res.data.replaceAll(/window\.window===window/g, 'true')
-		}
+
 	}
 
 	// 返回响应之前
 	async beforeResponse (ctx, res) {
-		if (ctx.meta.url.indexOf('hub.com') > 0) {
-			res.data = res.data.replaceAll('request.timeout = 10000;', '')
-		}
-		if (ctx.meta.url.indexOf('module/qplayer.js') > 0) {
-			res.data = res.data.replace('ua.isiPhone=', 'ua.isiPhone=true||')
-			res.data = res.data.replace('$.qPlayer.isQQDomain=', '$.qPlayer.isQQDomain=true||')
-		}
-		if (ctx.meta.url.indexOf('.9ced5b8d.') > 0) {
-			res.data = res.data.replaceAll('children:"app.pangolin.exchange"', `children:"${this.config.site.hostname}"`)
-		}
+
 	}
 
 	// 处理无效链接
@@ -94,10 +78,3 @@ const vpn = new VPN(config)
 
 // 启动 WebVPN 服务
 vpn.start()
-
-if (!isProd && cluster.isMaster) {
-	setTimeout(() => {
-		// 运行后自动打开 WebVPN 网址
-		// childProcess.exec('open ' + new URL(devSite).origin)
-	}, 500)
-}
