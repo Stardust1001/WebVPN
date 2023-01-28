@@ -62,12 +62,12 @@ class WebVPN {
 		this.ignoredIdentifiers = ['window', 'document', 'globalThis', 'parent', 'self', 'top', 'location']
 		this.jsExternalName = '_ext_'
 		this.jsScopePrefixCode = `
-			setInterval(function () {
-				if (typeof location === 'string') {
-					window.location.href = window.webvpn.transformUrl(location);
-				}
-			}, 500);\n
 			with (window.__context__) {
+				setInterval(function () {
+					if (typeof location === 'string') {
+						window.location.href = window.webvpn.transformUrl(location);
+					}
+				}, 500);
 		`
 		this.jsScopeSuffixCode = `
 			}
