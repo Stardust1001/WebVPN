@@ -20,7 +20,9 @@ class VPN extends WebVPN {
 
 	// 获取请求之后
 	afterRequest (ctx, res) {
-
+		// 禁用 module 以支持 with 语句
+		res.data = res.data.replaceAll('type="module"', 'type="mod"')
+							.replaceAll('use strict', '')
 	}
 
 	// 返回响应之前

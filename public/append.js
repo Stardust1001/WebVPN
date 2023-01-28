@@ -60,6 +60,9 @@
 		if (!url || url.split('?')[0].indexOf('//') < 0) {
 			return url;
 		}
+		if (url.indexOf('http') < 0 && url.indexOf('//') > 0) {
+			url = url.slice(url.indexOf('//'));
+		}
 		if (url.indexOf(vpnDomain) > 0) {
 			if (url.startsWith('http')) {
 				return url.replace('https://', 'http://')
@@ -227,7 +230,7 @@
 
 	// ajax 拦截
 	var xhrOpen = XMLHttpRequest.prototype.open;
-	XMLHttpRequest.prototype.open = function (method, url, async, user, password) {
+	XMLHttpRequest.prototype.open = function (method, url, async = true, user, password) {
 		var newUrl = transformUrl(url);
 		console.log('%cAJAX 请求 拦截 : ' + url, 'color: white;background-color: orange;padding: 5px 10px;');
 		window.ajaxUrls.push(url);
@@ -318,10 +321,10 @@
 	var aOnClick = HTMLAnchorElement.prototype.click;
 	HTMLAnchorElement.prototype.click = function () {
 		console.log(
-			'%cDOM History 操作 拦截 a click : ' + a.href,
+			'%cDOM History 操作 拦截 a click : ' + this.href,
 			'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
 		);
-		if (!canJump(a.href)) return false;
+		if (!canJump(this.href)) return false;
 		return aOnClick.apply(this, arguments);
 	}
 
@@ -720,6 +723,7 @@
 
 		if (json.child) {
 			for (var ele of json.child) {
+				if (ele.node === 'comment') continue;
 				var dom = json2dom(ele);
 				dom._type_ = 'custom';
 				node.appendChild(dom);
