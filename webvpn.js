@@ -62,27 +62,15 @@ class WebVPN {
 		this.ignoredIdentifiers = ['window', 'document', 'globalThis', 'parent', 'self', 'top', 'location']
 		this.jsExternalName = '_ext_'
 		this.jsScopePrefixCode = `
-			var ${this.jsExternalName} = {};
-			var __real_self__ = self;
-			(function () {
-				var self = __real_self__;
-				if (self.window) {
-					self = __self__;
-					var window = __window__;
-					var document = __document__;
-					var globalThis = __globalThis__;
-					var parent = __parent__;
-					var top = __top__;
-					var location = __location__;
+			setInterval(function () {
+				if (typeof location === 'string') {
+					window.location.href = window.webvpn.transformUrl(location);
 				}
-				setInterval(function () {
-					if (typeof location === 'string') {
-						window.location.href = window.webvpn.transformUrl(location);
-					}
-				}, 500);\n
+			}, 500);\n
+			with (window.__context__) {
 		`
 		this.jsScopeSuffixCode = `
-			}).bind(self.__window__ || self)();
+			}
 		`
 
 		this.public = []
@@ -447,11 +435,13 @@ class WebVPN {
 	}
 
 	processHtmlScopeCodes (code, url) {
-		const matches = [...code.matchAll(/<script[^>]*>([\S\s]*?)<\/script>/gi)].filter(match => match[1])
+		const matches = [...code.matchAll(/<script([^>]*)>([\S\s]*?)<\/script>/gi)].filter(match => {
+			return match[1].indexOf('application/json') < 0 && match[2]
+		})
 		matches.sort((a, b) => b.index - a.index)
 		matches.forEach(match => {
-			const index = match[0].length - match[1].length - 9 + match.index
-			code = code.slice(0, index) + this.refactorJsScopeCode(match[1], url) + code.slice(index + match[1].length)
+			const index = match[0].length - match[2].length - 9 + match.index
+			code = code.slice(0, index) + this.refactorJsScopeCode(match[2], url) + code.slice(index + match[2].length)
 		})
 		return code
 	}
@@ -461,200 +451,7 @@ class WebVPN {
 	}
 
 	refactorJsScopeCode (code, url) {
-		const { indices, strAndCommentRanges } = this.getCodeBlocks(code)
-		if (indices.length % 2) {
-			console.log('00000000000000000000000000000')
-			console.log(indices.length, url)
-		}
-
-		let importMatches = [
-			...code.matchAll(/[\s;]import[^'"\w\(]*['"][^'"]+['"]/g),
-			...code.matchAll(/[\s;]import\s*\{[^}]+\}\s*from\s*['"][^'"]+['"]/g)
-		]
-		let exportMatches = [...code.matchAll(/[\s;\}\/]export\s*\{[^}]+\}/g)]
-
-		importMatches = this.filterMatchesNotInStrAndComments(importMatches, strAndCommentRanges)
-		exportMatches = this.filterMatchesNotInStrAndComments(exportMatches, strAndCommentRanges)
-
-		if (code.startsWith('import')) {
-			const first = code.match(/^import[^'"\w\(]*['"][^'"]+['"]/) || code.match(/^import\s*\{[^}]+\}\s*from\s*['"][^'"]+['"]/)
-			if (first) {
-				importMatches.push(first)
-			}
-		}
-		let noImportsExportsCode = code
-		let importCode = ''
-		let exportCode = ''
-		if (importMatches.length || exportMatches.length) {
-			const importsExportsMatches = [...importMatches, ...exportMatches].sort((a, b) => a.index - b.index)
-			noImportsExportsCode = ''
-			let left = 0
-			for (let match of importsExportsMatches) {
-				const diff = match[0].startsWith('import') ? 0 : 1
-				noImportsExportsCode += code.slice(left, match.index + diff)
-				left = match.index + 1 + match[0].length
-			}
-			importCode = importMatches.map(m => {
-				return m[0].startsWith('import') ? m[0] : m[0].slice(1)
-			}).join(';\n') + '\n\n'
-			exportCode = '\n\n' + exportMatches.map(m => m[0].slice(1)).join(';\n')
-		}
-
-		const identifiers = this.getGlobalIdentifiers(code, strAndCommentRanges)
-
-		const ext = this.jsExternalName
-		const innerCode = '\n\nObject.assign(' + ext + ', {' + identifiers.join(',') + '});'
-		const outerCode = '\n\n;' + identifiers.map(i => `var ${i}=${ext}.${i};`).join('')
-		return importCode + this.jsScopePrefixCode + noImportsExportsCode + innerCode + this.jsScopeSuffixCode + outerCode + exportCode
-	}
-
-	getGlobalIdentifiers (code, strAndCommentRanges) {
-		const regexps = [
-			[/function\s+([a-zA-Z_\$][\w_\$]*)\s*\(/g, 1],
-			[/class\s+([a-zA-Z_\$][\w_\$]*)\s*(extends\s*[a-zA-Z_\$][\w_\$]*)?\s*\{/g, 1],
-			[/(var|const|let)\s+([a-zA-Z_\$][\w_\$]*)\s*=/g, 2],
-			[/[,\n]\s*([a-zA-Z_\$][\w_\$]*)\s*=[^\>=]/g, 1]
-		]
-		let identifiers = regexps.map(ele => {
-			return this.filterMatchesNotInStrAndComments([...code.matchAll(ele[0])], strAndCommentRanges).map(m => m[ele[1]])
-		}).reduce((all, ele) => all.concat(ele), [])
-		identifiers = [...new Set(identifiers)].filter(it => !this.ignoredIdentifiers.includes(it))
-		return identifiers
-	}
-
-	getCodeBlocks (code) {
-		const matches = [
-			...code.matchAll(/[\s=!(&]\/[^\n]+?\/[gmi\s\.,;)]/g),
-			...code.matchAll(/[\s=!(&]\/(\(|\.|\)|\{|\}|\||\\\/|\w|\\|\'|\"|\[|\]|\^|\*|\?|\+|\:|\-|\@|\#)+?\/[gmi\.\s,;)]/g)
-		]
-		const indexSet = new Set()
-		const regexpMatches = []
-		matches.forEach(match => {
-			if (!indexSet.has(match.index)) {
-				indexSet.add(match.index)
-				regexpMatches.push(match)
-			}
-		})
-		const regexpRanges = regexpMatches.map(m => [m.index + 1, m.index + m[0].length])
-
-		let indices = []
-		let isStr = false
-		let quote = ''
-		let isComment = false
-		let isSingleComment = false
-
-		let strStartIndex = 0
-		const strAndCommentRanges = []
-
-		const len = code.length
-		let current = ''
-		let last = ''
-		for (let i = 0; i < len; i++) {
-			// 虽然这样做可能也会错，先这样
-			// 这是为了避免错误的正则匹配影响，以这里循环检测的为主，如果当前是字符串或注释，那么上面匹配到这里的正则表达式视为无效
-			// 否则就跳过这里的正则表达式区域
-			const rangeIndex = regexpRanges.findIndex(r => r[0] <= i && r[1] > i)
-			if (rangeIndex >= 0) {
-				if (isStr || isComment) {
-					regexpMatches.splice(rangeIndex, 1)
-					regexpRanges.splice(rangeIndex, 1)
-				} else {
-					i = regexpRanges[rangeIndex][1] - 1
-					last = code[i]
-					continue
-				}
-			}
-			current = code[i]
-			if (isStr) {
-				if (current === quote) {
-					if (last !== '\\' || code[i - 2] === '\\') {
-						isStr = false
-						strAndCommentRanges.push([strStartIndex, i])
-					}
-				}
-				last = current
-				continue
-			} else if (isComment) {
-				if (isSingleComment) {
-					if (current === '\n') {
-						isComment = false
-					}
-				} else {
-					if (current === '/' && last === '*') {
-						isComment = false
-					}
-				}
-				last = current
-				continue
-			}
-			if (current === '\'' || current === '"' || current === '`') {
-				isStr = true
-				quote = current
-				last = current
-				strStartIndex = i
-				continue
-			}
-			// 发现注释就直接跳到注释的结尾吧，不循环无意义的注释
-			if (last === '/' && code[i - 2] !== '\\') {
-				if (current === '/') {
-					isComment = true
-					isSingleComment = true
-					isStr = false
-					const end = i + code.slice(i + 1).indexOf('\n')
-					strAndCommentRanges.push([i, end])
-					i = end
-					last = code[i]
-					continue
-				} else if (current === '*') {
-					isComment = true
-					isSingleComment = false
-					isStr = false
-					const end = i + code.slice(i + 1).indexOf('*/')
-					strAndCommentRanges.push([i, end])
-					i = end
-					last = code[i]
-					continue
-				}
-			}
-			if (current === '{') {
-				indices.push([i, true])
-			} else if (current === '}') {
-				indices.push([i, false])
-			}
-			last = current
-		}
-
-		if (!indices.length) {
-			return { indices, strAndCommentRanges }
-		}
-
-		indices.sort((a, b) => a[0] - b[0])
-
-		let lastCount = 0
-		while (true) {
-			const inner = new Set()
-			for (let i = 0, len = indices.length; i < len - 1; i++) {
-				if (indices[i][1] && !indices[i + 1][1]) {
-					inner.add(i).add(i + 1)
-					i += 1
-				}
-			}
-			if (!inner.size) {
-				break
-			}
-			indices = indices.filter((_, i) => !inner.has(i))
-		}
-
-		return { indices, strAndCommentRanges }
-	}
-
-	filterMatchesNotInStrAndComments (matches, strAndCommentRanges) {
-		if (!strAndCommentRanges.length) {
-			return matches
-		}
-		return matches.filter(match => {
-			return !strAndCommentRanges.some(r => r[0] <= match.index && r[1] > match.index)
-		})
+		return this.jsScopePrefixCode + code + this.jsScopeSuffixCode
 	}
 
 	appendScript (ctx, res) {

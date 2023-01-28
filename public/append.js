@@ -484,6 +484,16 @@
 		});
 	}
 
+	window.__context__ = {
+		self: __self__,
+		window: __window__,
+		document: __document__,
+		globalThis: __globalThis__,
+		parent: __parent__,
+		top: __top__,
+		location: __location__
+	};
+
 	// 因为用 __document__ 替换了 document, __document__ 的时候类型跟 document 不一致
 	var observe = MutationObserver.prototype.observe;
 	MutationObserver.prototype.observe = function (target, options) {
