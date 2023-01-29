@@ -63,11 +63,6 @@ class WebVPN {
 		this.jsExternalName = '_ext_'
 		this.jsScopePrefixCode = `
 			with (window.__context__) {
-				setInterval(function () {
-					if (typeof location === 'string') {
-						window.location.href = window.webvpn.transformUrl(location);
-					}
-				}, 500);
 		`
 		this.jsScopeSuffixCode = `
 			}
