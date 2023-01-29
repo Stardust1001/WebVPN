@@ -63,6 +63,9 @@
 		if (url.indexOf('http') < 0 && url.indexOf('//') > 0) {
 			url = url.slice(url.indexOf('//'));
 		}
+		if (url.indexOf('http://') > 0 || url.indexOf('https://') > 0) {
+			url = url.slice(url.indexOf('http'));
+		}
 		if (url.indexOf(vpnDomain) > 0) {
 			if (url.startsWith('http')) {
 				return url.replace('https://', 'http://')
