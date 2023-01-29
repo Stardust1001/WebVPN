@@ -336,10 +336,12 @@ class WebVPN {
 	async fetchRequest (ctx, options) {
 		const res = await fetch(ctx.meta.url, options)
 		if (res.redirected) {
-			this.setRedirectedUrlMeta(ctx, res.url)
+			res.headers.Location = this.transformUrl(res.url)
+			ctx.res.writeHead(302, res.headers)
+			return { status: 302, headers: res.headers }
 		}
-		const headers = this.initResponseHeaders(ctx, res)
 
+		const headers = this.initResponseHeaders(ctx, res)
 		let data = ''
 		ctx.meta.mime = this.getMimeByResponseHeaders(headers) || ctx.meta.mime
 
@@ -404,7 +406,7 @@ class WebVPN {
 	}
 
 	replaceMatches (ctx, res, matches) {
-		const { vpnDomain } = this.config
+		const { site, vpnDomain } = this.config
 		const dict = {}
 		matches.filter(m => m.indexOf(vpnDomain) < 0).forEach(match => {
 			let url = ''
@@ -416,19 +418,20 @@ class WebVPN {
 				url = 'https:' + match.slice(match.indexOf('//'), -1)
 				prefix = '//'
 			}
-			const { host } = new URL(url)
-			const source = prefix + host
-			let desti = prefix.replace('https', 'http') + base32.encode(host) + vpnDomain
-			if (desti.startsWith('//')) {
-				desti = this.config.site.protocol + desti
-			}
-			dict[source] = desti
+			const source = prefix + new URL(url).host
+			dict[source] = this.transformUrl(source.startsWith('http') ? source : (site.protocol + source)).slice(0, -1)
 		})
 		Object.entries(dict).sort((a, b) => b[0].length - a[0].length).forEach(ele => {
 			const [key, value] = ele
 			res.data = res.data.replaceAll(key, value)
 		})
 		return res.data
+	}
+
+	transformUrl (url) {
+		const { host, pathname, search } = new URL(url)
+		const subdomain = base32.encode(host)
+		return this.config.site.origin.replace('www', subdomain) + pathname + search
 	}
 
 	processHtmlScopeCodes (code, url) {
@@ -484,14 +487,6 @@ class WebVPN {
 		if (ctx.meta.mime === 'json' && typeof res.data === 'string') {
 			res.data = JSON.stringify(res.data)
 		}
-	}
-
-	setRedirectedUrlMeta (ctx, url) {
-		Object.assign(ctx.meta, {
-			url,
-			mime: this.getResponseType(ctx, url),
-			target: new URL(url)
-		})
 	}
 
 	getResponseType (ctx, url) {
