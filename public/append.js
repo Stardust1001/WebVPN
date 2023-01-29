@@ -784,6 +784,28 @@
 	setTimeout(replaceNodesUrls, 2000);
 	setInterval(replaceNodesUrls, 3000);
 
+	// 事件绑定的 this 对象拦截替换
+	var wael = window.addEventListener;
+	window.addEventListener = function () {
+		if (arguments[0] === __window__) arguments[0] = window;
+		return wael.apply(window, arguments);
+	}
+	var wrel = window.removeEventListener;
+	window.removeEventListener = function () {
+		if (arguments[0] === __window__) arguments[0] = window;
+		return wrel.apply(window, arguments);
+	}
+	var dael = document.addEventListener;
+	document.addEventListener = function () {
+		if (arguments[0] === __document__) arguments[0] = document;
+		return dael.apply(document, arguments);
+	}
+	var drel = document.removeEventListener;
+	document.removeEventListener = function () {
+		if (arguments[0] === __document__) arguments[0] = document;
+		return drel.apply(document, arguments);
+	}
+
 	var logger = console.log;
 	console.log = function () {
 		var isCustom = arguments[0] === 'custom';
