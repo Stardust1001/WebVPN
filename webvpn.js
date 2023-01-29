@@ -303,6 +303,8 @@ class WebVPN {
 		const options = {
 			method,
 			headers: header,
+			redirect: 'follow',
+			follow: 20,
 			...this.getRequestConfig(ctx)
 		}
 		if (method === 'POST') {

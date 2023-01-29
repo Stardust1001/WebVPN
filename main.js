@@ -20,14 +20,16 @@ class VPN extends WebVPN {
 
 	// 获取请求之后
 	afterRequest (ctx, res) {
-		// 禁用 module 以支持 with 语句
-		res.data = res.data.replaceAll('type="module"', 'type="mod"')
-							.replaceAll('use strict', '')
+
 	}
 
 	// 返回响应之前
 	async beforeResponse (ctx, res) {
-
+		// 禁用 module 和严格模式，以支持 with 语句
+		if (typeof res.data === 'string') {
+			res.data = res.data.replaceAll('type="module"', 'type="mod"')
+								.replaceAll('use strict', '')
+		}
 	}
 
 	// 是否要替换这个 res 响应里的链接
