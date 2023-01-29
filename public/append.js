@@ -471,6 +471,9 @@
 				return (typeof value === 'function' && !value.prototype) ? value.bind(target) : value;
 			},
 			set (target, property, value) {
+				if (property === 'window') {
+					return false;
+				}
 				if (property === 'location') {
 					if (target === parent || target === top) {
 						target.__location__.href = value;
