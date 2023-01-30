@@ -546,10 +546,12 @@ class WebVPN {
 
 	initResponseHeaders (ctx, res) {
 		let headers = {}
-		if (typeof res.headers.keys === 'function') {
-			const keys = [...res.headers.keys()]
-			for (let key of keys) {
-				headers[key] = res.headers.get(key)
+		if (typeof res.headers.raw === 'function') {
+			headers = res.headers.raw()
+			for (let key in headers) {
+				if (headers[key].length === 1) {
+					headers[key] = headers[key][0]
+				}
 			}
 		} else {
 			headers = res.headers
