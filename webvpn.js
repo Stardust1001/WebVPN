@@ -57,20 +57,44 @@ class WebVPN {
 		this.checkCaches()
 
 		this.ignoredIdentifiers = ['window', 'document', 'globalThis', 'parent', 'self', 'top', 'location']
-		this.jsExternalName = '_ext_'
 		this.jsScopePrefixCode = `
-			var ${this.jsExternalName} = {};
-			(function () {
-				var window = __window__;
-				var document = __document__;
-				var globalThis = __globalThis__;
-				var parent = __parent__;
-				var self = __self__;
-				var top = __top__;
-				var location = __location__;\n
+			// worker 里面创造 __context__ 环境
+			if (!self.window) {
+				var target = new URL('#target#');
+				function copySource (source) {
+					var copied = Object.assign({}, source);
+					for (var key in source) copied[key] = source[key];
+						return copied;
+				}
+				self.__location__ = Object.assign({}, copySource(self.location), copySource(target));
+				for (var con of ['globalThis', 'self']) {
+					self['__' + con + '__'] = new Proxy(self[con], {
+						get (target, property, receiver) {
+							if (['self', 'location'].includes(property)) {
+								return self['__' + property + '__'];
+							}
+							var value = target[property];
+							return (typeof value === 'function' && !value.prototype) ? value.bind(target) : value;
+						},
+						set (target, property, value) {
+							if (['self', 'location'].includes(property)) {
+								return false;
+							}
+							target[property] = value;
+							return true;
+						}
+					});
+				}
+			}
+			self.__context__ = {
+				self: __self__,
+				globalThis: __globalThis__,
+				location: __location__
+			};
+			with (self.__context__) {
 		`
 		this.jsScopeSuffixCode = `
-			})();
+			}
 		`
 
 		this.public = []
@@ -248,10 +272,10 @@ class WebVPN {
 		if (this.shouldReplaceUrls(ctx, res)) {
 			this.replaceUrls(ctx, res)
 			if (ctx.meta.mime === 'html') {
-				res.data = this.processHtmlScopeCodes(res.data, ctx.meta.url)
+				res.data = this.processHtmlScopeCodes(ctx, res.data, ctx.meta.url)
 				res.data = this.appendScript(ctx, res)
 			} else if (ctx.meta.mime === 'js') {
-				res.data = this.processJsScopeCode(res.data, ctx.meta.url)
+				res.data = this.processJsScopeCode(ctx, res.data, ctx.meta.url)
 			}
 		}
 		if (ctx.meta.done) {
@@ -342,6 +366,8 @@ class WebVPN {
 		const options = {
 			method,
 			headers: header,
+			redirect: 'follow',
+			follow: 20,
 			...this.getRequestConfig(ctx)
 		}
 		// if (isHttps) {
@@ -376,10 +402,12 @@ class WebVPN {
 	async fetchRequest (ctx, options) {
 		const res = await fetch(ctx.meta.url, options)
 		if (res.redirected) {
-			this.setRedirectedUrlMeta(ctx, res.url)
+			res.headers.Location = this.transformUrl(res.url)
+			ctx.res.writeHead(302, res.headers)
+			return { status: 302, headers: res.headers }
 		}
-		const headers = this.initResponseHeaders(ctx, res)
 
+		const headers = this.initResponseHeaders(ctx, res)
 		let data = ''
 		ctx.meta.mime = this.getMimeByResponseHeaders(headers) || ctx.meta.mime
 
@@ -568,215 +596,24 @@ class WebVPN {
 		return res.data
 	}
 
-	processHtmlScopeCodes (code, url) {
-		const matches = [...code.matchAll(/<script[^>]*>([\S\s]*?)<\/script>/gi)].filter(match => match[1])
+	processHtmlScopeCodes (ctx, code, url) {
+		const matches = [...code.matchAll(/<script([^>]*)>([\S\s]*?)<\/script>/gi)].filter(match => {
+			return match[1].indexOf('application/json') < 0 && match[2]
+		})
 		matches.sort((a, b) => b.index - a.index)
 		matches.forEach(match => {
-			const index = match[0].length - match[1].length - 9 + match.index
-			code = code.slice(0, index) + this.refactorJsScopeCode(match[1], url) + code.slice(index + match[1].length)
+			const index = match[0].length - match[2].length - 9 + match.index
+			code = code.slice(0, index) + this.refactorJsScopeCode(ctx, match[2], url) + code.slice(index + match[2].length)
 		})
 		return code
 	}
 
-	processJsScopeCode (code, url) {
-		return this.refactorJsScopeCode(code, url)
+	processJsScopeCode (ctx, code, url) {
+		return this.refactorJsScopeCode(ctx, code, url)
 	}
 
-	refactorJsScopeCode (code, url) {
-		const { indices, strAndCommentRanges } = this.getCodeBlocks(code)
-		if (indices.length % 2) {
-			console.log('00000000000000000000000000000')
-			console.log(indices.length, url)
-		}
-
-		let importMatches = [
-			...code.matchAll(/[\s;]import[^'"\w\(]*['"][^'"]+['"]/g),
-			...code.matchAll(/[\s;]import\s*\{[^}]+\}\s*from\s*['"][^'"]+['"]/g)
-		]
-		let exportMatches = [...code.matchAll(/[\s;\}\/]export\s*\{[^}]+\}/g)]
-
-		importMatches = this.filterMatchesNotInStrAndComments(importMatches, strAndCommentRanges)
-		exportMatches = this.filterMatchesNotInStrAndComments(exportMatches, strAndCommentRanges)
-
-		if (code.startsWith('import')) {
-			const first = code.match(/^import[^'"\w\(]*['"][^'"]+['"]/) || code.match(/^import\s*\{[^}]+\}\s*from\s*['"][^'"]+['"]/)
-			if (first) {
-				importMatches.push(first)
-			}
-		}
-		let noImportsExportsCode = code
-		let importCode = ''
-		let exportCode = ''
-		if (importMatches.length || exportMatches.length) {
-			const importsExportsMatches = [...importMatches, ...exportMatches].sort((a, b) => a.index - b.index)
-			noImportsExportsCode = ''
-			let left = 0
-			for (let match of importsExportsMatches) {
-				const diff = match[0].startsWith('import') ? 0 : 1
-				noImportsExportsCode += code.slice(left, match.index + diff)
-				left = match.index + 1 + match[0].length
-			}
-			importCode = importMatches.map(m => {
-				return m[0].startsWith('import') ? m[0] : m[0].slice(1)
-			}).join(';\n') + '\n\n'
-			exportCode = '\n\n' + exportMatches.map(m => m[0].slice(1)).join(';\n')
-		}
-
-		const identifiers = this.getGlobalIdentifiers(code, strAndCommentRanges)
-
-		const ext = this.jsExternalName
-		const innerCode = '\n\nObject.assign(' + ext + ', {' + identifiers.join(',') + '});'
-		const outerCode = '\n\n;' + identifiers.map(i => `var ${i}=${ext}.${i};`).join('')
-		return importCode + this.jsScopePrefixCode + noImportsExportsCode + innerCode + this.jsScopeSuffixCode + outerCode + exportCode
-	}
-
-	getGlobalIdentifiers (code, strAndCommentRanges) {
-		const regexps = [
-			[/function\s+([a-zA-Z_\$][\w_\$]*)\s*\(/g, 1],
-			[/class\s+([a-zA-Z_\$][\w_\$]*)\s*(extends\s*[a-zA-Z_\$][\w_\$]*)?\s*\{/g, 1],
-			[/(var|const|let)\s+([a-zA-Z_\$][\w_\$]*)\s*=/g, 2],
-			[/[,\n]\s*([a-zA-Z_\$][\w_\$]*)\s*=[^\>=]/g, 1]
-		]
-		let identifiers = regexps.map(ele => {
-			return this.filterMatchesNotInStrAndComments([...code.matchAll(ele[0])], strAndCommentRanges).map(m => m[ele[1]])
-		}).reduce((all, ele) => all.concat(ele), [])
-		identifiers = [...new Set(identifiers)].filter(it => !this.ignoredIdentifiers.includes(it))
-		return identifiers
-	}
-
-	getCodeBlocks (code) {
-		const matches = [
-			...code.matchAll(/[\s=!(&]\/[^\n]+?\/[gmi\s\.,;)]/g),
-			...code.matchAll(/[\s=!(&]\/(\(|\.|\)|\{|\}|\||\\\/|\w|\\|\'|\"|\[|\]|\^|\*|\?|\+|\:|\-|\@|\#)+?\/[gmi\.\s,;)]/g)
-		]
-		const indexSet = new Set()
-		const regexpMatches = []
-		matches.forEach(match => {
-			if (!indexSet.has(match.index)) {
-				indexSet.add(match.index)
-				regexpMatches.push(match)
-			}
-		})
-		const regexpRanges = regexpMatches.map(m => [m.index + 1, m.index + m[0].length])
-
-		let indices = []
-		let isStr = false
-		let quote = ''
-		let isComment = false
-		let isSingleComment = false
-
-		let strStartIndex = 0
-		const strAndCommentRanges = []
-
-		const len = code.length
-		let current = ''
-		let last = ''
-		for (let i = 0; i < len; i++) {
-			// 虽然这样做可能也会错，先这样
-			// 这是为了避免错误的正则匹配影响，以这里循环检测的为主，如果当前是字符串或注释，那么上面匹配到这里的正则表达式视为无效
-			// 否则就跳过这里的正则表达式区域
-			const rangeIndex = regexpRanges.findIndex(r => r[0] <= i && r[1] > i)
-			if (rangeIndex >= 0) {
-				if (isStr || isComment) {
-					regexpMatches.splice(rangeIndex, 1)
-					regexpRanges.splice(rangeIndex, 1)
-				} else {
-					i = regexpRanges[rangeIndex][1] - 1
-					last = code[i]
-					continue
-				}
-			}
-			current = code[i]
-			if (isStr) {
-				if (current === quote) {
-					if (last !== '\\' || code[i - 2] === '\\') {
-						isStr = false
-						strAndCommentRanges.push([strStartIndex, i])
-					}
-				}
-				last = current
-				continue
-			} else if (isComment) {
-				if (isSingleComment) {
-					if (current === '\n') {
-						isComment = false
-					}
-				} else {
-					if (current === '/' && last === '*') {
-						isComment = false
-					}
-				}
-				last = current
-				continue
-			}
-			if (current === '\'' || current === '"' || current === '`') {
-				isStr = true
-				quote = current
-				last = current
-				strStartIndex = i
-				continue
-			}
-			// 发现注释就直接跳到注释的结尾吧，不循环无意义的注释
-			if (last === '/' && code[i - 2] !== '\\') {
-				if (current === '/') {
-					isComment = true
-					isSingleComment = true
-					isStr = false
-					const end = i + code.slice(i + 1).indexOf('\n')
-					strAndCommentRanges.push([i, end])
-					i = end
-					last = code[i]
-					continue
-				} else if (current === '*') {
-					isComment = true
-					isSingleComment = false
-					isStr = false
-					const end = i + code.slice(i + 1).indexOf('*/')
-					strAndCommentRanges.push([i, end])
-					i = end
-					last = code[i]
-					continue
-				}
-			}
-			if (current === '{') {
-				indices.push([i, true])
-			} else if (current === '}') {
-				indices.push([i, false])
-			}
-			last = current
-		}
-
-		if (!indices.length) {
-			return { indices, strAndCommentRanges }
-		}
-
-		indices.sort((a, b) => a[0] - b[0])
-
-		let lastCount = 0
-		while (true) {
-			const inner = new Set()
-			for (let i = 0, len = indices.length; i < len - 1; i++) {
-				if (indices[i][1] && !indices[i + 1][1]) {
-					inner.add(i).add(i + 1)
-					i += 1
-				}
-			}
-			if (!inner.size) {
-				break
-			}
-			indices = indices.filter((_, i) => !inner.has(i))
-		}
-
-		return { indices, strAndCommentRanges }
-	}
-
-	filterMatchesNotInStrAndComments (matches, strAndCommentRanges) {
-		if (!strAndCommentRanges.length) {
-			return matches
-		}
-		return matches.filter(match => {
-			return !strAndCommentRanges.some(r => r[0] <= match.index && r[1] > match.index)
-		})
+	refactorJsScopeCode (ctx, code, url) {
+		return this.jsScopePrefixCode.replace('#target#', ctx.meta.target.href) + code + this.jsScopeSuffixCode
 	}
 
 	appendScript (ctx, res) {
@@ -975,23 +812,6 @@ class WebVPN {
 		return true
 	}
 
-	setRedirectedUrlMeta (ctx, url) {
-		const target = new URL(url)
-		const serviceHost = [this.config.site.pathname, ctx.meta.proxyType, encodeURIComponent(target.origin)].join('/')
-		let serviceBase = serviceHost
-		const pathnameParts = target.pathname.split('/')
-		if (pathnameParts.length >= 3) {
-			serviceBase = [serviceHost, ...pathnameParts.slice(1, -1)].join('/')
-		}
-		Object.assign(ctx.meta, {
-			url,
-			mime: ctx.meta.suffixMime || this.getResponseType(ctx, url),
-			serviceHost,
-			serviceBase,
-			target
-		})
-	}
-
 	escapeUrl (url) {
 		if (/[\u0100-\uffff]/.test(url)) {
 			return encodeURI(url)
@@ -1041,10 +861,12 @@ class WebVPN {
 
 	initResponseHeaders (ctx, res) {
 		let headers = {}
-		if (typeof res.headers.keys === 'function') {
-			const keys = [...res.headers.keys()]
-			for (let key of keys) {
-				headers[key] = res.headers.get(key)
+		if (typeof res.headers.raw === 'function') {
+			headers = res.headers.raw()
+			for (let key in headers) {
+				if (headers[key].length === 1) {
+					headers[key] = headers[key][0]
+				}
 			}
 			headers['set-cookie'] = res.headers.getAll('set-cookie')
 		} else {

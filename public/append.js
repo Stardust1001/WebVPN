@@ -61,6 +61,12 @@
 		if (!url) {
 			return url;
 		}
+		if (url.indexOf('http') < 0 && url.indexOf('//') > 0) {
+			url = url.slice(url.indexOf('//'));
+		}
+		if (url.indexOf('http://') > 0 || url.indexOf('https://') > 0) {
+			url = url.slice(url.indexOf('http'));
+		}
 		for (var prefix of ignoredPrefixes) {
 			if (url.startsWith(prefix)) {
 				return url;
@@ -303,7 +309,7 @@
 
 	// ajax 拦截
 	var xhrOpen = XMLHttpRequest.prototype.open;
-	XMLHttpRequest.prototype.open = function (method, url, async, user, password) {
+	XMLHttpRequest.prototype.open = function (method, url, async = true, user, password) {
 		var newUrl = transformUrl(url);
 		console.log('%cAJAX 请求 拦截 : ' + url, 'color: white;background-color: orange;padding: 5px 10px;');
 		window.ajaxUrls.push(url);
@@ -394,10 +400,10 @@
 	var aOnClick = HTMLAnchorElement.prototype.click;
 	HTMLAnchorElement.prototype.click = function () {
 		console.log(
-			'%cDOM History 操作 拦截 a click : ' + a.href,
+			'%cDOM History 操作 拦截 a click : ' + this.href,
 			'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
 		);
-		if (!canJump(a.href)) return false;
+		if (!canJump(this.href)) return false;
 		return aOnClick.apply(this, arguments);
 	}
 
@@ -567,8 +573,7 @@
 	// });
 
 	// __window__, __document__, _globalThis, __parent__, __self__, __top__
-	var locationCon = ['window', 'document', 'globalThis', 'parent', 'self', 'top'];
-	for (var con of locationCon) {
+	for (var con of ['window', 'document', 'globalThis', 'parent', 'self', 'top']) {
 		window['__' + con + '__'] = new Proxy(window[con], {
 			get (target, property, receiver) {
 				var win = (target === parent || target === top) ? target : window;
@@ -583,6 +588,9 @@
 				return (typeof value === 'function' && !value.prototype) ? value.bind(target) : value;
 			},
 			set (target, property, value) {
+				if (property === 'window') {
+					return false;
+				}
 				if (property === 'location') {
 					if (target === parent || target === top) {
 						target.__location__.href = value;
@@ -601,6 +609,23 @@
 			}
 		});
 	}
+
+	window.__context__ = {
+		self: __self__,
+		window: __window__,
+		document: __document__,
+		globalThis: __globalThis__,
+		parent: __parent__,
+		top: __top__,
+		location: __location__
+	};
+
+	setInterval(function () {
+		var location = window.__context__.location;
+		if (typeof location === 'string') {
+			window.location.href = window.webvpn.transformUrl(location);
+		}
+	}, 500);
 
 	// 因为用 __document__ 替换了 document, __document__ 的时候类型跟 document 不一致
 	var observe = MutationObserver.prototype.observe;
@@ -899,6 +924,7 @@
 
 		if (json.child) {
 			for (var ele of json.child) {
+				if (ele.node === 'comment') continue;
 				var dom = json2dom(ele);
 				dom._type_ = 'custom';
 				node.appendChild(dom);
@@ -949,6 +975,28 @@
 	setTimeout(replaceNodesUrls, 1000);
 	setTimeout(replaceNodesUrls, 2000);
 	setInterval(replaceNodesUrls, 3000);
+
+	// 事件绑定的 this 对象拦截替换
+	var wael = window.addEventListener;
+	window.addEventListener = function () {
+		if (arguments[0] === __window__) arguments[0] = window;
+		return wael.apply(window, arguments);
+	}
+	var wrel = window.removeEventListener;
+	window.removeEventListener = function () {
+		if (arguments[0] === __window__) arguments[0] = window;
+		return wrel.apply(window, arguments);
+	}
+	var dael = document.addEventListener;
+	document.addEventListener = function () {
+		if (arguments[0] === __document__) arguments[0] = document;
+		return dael.apply(document, arguments);
+	}
+	var drel = document.removeEventListener;
+	document.removeEventListener = function () {
+		if (arguments[0] === __document__) arguments[0] = document;
+		return drel.apply(document, arguments);
+	}
 
 	var logger = console.log;
 	console.log = function () {
