@@ -455,8 +455,7 @@
 	});
 
 	// __window__, __document__, _globalThis, __parent__, __self__, __top__
-	var locationCon = ['window', 'document', 'globalThis', 'parent', 'self', 'top'];
-	for (var con of locationCon) {
+	for (var con of ['window', 'document', 'globalThis', 'parent', 'self', 'top']) {
 		window['__' + con + '__'] = new Proxy(window[con], {
 			get (target, property, receiver) {
 				var win = (target === parent || target === top) ? target : window;

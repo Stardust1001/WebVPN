@@ -65,24 +65,19 @@ class WebVPN {
 			// worker 里面创造 __context__ 环境
 			if (!self.window) {
 				var target = new URL('#target#');
-
-				self.__location__ = Object.assign({}, self.location, target);
-				for (var key of ['location', '__location__']) {
-					Object.defineProperty(self[key], '__href__', {
-						get () {
-							return self.__location__.href;
-						}
-					});
+				function copySource (source) {
+					var copied = Object.assign({}, source);
+					for (var key in source) copied[key] = source[key];
+					return copied;
 				}
-				var locationCon = ['globalThis', 'self'];
-				for (var con of locationCon) {
+				self.__location__ = Object.assign({}, copySource(self.location), copySource(target));
+				for (var con of ['globalThis', 'self']) {
 					self['__' + con + '__'] = new Proxy(self[con], {
 						get (target, property, receiver) {
 							if (['self', 'location'].includes(property)) {
 								return self['__' + property + '__'];
 							}
 							var value = target[property];
-							// 如果 value 是 function，不一定是真的函数，也可能是 Promise 这种，Promise 有 prototype
 							return (typeof value === 'function' && !value.prototype) ? value.bind(target) : value;
 						},
 						set (target, property, value) {
