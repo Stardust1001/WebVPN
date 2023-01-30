@@ -62,7 +62,45 @@ class WebVPN {
 		this.ignoredIdentifiers = ['window', 'document', 'globalThis', 'parent', 'self', 'top', 'location']
 		this.jsExternalName = '_ext_'
 		this.jsScopePrefixCode = `
-			with (window.__context__) {
+			// worker 里面创造 __context__ 环境
+			if (!self.window) {
+				var target = new URL('#target#');
+
+				self.__location__ = Object.assign({}, self.location, target);
+				for (var key of ['location', '__location__']) {
+					Object.defineProperty(self[key], '__href__', {
+						get () {
+							return self.__location__.href;
+						}
+					});
+				}
+				var locationCon = ['globalThis', 'self'];
+				for (var con of locationCon) {
+					self['__' + con + '__'] = new Proxy(self[con], {
+						get (target, property, receiver) {
+							if (['self', 'location'].includes(property)) {
+								return self['__' + property + '__'];
+							}
+							var value = target[property];
+							// 如果 value 是 function，不一定是真的函数，也可能是 Promise 这种，Promise 有 prototype
+							return (typeof value === 'function' && !value.prototype) ? value.bind(target) : value;
+						},
+						set (target, property, value) {
+							if (['self', 'location'].includes(property)) {
+								return false;
+							}
+							target[property] = value;
+							return true;
+						}
+					});
+				}
+				self.__context__ = {
+					self: __self__,
+					globalThis: __globalThis__,
+					location: __location__
+				};
+			}
+			with (self.__context__) {
 		`
 		this.jsScopeSuffixCode = `
 			}
@@ -218,10 +256,10 @@ class WebVPN {
 		if (!ctx.meta.done && this.shouldReplaceUrls(ctx, res)) {
 			this.replaceUrls(ctx, res)
 			if (ctx.meta.mime === 'html') {
-				res.data = this.processHtmlScopeCodes(res.data, ctx.meta.url)
+				res.data = this.processHtmlScopeCodes(ctx, res.data, ctx.meta.url)
 				res.data = this.appendScript(ctx, res)
 			} else if (ctx.meta.mime === 'js') {
-				res.data = this.processJsScopeCode(res.data, ctx.meta.url)
+				res.data = this.processJsScopeCode(ctx, res.data, ctx.meta.url)
 			}
 		}
 
@@ -434,24 +472,24 @@ class WebVPN {
 		return this.config.site.origin.replace('www', subdomain) + pathname + search
 	}
 
-	processHtmlScopeCodes (code, url) {
+	processHtmlScopeCodes (ctx, code, url) {
 		const matches = [...code.matchAll(/<script([^>]*)>([\S\s]*?)<\/script>/gi)].filter(match => {
 			return match[1].indexOf('application/json') < 0 && match[2]
 		})
 		matches.sort((a, b) => b.index - a.index)
 		matches.forEach(match => {
 			const index = match[0].length - match[2].length - 9 + match.index
-			code = code.slice(0, index) + this.refactorJsScopeCode(match[2], url) + code.slice(index + match[2].length)
+			code = code.slice(0, index) + this.refactorJsScopeCode(ctx, match[2], url) + code.slice(index + match[2].length)
 		})
 		return code
 	}
 
-	processJsScopeCode (code, url) {
-		return this.refactorJsScopeCode(code, url)
+	processJsScopeCode (ctx, code, url) {
+		return this.refactorJsScopeCode(ctx, code, url)
 	}
 
-	refactorJsScopeCode (code, url) {
-		return this.jsScopePrefixCode + code + this.jsScopeSuffixCode
+	refactorJsScopeCode (ctx, code, url) {
+		return this.jsScopePrefixCode.replace('#target#', ctx.meta.target.href) + code + this.jsScopeSuffixCode
 	}
 
 	appendScript (ctx, res) {
