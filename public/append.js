@@ -61,16 +61,16 @@
 		if (!url) {
 			return url;
 		}
+		for (var prefix of ignoredPrefixes) {
+			if (url.startsWith(prefix)) {
+				return url;
+			}
+		}
 		if (url.indexOf('http') < 0 && url.indexOf('//') > 0) {
 			url = url.slice(url.indexOf('//'));
 		}
 		if (url.indexOf('http://') > 0 || url.indexOf('https://') > 0) {
 			url = url.slice(url.indexOf('http'));
-		}
-		for (var prefix of ignoredPrefixes) {
-			if (url.startsWith(prefix)) {
-				return url;
-			}
 		}
 		if (url.startsWith('http')) {
 			var u = null;
