@@ -91,7 +91,7 @@
 			return url;
 		}
 		if (url.split('?')[0].indexOf('http') < 0) {
-			return window.location.origin + url;
+			return urljoin(location.href, url);
 		}
 		var u = new URL(url);
 		var host = window.base32.decode(u.host.split('.')[0]);
@@ -229,6 +229,17 @@
 			}
 		}
 		return url.indexOf(vpnDomain) < 0;
+	}
+
+	function urljoin (url, path) {
+		const { origin, pathname } = new URL(url);
+		if (path[0] === '/') {
+			return origin + path;
+		}
+		if (url.endsWith('/')) {
+			return url + path;
+		}
+		return url.split('/').slice(0, -1).join('/') + '/' + path;
 	}
 
 	// ajax 拦截
