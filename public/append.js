@@ -57,6 +57,11 @@
 
 	function transformUrl (url) {
 		url = (url ? url.toString() : '').trim();
+		for (var prefix of ignoredPrefixes) {
+			if (url.indexOf(prefix) >= 0) {
+				return url;
+			}
+		}
 		if (!url || url.split('?')[0].indexOf('//') < 0) {
 			return url;
 		}
@@ -71,11 +76,6 @@
 				return url.replace('https://', 'http://')
 			}
 			return url;
-		}
-		for (var prefix of ignoredPrefixes) {
-			if (url.indexOf(prefix) >= 0) {
-				return url;
-			}
 		}
 		if (url.startsWith('//')) {
 			url = 'https:' + url;
