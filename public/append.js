@@ -759,10 +759,14 @@
 				node.setAttribute(key, attr[key], 'custom');
 			}
 		} else if (json.node === 'text') {
-			if (/&\w+;/.test(json.text)) {
+			if (/&\w+/.test(json.text)) {
 				for (var key in escaped) {
 					if (json.text.indexOf(key) >= 0) {
 						json.text = json.text.replaceAll(key, escaped[key]);
+					}
+					var prefix = key.slice(0, -1);
+					if (json.text.indexOf(prefix) >= 0) {
+						json.text = json.text.replaceAll(prefix, escaped[key]);
 					}
 				}
 			}
