@@ -251,10 +251,11 @@ class WebVPN {
 		if (!ctx.meta.done && this.shouldReplaceUrls(ctx, res)) {
 			this.replaceUrls(ctx, res)
 			if (ctx.meta.mime === 'html') {
-				res.data = this.processHtmlScopeCodes(ctx, res.data, ctx.meta.url)
+				res.data = this.processHtml(ctx, res)
+				res.data = this.processHtmlScopeCodes(ctx, res.data)
 				res.data = this.appendScript(ctx, res)
 			} else if (ctx.meta.mime === 'js') {
-				res.data = this.processJsScopeCode(ctx, res.data, ctx.meta.url)
+				res.data = this.processJsScopeCode(ctx, res.data)
 			}
 		}
 
@@ -467,23 +468,31 @@ class WebVPN {
 		return this.config.site.origin.replace('www', subdomain) + pathname + search
 	}
 
-	processHtmlScopeCodes (ctx, code, url) {
+	processHtml (ctx, res) {
+		const match = res.data.match(/<meta\s+http-equiv=\"Content-Security-Policy\"[^>]+>/)
+		if (match) {
+			res.data = res.data.replace(match[0], '')
+		}
+		return res.data
+	}
+
+	processHtmlScopeCodes (ctx, code) {
 		const matches = [...code.matchAll(/<script([^>]*)>([\S\s]*?)<\/script>/gi)].filter(match => {
 			return match[1].indexOf('application/json') < 0 && match[2]
 		})
 		matches.sort((a, b) => b.index - a.index)
 		matches.forEach(match => {
 			const index = match[0].length - match[2].length - 9 + match.index
-			code = code.slice(0, index) + this.refactorJsScopeCode(ctx, match[2], url) + code.slice(index + match[2].length)
+			code = code.slice(0, index) + this.refactorJsScopeCode(ctx, match[2]) + code.slice(index + match[2].length)
 		})
 		return code
 	}
 
-	processJsScopeCode (ctx, code, url) {
-		return this.refactorJsScopeCode(ctx, code, url)
+	processJsScopeCode (ctx, code) {
+		return this.refactorJsScopeCode(ctx, code)
 	}
 
-	refactorJsScopeCode (ctx, code, url) {
+	refactorJsScopeCode (ctx, code) {
 		return this.jsScopePrefixCode.replace('#target#', ctx.meta.target.href) + code + this.jsScopeSuffixCode
 	}
 
