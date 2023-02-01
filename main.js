@@ -34,7 +34,9 @@ class VPN extends WebVPN {
 		// 禁用 module 和严格模式，以支持 with 语句
 		if (typeof res.data === 'string') {
 			res.data = res.data.replaceAll('type="module"', 'type="mod"')
+								.replaceAll('nomodule', 'nomod')
 								.replaceAll('use strict', '')
+								.replaceAll('&nbsp;', '\u3000')
 		}
 	}
 
