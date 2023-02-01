@@ -950,6 +950,11 @@
 					return String.fromCharCode(part.slice(2, -1) * 1);
 				});
 			}
+			if (/&#x\w+;/.test(json.text)) {
+				json.text = json.text.replaceAll(/&#x\w+;/g, function (part) {
+					return String.fromCharCode(parseInt(part.slice(3, -1), 16));
+				});
+			}
 			node = document.createTextNode(json.text);
 		}
 
