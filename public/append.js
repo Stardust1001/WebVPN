@@ -934,12 +934,17 @@
 				node.setAttribute(key, attr[key], 'custom');
 			}
 		} else if (json.node === 'text') {
-			if (/\&\w+;/.test(json.text)) {
+			if (/&\w+;/.test(json.text)) {
 				for (var key in escaped) {
 					if (json.text.indexOf(key) >= 0) {
 						json.text = json.text.replaceAll(key, escaped[key]);
 					}
 				}
+			}
+			if (/&#\d+;/.test(json.text)) {
+				json.text = json.text.replaceAll(/&#\d+;/g, function (part) {
+					return String.fromCharCode(part.slice(2, -1) * 1);
+				});
 			}
 			node = document.createTextNode(json.text);
 		}
