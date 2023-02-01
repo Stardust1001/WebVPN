@@ -85,9 +85,9 @@ button.addEventListener('click', () => {
 })
 
 function transformUrl (url) {
-	const { host, pathname, search } = new URL(url)
+	const { host, origin } = new URL(url)
 	const subdomain = base32.encode(host).replaceAll('=', '')
-	return location.origin.replace('www', subdomain) + pathname + search
+	return location.origin.replace('www', subdomain) + url.slice(origin.length)
 }
 
 function decodeUrl (url) {
