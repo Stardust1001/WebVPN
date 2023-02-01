@@ -402,7 +402,7 @@ class WebVPN {
 	async fetchRequest (ctx, options) {
 		const res = await fetch(ctx.meta.url, options)
 		if (res.redirected) {
-			res.headers.Location = this.transformUrl(res.url)
+			res.headers.Location = this.encodeUrl(res.url)
 			ctx.res.writeHead(302, res.headers)
 			return { status: 302, headers: res.headers }
 		}
