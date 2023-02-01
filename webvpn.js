@@ -452,6 +452,9 @@ class WebVPN {
 				url = 'https:' + match.slice(match.indexOf('//'), -1)
 				prefix = '//'
 			}
+			if (/&#x\w+;/.test(url)) {
+				url = url.replaceAll(/&#x\w+;/g, ele => String.fromCharCode(parseInt(ele.slice(3, -1), 16)))
+			}
 			const source = prefix + new URL(url).host
 			dict[source] = this.transformUrl(source.startsWith('http') ? source : (site.protocol + source)).slice(0, -1)
 		})
