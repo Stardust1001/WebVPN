@@ -55,6 +55,16 @@
 
 	var ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:'];
 
+	var escaped = {
+		'&amp;': '&',
+		'&quot;': '"',
+		'&lt;': '<',
+		'&gt;': '>',
+		'&nbsp;': ' ',
+		'&ensp;': ' ',
+		'&emsp;': ' ',
+	};
+
 	function transformUrl (url) {
 		url = (url ? url.toString() : '').trim();
 		for (var prefix of ignoredPrefixes) {
@@ -749,6 +759,13 @@
 				node.setAttribute(key, attr[key], 'custom');
 			}
 		} else if (json.node === 'text') {
+			if (/\&\w+;/.test(json.text)) {
+				for (var key in escaped) {
+					if (json.text.indexOf(key) >= 0) {
+						json.text = json.text.replaceAll(key, escaped[key]);
+					}
+				}
+			}
 			node = document.createTextNode(json.text);
 		}
 
