@@ -699,6 +699,8 @@
 			} else {
 				removeChilds(node);
 			}
+			// 去除无用的 \n，减少 DOM 渲染，提高执行效率（不会是 pre 元素吧？）
+			html = html.replaceAll('\n', '');
 			var json = html2json(html);
 			var childs = json2dom(json);
 			console.log(
@@ -738,6 +740,9 @@
 			node = document.createElement(json.tag || 'div');
 			var attr = json.attr || {};
 			for (var key in attr) {
+				if (Array.isArray(attr[key])) {
+					attr[key] = attr[key].join('');
+				}
 				node.setAttribute(key, attr[key], 'custom');
 			}
 		} else if (json.node === 'text') {
