@@ -30,7 +30,6 @@ class VPN extends WebVPN {
 			res.data = res.data.replaceAll('type="module"', 'type="mod"')
 								.replaceAll('nomodule', 'nomod')
 								.replaceAll('use strict', '')
-								.replaceAll('&nbsp;', '\u3000')
 		}
 	}
 

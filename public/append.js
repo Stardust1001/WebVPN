@@ -684,6 +684,9 @@
 		return writeln.apply(document, htmls);
 	}
 
+	// 注意，已经没有真正的 innerHTML 方法了，原生的 innerHTML 不存在了
+	// 现在的仅是通过创建节点，设置节点子节点、文本内容，没有设置 html 内容的功能
+
 	// innerHTML 拦截
 	Object.defineProperty(Element.prototype, 'innerHTML', {
 		set (html) {
