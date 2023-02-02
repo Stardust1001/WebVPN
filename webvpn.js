@@ -371,7 +371,6 @@ class WebVPN {
 		const headers = this.initResponseHeaders(ctx, res)
 
 		if (headers.location) {
-			headers.location = this.transformUrl(headers.location)
 			ctx.res.writeHead(res.status, headers)
 			ctx.meta.done = true
 			return { status: res.status, headers }
@@ -580,6 +579,15 @@ class WebVPN {
 		const csp = headers['content-security-policy']
 		if (csp && csp.indexOf('frame-ancestors') >= 0) {
 			headers['content-security-policy'] = csp.replace('frame-ancestors', 'frame-ancestors ' + this.config.site.origin.replace('www', '*'))
+		}
+		if (headers['location']) {
+			let location = headers['location']
+			if (!location.startsWith('http')) {
+				if (location[0] === '/') {
+					location = ctx.meta.target.origin + location
+				}
+			}
+			headers['location'] = this.transformUrl(location)
 		}
 		return headers
 	}
