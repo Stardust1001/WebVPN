@@ -895,7 +895,7 @@ class WebVPN {
 	}
 
 	getMimeByResponseHeaders (headers) {
-		const contentType = headers['content-type']
+		const contentType = headers['content-type'] || ''
 		const mime = Object.keys(this.mimeDict).find(mime => {
 			const parts = this.mimeDict[mime].replaceAll(' ', '').split(',')
 			return parts.some(part => {
@@ -974,7 +974,7 @@ class WebVPN {
 		}
 		const buffer = Buffer.from(await res.arrayBuffer())
 		const text = iconv.decode(buffer, 'utf-8')
-		let contentType = headers['content-type']
+		let contentType = headers['content-type'] || ''
 		let charset = contentType.split('charset=')[1]
 		if (!charset) {
 			let match = text.match(/<meta charset=[\"\'][^"'\/>]+/)
