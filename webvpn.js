@@ -404,7 +404,6 @@ class WebVPN {
 		const headers = this.initResponseHeaders(ctx, res)
 
 		if (headers.location) {
-			headers.Location = this.encodeUrl(headers.location)
 			ctx.res.writeHead(res.status, headers)
 			ctx.meta.done = true
 			return { status: res.status, headers }
@@ -891,6 +890,15 @@ class WebVPN {
 			headers['access-control-allow-origin'] = this.config.site.origin
 		}
 		headers['content-type'] = headers['content-type'] || 'text/html'
+		if (headers['location']) {
+			let location = headers['location']
+			if (!location.startsWith('http')) {
+				if (location[0] === '/') {
+					location = ctx.meta.target.origin + location
+				}
+			}
+			headers['location'] = this.transformUrl(location)
+		}
 		return headers
 	}
 
