@@ -337,8 +337,7 @@ class WebVPN {
 		const options = {
 			method,
 			headers: header,
-			redirect: 'follow',
-			follow: 20,
+			redirect: 'manual',
 			...this.getRequestConfig(ctx)
 		}
 		if (method === 'POST') {
@@ -369,13 +368,15 @@ class WebVPN {
 
 	async fetchRequest (ctx, options) {
 		const res = await fetch(ctx.meta.url, options)
-		if (res.redirected) {
-			res.headers.Location = this.transformUrl(res.url)
-			ctx.res.writeHead(302, res.headers)
-			return { status: 302, headers: res.headers }
+		const headers = this.initResponseHeaders(ctx, res)
+
+		if (headers.location) {
+			headers.location = this.transformUrl(headers.location)
+			ctx.res.writeHead(res.status, headers)
+			ctx.meta.done = true
+			return { status: res.status, headers }
 		}
 
-		const headers = this.initResponseHeaders(ctx, res)
 		let data = ''
 		ctx.meta.mime = this.getMimeByResponseHeaders(headers) || ctx.meta.mime
 
