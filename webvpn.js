@@ -248,7 +248,7 @@ class WebVPN {
 			return
 		}
 
-		if (!ctx.meta.done && this.shouldReplaceUrls(ctx, res)) {
+		if (!ctx.meta.done && res.data && this.shouldReplaceUrls(ctx, res)) {
 			this.replaceUrls(ctx, res)
 			if (ctx.meta.mime === 'html') {
 				res.data = this.processHtml(ctx, res)
