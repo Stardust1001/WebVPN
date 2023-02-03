@@ -756,29 +756,16 @@
 				if (Array.isArray(attr[key])) {
 					attr[key] = attr[key].join('');
 				}
+				if (hasEscaped(attr[key], 2)) {
+					attr[key] = replaceEscaped(attr[key], 2);
+				}
 				node.setAttribute(key, attr[key], 'custom');
 			}
 		} else if (json.node === 'text') {
-			if (/&\w+/.test(json.text)) {
-				for (var key in escaped) {
-					if (json.text.indexOf(key) >= 0) {
-						json.text = json.text.replaceAll(key, escaped[key]);
-					}
-					var prefix = key.slice(0, -1);
-					if (json.text.indexOf(prefix) >= 0) {
-						json.text = json.text.replaceAll(prefix, escaped[key]);
-					}
+			for (var i = 1; i < 4; i++) {
+				if (hasEscaped(json.text, i)) {
+					json.text = replaceEscaped(json.text, i);
 				}
-			}
-			if (/&#\d+;/.test(json.text)) {
-				json.text = json.text.replaceAll(/&#\d+;/g, function (part) {
-					return String.fromCharCode(part.slice(2, -1) * 1);
-				});
-			}
-			if (/&#x\w+;/.test(json.text)) {
-				json.text = json.text.replaceAll(/&#x\w+;/g, function (part) {
-					return String.fromCharCode(parseInt(part.slice(3, -1), 16));
-				});
 			}
 			node = document.createTextNode(json.text);
 		}
@@ -796,6 +783,43 @@
 			return node;
 		}
 		return Array.from(node.childNodes);
+	}
+
+	function hasEscaped (text, index) {
+		if (index === 1) {
+			return /&\w+/.test(text);
+		}
+		if (index === 2) {
+			return /&#\d+;/.test(text);
+		}
+		if (index === 3) {
+			return /&#x\w+;/.test(text);
+		}
+	}
+
+	function replaceEscaped (text, index) {
+		if (index === 1) {
+			for (var key in escaped) {
+				if (text.indexOf(key) >= 0) {
+					text = text.replaceAll(key, escaped[key]);
+				}
+				var prefix = key.slice(0, -1);
+				if (text.indexOf(prefix) >= 0) {
+					text = text.replaceAll(prefix, escaped[key]);
+				}
+			}
+			return text;
+		}
+		if (index === 2) {
+			return text.replaceAll(/&#\d+;/g, function (part) {
+				return String.fromCharCode(part.slice(2, -1) * 1);
+			});
+		}
+		if (index === 3) {
+			return text.replaceAll(/&#x\w+;/g, function (part) {
+				return String.fromCharCode(parseInt(part.slice(3, -1), 16));
+			});
+		}
 	}
 
 	function removeChilds (node) {
