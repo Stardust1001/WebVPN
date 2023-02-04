@@ -383,12 +383,19 @@ class WebVPN {
 			if (headers['content-encoding'] === 'gzip') {
 				delete headers['content-encoding']
 			}
+			ctx.meta.done = true
+			if (ctx.meta.mime === 'json') {
+				return {
+					headers,
+					status: res.status,
+					data: await res.text()
+				}
+			}
 			ctx.res.writeHead(res.status, headers)
 			res.body.pipe(ctx.res)
 			await new Promise((resolve) => {
 				res.body.on('end', resolve)
 			})
-			ctx.meta.done = true
 		} else {
 			ctx.status = res.status
 			delete headers['content-encoding']
