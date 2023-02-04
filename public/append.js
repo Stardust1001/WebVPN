@@ -754,7 +754,7 @@
 			var attr = json.attr || {};
 			for (var key in attr) {
 				if (Array.isArray(attr[key])) {
-					attr[key] = attr[key].join('');
+					attr[key] = attr[key].join(' ');
 				}
 				if (hasEscaped(attr[key], 2)) {
 					attr[key] = replaceEscaped(attr[key], 2);
