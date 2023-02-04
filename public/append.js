@@ -617,6 +617,12 @@
 		return true;
 	}
 
+	Object.defineProperty(HTMLElement.prototype, 'baseURI', {
+		get () {
+			return webvpn.target;
+		}
+	});
+
 	nodeAttrSetters.forEach(function (item) {
 		Object.defineProperty(item[0].prototype, item[2], {
 			get () {
