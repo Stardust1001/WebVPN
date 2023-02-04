@@ -641,7 +641,7 @@
 	});
 
 	// a 元素的 host 等 URL 属性 拦截, href 在上面的 get 函数里拦截了
-	var aUrlAttrs = ['host', 'hostname', 'origin', 'port', 'protocol'];
+	var aUrlAttrs = ['href', 'host', 'hostname', 'origin', 'port', 'protocol'];
 	aUrlAttrs.forEach(function (attr) {
 		Object.defineProperty(HTMLAnchorElement.prototype, attr, {
 			get () {
@@ -649,8 +649,8 @@
 					'%cDOM 操作 拦截 a ' + attr + ' getter',
 					'color: #606666;background-color: lime;padding: 5px 10px;'
 				);
-				var url = decodeUrl(this.getAttribute('href', 'custom'));
-				if (!url) {
+				var url = decodeUrl(this.getAttribute('href'));
+				if (!url || attr === 'href') {
 					return url;
 				}
 				return new URL(url)[attr];
