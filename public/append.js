@@ -649,7 +649,7 @@
 					'%cDOM 操作 拦截 a ' + attr + ' getter',
 					'color: #606666;background-color: lime;padding: 5px 10px;'
 				);
-				var url = decodeUrl(this.getAttribute('href'));
+				var url = this.getAttribute('href');
 				if (!url || attr === 'href') {
 					return url;
 				}
