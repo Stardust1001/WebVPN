@@ -607,7 +607,13 @@ class WebVPN {
 
 	processHtmlScopeCodes (ctx, code) {
 		const matches = [...code.matchAll(/<script([^>]*)>([\S\s]*?)<\/script>/gi)].filter(match => {
-			return match[1].indexOf('application/json') < 0 && match[2]
+			const typeIndex = match[1].indexOf('type=')
+			let isScript = true
+			if (typeIndex > 0) {
+				const type = match[1].slice(typeIndex + 6).split(match[1][typeIndex + 5])[0]
+				isScript = type.indexOf('text/javascript') >= 0 || type.indexOf('text/') < 0
+			}
+			return isScript && match[2]
 		})
 		matches.sort((a, b) => b.index - a.index)
 		matches.forEach(match => {
