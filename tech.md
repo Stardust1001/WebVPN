@@ -74,3 +74,5 @@
 ## node.js console 颜色，使用 chalk 库
 
 ## 字符集编码，用 iconv-lite，decode 方法的参数是一个 Buffer
+
+### 错误 SSL routines:ssl3_get_record:wrong version number，因为目标网址不支持 https，需要改成 http 访问
