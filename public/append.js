@@ -104,6 +104,9 @@
 		if (url.split('?')[0].indexOf('http') < 0) {
 			return urljoin(location.href, url);
 		}
+		if (url.indexOf('http://') > 0 || url.indexOf('https://') > 0) {
+			url = url.slice(url.indexOf('http'));
+		}
 		var u = new URL(url);
 		var host = window.base32.decode(u.host.split('.')[0]);
 		return window.location.protocol + '//' + host + u.pathname + u.search;
