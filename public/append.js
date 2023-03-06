@@ -64,6 +64,7 @@
 		'&nbsp;': ' ',
 		'&ensp;': ' ',
 		'&emsp;': ' ',
+		'&copy;': '©'
 	};
 
 	function transformUrl (url) {
