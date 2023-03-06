@@ -910,7 +910,7 @@ class WebVPN {
 					location = ctx.meta.target.origin + location
 				}
 			}
-			headers['location'] = this.transformUrl(location)
+			headers['location'] = this.encodeUrl(location)
 		}
 		return headers
 	}
