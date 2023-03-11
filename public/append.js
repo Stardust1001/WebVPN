@@ -593,6 +593,10 @@
 					border-bottom: 1px solid #a0aaaa;
 					padding-bottom: 5px;
 					margin-bottom: 7px;
+					display: none;
+				}
+				#provide-download-box:hover .item {
+					display: flex;
 				}
 				#provide-download-box .item:last-child {
 					border-bottom: 0;
