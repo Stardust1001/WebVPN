@@ -50,7 +50,9 @@
 
 	Object.assign(window.webvpn, {
 		transformUrl,
-		decodeUrl
+		decodeUrl,
+		downloadVideo,
+		loadJs
 	});
 
 	var ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:'];
@@ -517,6 +519,67 @@
 		});
 	}
 
+	var cou = URL.createObjectURL;
+	window.webvpn.blobs = {};
+	URL.createObjectURL = function (object) {
+		var url = cou.call(this, object);
+		webvpn.blobs[url] = object;
+		return url;
+	}
+
+	var appendBuffer = SourceBuffer.prototype.appendBuffer;
+	SourceBuffer.prototype.appendBuffer = function (buf) {
+		this._buffer = this._buffer ? unionBuffers([this._buffer, buf]) : buf;
+		appendBuffer.call(this, buf);
+	}
+
+	function downloadVideo (node) {
+		var mediaSource = webvpn.blobs[node.src];
+		if (!mediaSource) {
+			console.error('此 video 元素暂无 blob');
+			return ;
+		}
+		if (!(mediaSource instanceof MediaSource)) {
+			console.error('此 video 元素的 blob 不是 MediaSource 类型')
+			return ;
+		}
+		for (var sourceBuffer of mediaSource.sourceBuffers) {
+			var blob = new Blob([sourceBuffer._buffer]);
+			var filename = Date.now().toString(16) + '.mp4';
+			var file = new File([blob], filename);
+			if (!window.saveAs) {
+				loadJs(webvpn.site + 'public/filesaver.js').then(function () {
+					saveAs(file, filename);
+				});
+			} else {
+				saveAs(file, filename);
+			}
+		}
+	}
+
+	function unionBuffers (buffers) {
+		buffers = Array.from(buffers);
+		var sum = buffers.reduce(function (sum, buf) {
+			return sum + buf.length;
+		}, 0);
+		var union = new Uint8Array(sum);
+		var index = 0;
+		buffers.forEach(function (buf) {
+			union.set(buf, index);
+			index += buf.length;
+		});
+		return union;
+	}
+
+	function loadJs (src) {
+		var script = document.createElement('script');
+		script.src = src;
+		return new Promise(function (resolve) {
+			script.onload = resolve;
+			document.body.appendChild(script);
+		});
+	}
+
 	window.__context__ = {
 		self: __self__,
 		window: __window__,
@@ -635,7 +698,7 @@
 					'%cDOM 操作 拦截 ' + item[1] + ' ' + item[2] + ' getter : ' + value,
 					'color: #606666;background-color: lime;padding: 5px 10px;'
 				);
-				if (value.startsWith('blob:')) {
+				if (!value || value.startsWith('blob:')) {
 					return value;
 				}
 				return decodeUrl(value);
