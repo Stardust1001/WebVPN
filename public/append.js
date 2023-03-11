@@ -533,8 +533,8 @@
 		appendBuffer.call(this, buf);
 	}
 
-	function downloadVideo (node) {
-		var mediaSource = webvpn.blobs[node.src];
+	async function downloadVideo (node) {
+		const mediaSource = webvpn.blobs[node.src];
 		if (!mediaSource) {
 			console.error('此 video 元素暂无 blob');
 			return ;
@@ -543,18 +543,19 @@
 			console.error('此 video 元素的 blob 不是 MediaSource 类型')
 			return ;
 		}
-		for (var sourceBuffer of mediaSource.sourceBuffers) {
-			var blob = new Blob([sourceBuffer._buffer]);
-			var filename = Date.now().toString(16) + '.mp4';
-			var file = new File([blob], filename);
-			if (!window.saveAs) {
-				loadJs(webvpn.site + 'public/filesaver.js').then(function () {
-					saveAs(file, filename);
-				});
-			} else {
-				saveAs(file, filename);
-			}
+		const files = Array.from(mediaSource.sourceBuffers).map(sourceBuffer => {
+			const blob = new Blob([sourceBuffer._buffer]);
+			return new File([blob], 'video.mp4');
+		});
+		let [audio, video] = files;
+		if (audio.size > video.site) {
+			[video, audio] = [audio, video];
 		}
+		if (!window.saveAs) {
+			await loadJs(webvpn.site + 'public/filesaver.js');
+		}
+		saveAs(audio, '音频.mp3');
+		saveAs(video, '视频.mp4');
 	}
 
 	function unionBuffers (buffers) {
