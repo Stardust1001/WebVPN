@@ -52,7 +52,8 @@
 		transformUrl,
 		decodeUrl,
 		downloadVideo,
-		loadJs
+		addScript,
+		addStyle
 	});
 
 	var ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:'];
@@ -524,6 +525,7 @@
 	URL.createObjectURL = function (object) {
 		var url = cou.call(this, object);
 		webvpn.blobs[url] = object;
+		provideDownloads(url, object);
 		return url;
 	}
 
@@ -531,6 +533,109 @@
 	SourceBuffer.prototype.appendBuffer = function (buf) {
 		this._buffer = this._buffer ? unionBuffers([this._buffer, buf]) : buf;
 		appendBuffer.call(this, buf);
+	}
+
+	async function provideDownloads (url, object) {
+		await new Promise(resolve => setTimeout(resolve, 3e3));
+		const node = [
+			...document.querySelectorAll('video'),
+			...document.querySelectorAll('audio')
+		].find(node => node.src === url);
+		console.log(node)
+		if (!node) return ;
+		let box = document.querySelector('#provide-download-box');
+		if (!box) {
+			addStyle(`
+				#provide-download-box {
+					position: fixed;
+					z-index: 999999;
+					left: 10px;
+					top: 10px;
+					width: 50px;
+					height: 30px;
+					padding: 10px;
+					background-color: white;
+					box-shadow: 2px 2px 5px 5px rgba(60, 150, 150, 0.5);
+					color: #303333;
+					overflow: hidden;
+					border-radius: 4px;
+				}
+				#provide-download-box .flex-center {
+					display: flex;
+					align-items: center;
+					justify-content: center;
+				}
+				#provide-download-box .mask {
+					position: absolute;
+					left: 0;
+					top: 0;
+					width: 100%;
+					height: 100%;
+					z-index: 1000000;
+					background-color: white;
+					text-align: center;
+					font-size: 13px;
+				}
+				#provide-download-box:hover {
+					width: 250px;
+					height: auto;
+					max-height: 50vh;
+					overflow-y: scroll;
+				}
+				#provide-download-box:hover .mask {
+					display: none;
+					width: 250px;
+					max-height: 50vh;
+					overflow-y: scroll;
+					border-radius: 4px;
+				}
+				#provide-download-box .item {
+					border-bottom: 1px solid #a0aaaa;
+					padding-bottom: 5px;
+					margin-bottom: 7px;
+				}
+				#provide-download-box .item:nth-child(2) {
+					border-bottom: 0;
+					padding-bottom: 0;
+					margin-bottom: 0;
+				}
+				#provide-download-box .title {
+					flex: 1;
+				}
+				#provide-download-box .link {
+					flex: 4;
+					color: orange;
+					cursor: pointer;
+					display: inline-block;
+					width: 150px;
+					overflow: hidden;
+					text-overflow: ellipsis;
+					white-space: nowrap;
+				}
+				#provide-download-box .link:hover {
+					color: orangered;
+				}
+			`);
+			box = document.createElement('div');
+			box.id = 'provide-download-box';
+			document.body.appendChild(box);
+			const mask = document.createElement('div');
+			mask.classList.add('mask', 'flex-center');
+			mask.innerHTML = '资源0';
+			box.appendChild(mask);
+		}
+		const mask = box.querySelector('.mask');
+		mask.textContent = '资源' + (mask.textContent.slice(2) * 1 + 1);
+		const item = document.createElement('div');
+		item.classList.add('item', 'flex-center');
+		const isVideo = node.nodeName === 'VIDEO';
+		item.innerHTML = `<span class="title">${isVideo ? '视频' : '音频'}</span>`
+		const link = document.createElement('span');
+		link.classList.add('link');
+		link.textContent = node.src;
+		link.onclick = () => downloadVideo(node);
+		item.appendChild(link);
+		box.appendChild(item);
 	}
 
 	async function downloadVideo (node) {
@@ -552,7 +657,7 @@
 			[video, audio] = [audio, video];
 		}
 		if (!window.saveAs) {
-			await loadJs(webvpn.site + 'public/filesaver.js');
+			await addScript(webvpn.site + 'public/filesaver.js');
 		}
 		saveAs(audio, '音频.mp3');
 		saveAs(video, '视频.mp4');
@@ -572,10 +677,30 @@
 		return union;
 	}
 
-	function loadJs (src) {
+	function addStyle (src) {
+		var node;
+		if (src.startsWith('http')) {
+			node = document.createElement('link');
+			node.rel = 'stylesheet';
+			node.href = src;
+		} else {
+			node = document.createElement('style');
+			node.innerHTML = src;
+		}
+		return new Promise(resolve => {
+			node.onload = resolve;
+			document.head.appendChild(node);
+		});
+	}
+
+	function addScript (src) {
 		var script = document.createElement('script');
-		script.src = src;
-		return new Promise(function (resolve) {
+		if (src.startsWith('http')) {
+			script.src = src;
+		} else {
+			script.innerHTML = src;
+		}
+		return new Promise(resolve => {
 			script.onload = resolve;
 			document.body.appendChild(script);
 		});
