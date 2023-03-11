@@ -543,8 +543,8 @@
 			console.error('此 video 元素的 blob 不是 MediaSource 类型')
 			return ;
 		}
-		const files = Array.from(mediaSource.sourceBuffers).map(sourceBuffer => {
-			const blob = new Blob([sourceBuffer._buffer]);
+		const files = Array.from(mediaSource.sourceBuffers).map(ele => {
+			const blob = new Blob([ele._buffer]);
 			return new File([blob], 'video.mp4');
 		});
 		let [audio, video] = files;
