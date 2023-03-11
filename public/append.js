@@ -594,7 +594,7 @@
 					padding-bottom: 5px;
 					margin-bottom: 7px;
 				}
-				#provide-download-box .item:nth-child(2) {
+				#provide-download-box .item:last-child {
 					border-bottom: 0;
 					padding-bottom: 0;
 					margin-bottom: 0;
