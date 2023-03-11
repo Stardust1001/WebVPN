@@ -635,6 +635,9 @@
 					'%cDOM 操作 拦截 ' + item[1] + ' ' + item[2] + ' getter : ' + value,
 					'color: #606666;background-color: lime;padding: 5px 10px;'
 				);
+				if (value.startsWith('blob:')) {
+					return value;
+				}
 				return decodeUrl(value);
 			},
 			set (url) {
