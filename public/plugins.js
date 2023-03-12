@@ -75,7 +75,7 @@
 		let box = document.querySelector('#-pd-');
 		if (!box) {
 			addStyle(`
-			#-pd- { position: fixed; z-index: 999999; left: 10px; top: 10px; width: 50px; height: 30px; padding: 10px; background-color: white; box-shadow: 2px 2px 5px 5px rgba(60, 150, 150, 0.5); color: #303333; overflow: hidden; border-radius: 4px; }
+			#-pd- { position: fixed; z-index: 999999; box-sizing: border-box; left: 10px; top: 10px; width: 50px; height: 30px; padding: 10px; background-color: white; box-shadow: 2px 2px 5px 5px rgba(60, 150, 150, 0.5); color: #303333; overflow: hidden; border-radius: 4px; }
 			#-pd- .flex-center { display: flex; align-items: center; justify-content: center; }
 			#-pd- .mask { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 1000000; background-color: white; text-align: center; font-size: 13px; }
 			#-pd-:hover { width: 360px; height: auto; max-height: 50vh; overflow-y: scroll; }
