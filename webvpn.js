@@ -536,6 +536,7 @@ class WebVPN {
 		<script src="${site.origin}/public/html2json.js"></script>
 		<script src="${site.origin}/public/base32.js"></script>
 		<script src="${site.origin}/public/append.js"></script>
+		<script src="${site.origin}/public/plugins.js"></script>
 		${ctx.meta.appendScriptCode || ''}
 		`
 		return code + data

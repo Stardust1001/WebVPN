@@ -50,10 +50,7 @@
 
 	Object.assign(window.webvpn, {
 		transformUrl,
-		decodeUrl,
-		downloadVideo,
-		addScript,
-		addStyle
+		decodeUrl
 	});
 
 	var ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:'];
@@ -249,7 +246,7 @@
 	}
 
 	function urljoin (url, path) {
-		const { origin, pathname } = new URL(url);
+		var { origin, pathname } = new URL(url);
 		if (path[0] === '/') {
 			return origin + path;
 		}
@@ -329,7 +326,7 @@
 	Element.prototype.setAttribute = function (attr, value, type) {
 		if (type !== 'custom' && urlAttrs.includes(attr)) {
 			console.log(
-				'%cDOM 操作 拦截 setAttribute : ' + value,
+				'%cDOM 操作 拦截 setAttribute : ' + this.nodeName.toLowerCase() + ' - ' + attr + ' - ' + value,
 				'color: #606666;background-color: lime;padding: 5px 10px;'
 			);
 			value = transformUrl(value);
@@ -520,196 +517,6 @@
 		});
 	}
 
-	var cou = URL.createObjectURL;
-	window.webvpn.blobs = {};
-	URL.createObjectURL = function (object) {
-		var url = cou.call(this, object);
-		webvpn.blobs[url] = object;
-		provideDownloads(url, object);
-		return url;
-	}
-
-	var appendBuffer = SourceBuffer.prototype.appendBuffer;
-	SourceBuffer.prototype.appendBuffer = function (buf) {
-		this._buffer = this._buffer ? unionBuffers([this._buffer, buf]) : buf;
-		appendBuffer.call(this, buf);
-	}
-
-	async function provideDownloads (url, object) {
-		await new Promise(resolve => setTimeout(resolve, 3e3));
-		const node = [
-			...document.querySelectorAll('video'),
-			...document.querySelectorAll('audio')
-		].find(node => node.src === url);
-		console.log(node)
-		if (!node) return ;
-		let box = document.querySelector('#provide-download-box');
-		if (!box) {
-			addStyle(`
-				#provide-download-box {
-					position: fixed;
-					z-index: 999999;
-					left: 10px;
-					top: 10px;
-					width: 50px;
-					height: 30px;
-					padding: 10px;
-					background-color: white;
-					box-shadow: 2px 2px 5px 5px rgba(60, 150, 150, 0.5);
-					color: #303333;
-					overflow: hidden;
-					border-radius: 4px;
-				}
-				#provide-download-box .flex-center {
-					display: flex;
-					align-items: center;
-					justify-content: center;
-				}
-				#provide-download-box .mask {
-					position: absolute;
-					left: 0;
-					top: 0;
-					width: 100%;
-					height: 100%;
-					z-index: 1000000;
-					background-color: white;
-					text-align: center;
-					font-size: 13px;
-				}
-				#provide-download-box:hover {
-					width: 250px;
-					height: auto;
-					max-height: 50vh;
-					overflow-y: scroll;
-				}
-				#provide-download-box:hover .mask {
-					display: none;
-					width: 250px;
-					max-height: 50vh;
-					overflow-y: scroll;
-					border-radius: 4px;
-				}
-				#provide-download-box .item {
-					border-bottom: 1px solid #a0aaaa;
-					padding-bottom: 5px;
-					margin-bottom: 7px;
-					display: none;
-				}
-				#provide-download-box:hover .item {
-					display: flex;
-				}
-				#provide-download-box .item:last-child {
-					border-bottom: 0;
-					padding-bottom: 0;
-					margin-bottom: 0;
-				}
-				#provide-download-box .title {
-					flex: 1;
-				}
-				#provide-download-box .link {
-					flex: 4;
-					color: orange;
-					cursor: pointer;
-					display: inline-block;
-					width: 150px;
-					overflow: hidden;
-					text-overflow: ellipsis;
-					white-space: nowrap;
-				}
-				#provide-download-box .link:hover {
-					color: orangered;
-				}
-			`);
-			box = document.createElement('div');
-			box.id = 'provide-download-box';
-			document.body.appendChild(box);
-			const mask = document.createElement('div');
-			mask.classList.add('mask', 'flex-center');
-			mask.innerHTML = '资源0';
-			box.appendChild(mask);
-		}
-		const mask = box.querySelector('.mask');
-		mask.textContent = '资源' + (mask.textContent.slice(2) * 1 + 1);
-		const item = document.createElement('div');
-		item.classList.add('item', 'flex-center');
-		const isVideo = node.nodeName === 'VIDEO';
-		item.innerHTML = `<span class="title">${isVideo ? '视频' : '音频'}</span>`
-		const link = document.createElement('span');
-		link.classList.add('link');
-		link.textContent = node.src;
-		link.onclick = () => downloadVideo(node);
-		item.appendChild(link);
-		box.appendChild(item);
-	}
-
-	async function downloadVideo (node) {
-		const mediaSource = webvpn.blobs[node.src];
-		if (!mediaSource) {
-			console.error('此 video 元素暂无 blob');
-			return ;
-		}
-		if (!(mediaSource instanceof MediaSource)) {
-			console.error('此 video 元素的 blob 不是 MediaSource 类型')
-			return ;
-		}
-		const files = Array.from(mediaSource.sourceBuffers).map(ele => {
-			const blob = new Blob([ele._buffer]);
-			return new File([blob], 'video.mp4');
-		});
-		let [audio, video] = files;
-		if (audio.size > video.site) {
-			[video, audio] = [audio, video];
-		}
-		if (!window.saveAs) {
-			await addScript(webvpn.site + 'public/filesaver.js');
-		}
-		saveAs(audio, '音频.mp3');
-		saveAs(video, '视频.mp4');
-	}
-
-	function unionBuffers (buffers) {
-		buffers = Array.from(buffers);
-		var sum = buffers.reduce(function (sum, buf) {
-			return sum + buf.length;
-		}, 0);
-		var union = new Uint8Array(sum);
-		var index = 0;
-		buffers.forEach(function (buf) {
-			union.set(buf, index);
-			index += buf.length;
-		});
-		return union;
-	}
-
-	function addStyle (src) {
-		var node;
-		if (src.startsWith('http')) {
-			node = document.createElement('link');
-			node.rel = 'stylesheet';
-			node.href = src;
-		} else {
-			node = document.createElement('style');
-			node.innerHTML = src;
-		}
-		return new Promise(resolve => {
-			node.onload = resolve;
-			document.head.appendChild(node);
-		});
-	}
-
-	function addScript (src) {
-		var script = document.createElement('script');
-		if (src.startsWith('http')) {
-			script.src = src;
-		} else {
-			script.innerHTML = src;
-		}
-		return new Promise(resolve => {
-			script.onload = resolve;
-			document.body.appendChild(script);
-		});
-	}
-
 	window.__context__ = {
 		self: __self__,
 		window: __window__,
@@ -754,7 +561,7 @@
 			var value = getAttribute.bind(this)(attr);
 			if (value && type !== 'custom' && item[2].includes(attr)) {
 				console.log(
-					'%cDOM 操作 拦截 getAttribute : ' + item[1] + '-' + item[2] + ' ' + value,
+					'%cDOM 操作 拦截 getAttribute : ' + item[1] + ' - ' + item[2] + ' ' + value,
 					'color: #606666;background-color: lime;padding: 5px 10px;'
 				);
 				value = decodeUrl(value);
@@ -1047,7 +854,7 @@
 		var link = getNodeUrl(node)[0];
 		if (link) {
 			console.log(
-				'%cDOM 操作 拦截 ' + funcName + ' : ' + link,
+				'%cDOM 操作 拦截 ' + funcName + ' : ' + node.nodeName.toLowerCase() + ' - ' + link,
 				'color: #606666;background-color: yellow;padding: 5px 10px;'
 			);
 			window.domUrls.push(link);
@@ -1144,9 +951,11 @@
 		logs[category][type] = logs[category][type] || [];
 
 		if (args.length === 2 && args[0].startsWith('%c')) {
-			args = [args[0].slice(2)];
+			args = args[0].slice(2);
 		}
 		logs[category][type].push(args);
 	}
+
+	webvpn.log = logger;
 
 })();
