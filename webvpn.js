@@ -202,8 +202,11 @@ class WebVPN {
 
 	async proxyRoute (ctx, next) {
 		const subdomain = ctx.headers.host.replace(this.config.vpnDomain, '')
-		if (subdomain === 'www' || subdomain === this.config.vpnDomain.slice(1)) {
+		if (subdomain === 'www') {
 			return await this.serveWww(ctx)
+		} else if (subdomain === this.config.vpnDomain.slice(1)) {
+			ctx.res.writeHead(302, { location: this.config.site.href })
+			return
 		}
 		ctx.subdomain = subdomain
 
