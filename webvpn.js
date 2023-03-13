@@ -201,11 +201,11 @@ class WebVPN {
 	}
 
 	async proxyRoute (ctx, next) {
-		ctx.subdomain = ctx.headers['host'].split('.')[0]
-
-		if (ctx.subdomain === 'www') {
+		const subdomain = ctx.headers.host.replace(this.config.vpnDomain, '')
+		if (subdomain === 'www' || subdomain === this.config.vpnDomain.slice(1)) {
 			return await this.serveWww(ctx)
 		}
+		ctx.subdomain = subdomain
 
 		const isPublic = await this.checkPublic(ctx)
 		if (isPublic) {
