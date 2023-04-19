@@ -11,7 +11,10 @@
 	var base = window.webvpn.base;
 	var vpnDomain = site.host.replace('www', '');
 
-	var targetUrl = window.webvpn.target + location.href.slice(location.origin.length + 1);
+	var targetUrl = window.webvpn.target;
+	if (targetUrl.length <= new URL(targetUrl).origin.length + 1) {
+		targetUrl = window.webvpn.target + location.href.slice(location.origin.length + 1);
+	}
 	var target = new URL(targetUrl);
 
 	var interceptLog = window.webvpn.interceptLog;
