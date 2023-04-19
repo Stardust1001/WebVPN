@@ -61,7 +61,7 @@ class WebVPN {
 		this.jsScopePrefixCode = `
 			// worker 里面创造 __context__ 环境
 			if (!self.window) {
-				var target = new URL('#target#');
+				var target = new URL(webvpn.targetUrl);
 				function copySource (source) {
 					var copied = Object.assign({}, source);
 					for (var key in source) copied[key] = source[key];
@@ -509,7 +509,7 @@ class WebVPN {
 	}
 
 	refactorJsScopeCode (ctx, code) {
-		return this.jsScopePrefixCode.replace('#target#', ctx.meta.target.href) + code + this.jsScopeSuffixCode
+		return this.jsScopePrefixCode + code + this.jsScopeSuffixCode
 	}
 
 	appendScript (ctx, res) {

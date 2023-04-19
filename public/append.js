@@ -11,13 +11,22 @@
 	var base = window.webvpn.base;
 	var vpnDomain = site.host.replace('www', '');
 
-	var SVG_NS = 'http://www.w3.org/2000/svg';
+	var location = window.location;
 
-	var targetUrl = window.webvpn.target;
-	if (targetUrl.length <= new URL(targetUrl).origin.length + 1) {
-		targetUrl = window.webvpn.target + location.href.slice(location.origin.length + 1);
-	}
-	var target = new URL(targetUrl);
+	Object.defineProperties(window.webvpn, {
+		target: {
+			get () {
+				return decodeUrl(location.href);
+			}
+		},
+		location: {
+			get () {
+				return new URL(webvpn.target);
+			}
+		}
+	});
+
+	var SVG_NS = 'http://www.w3.org/2000/svg';
 
 	var interceptLog = window.webvpn.interceptLog;
 	var disableJump = window.webvpn.disableJump;
@@ -381,10 +390,11 @@
 				'%cHistory 操作 拦截 go : ' + value,
 				'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
 			);
+			updateLocation(value);
 			value = transformUrl(value);
 		}
 		if (!canJump(value)) return false;
-		return go.bind(History)(value);
+		return go.apply(this, [value]);
 	}
 
 	// _navigate 拦截
@@ -430,7 +440,7 @@
 	}
 
 	// window.__location__
-	window.__location__ = Object.assign({}, copySource(window.location), copySource(target));
+	window.__location__ = Object.assign({}, copySource(location), copySource(webvpn.location));
 	window.__location__.assign = window.location._assign;
 	window.__location__.replace = window.location._replace;
 
@@ -438,7 +448,7 @@
 	for (var key of ['location', '__location__']) {
 		Object.defineProperty(window[key], '__href__', {
 			get () {
-				return window.__location__.href;
+				return webvpn.location.href;
 			},
 			set (url) {
 				console.log(
@@ -452,10 +462,9 @@
 		});
 	}
 	// __location__.href 拦截
-	var href = window.__location__.href;
 	Object.defineProperty(window.__location__, 'href', {
 		get () {
-			return href;
+			return webvpn.location.href;
 		},
 		set (url) {
 			console.log(
@@ -471,7 +480,7 @@
 	// document.domain
 	Object.defineProperty(document, 'domain', {
 		get () {
-			return target.hostname;
+			return webvpn.location.hostname;
 		},
 		set (value) { }
 	});
@@ -487,25 +496,25 @@
 	// __window__, __document__, _globalThis, __parent__, __self__, __top__
 	for (var con of ['window', 'document', 'globalThis', 'parent', 'self', 'top']) {
 		window['__' + con + '__'] = new Proxy(window[con], {
-			get (target, property, receiver) {
-				var win = (target === parent || target === top) ? target : window;
+			get (obj, property, receiver) {
+				var win = (obj === parent || obj === top) ? obj : window;
 				if (property === 'window') {
 					return win.__window__;
 				}
 				if (property === 'location') {
 					return win.__location__;
 				}
-				var value = target[property];
+				var value = obj[property];
 				// 如果 value 是 function，不一定是真的函数，也可能是 Promise 这种，Promise 有 prototype
-				return (typeof value === 'function' && !value.prototype) ? value.bind(target) : value;
+				return (typeof value === 'function' && !value.prototype) ? value.bind(obj) : value;
 			},
-			set (target, property, value) {
+			set (obj, property, value) {
 				if (property === 'window') {
 					return false;
 				}
 				if (property === 'location') {
-					if (target === parent || target === top) {
-						target.__location__.href = value;
+					if (obj === parent || obj === top) {
+						obj.__location__.href = value;
 						return true;
 					}
 					console.log(
@@ -516,7 +525,7 @@
 					value = transformUrl(value);
 					window.location.href = value;
 				}
-				target[property] = value;
+				obj[property] = value;
 				return true;
 			}
 		});
@@ -541,11 +550,11 @@
 
 	// 因为用 __document__ 替换了 document, __document__ 的时候类型跟 document 不一致
 	var observe = MutationObserver.prototype.observe;
-	MutationObserver.prototype.observe = function (target, options) {
-		if (target == window.__document__) {
-			target = document;
+	MutationObserver.prototype.observe = function (obj, options) {
+		if (obj == window.__document__) {
+			obj = document;
 		}
-		return observe.bind(this)(target, options);
+		return observe.bind(this)(obj, options);
 	}
 
 	// getAttribute 拦截
@@ -609,6 +618,7 @@
 			);
 			if (!canJump(url)) return false;
 			url = transformUrl(url);
+			updateLocation(value);
 			origin.bind(this)(state, title, url);
 		}
 	});
