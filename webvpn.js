@@ -542,7 +542,8 @@ class WebVPN {
 		<script src="${site.origin}/public/plugins.js"></script>
 		${ctx.meta.appendScriptCode || ''}
 		`
-		return code + data
+		const hasDoctype = /^\s*?\<\!DOCTYPE html\>/i.test(res.data)
+		return (hasDoctype ? '<!DOCTYPE html>\n' : '') + code + data
 	}
 
 	processOthers (ctx, res) {
