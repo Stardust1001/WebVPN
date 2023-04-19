@@ -6,14 +6,14 @@
 
 	var logTypes = ['AJAX', 'fetch', 'History'];
 
-	var siteUrl = window.webvpn.site;
+	var siteUrl = webvpn.site;
 	var site = new URL(siteUrl);
-	var base = window.webvpn.base;
+	var base = webvpn.base;
 	var vpnDomain = site.host.replace('www', '');
 
 	var location = window.location;
 
-	Object.defineProperties(window.webvpn, {
+	Object.defineProperties(webvpn, {
 		target: {
 			get () {
 				return decodeUrl(location.href);
@@ -28,9 +28,9 @@
 
 	var SVG_NS = 'http://www.w3.org/2000/svg';
 
-	var interceptLog = window.webvpn.interceptLog;
-	var disableJump = window.webvpn.disableJump;
-	var confirmJump = window.webvpn.confirmJump;
+	var interceptLog = webvpn.interceptLog;
+	var disableJump = webvpn.disableJump;
+	var confirmJump = webvpn.confirmJump;
 
 	var linkTags = ['a', 'img', 'script', 'link', 'video', 'audio', 'source', 'iframe', 'form', 'embed', 'object'];
 	var urlAttrs = ['href', 'src', 'srcset', 'poster', 'action', 'data', 'codebase'];
@@ -62,7 +62,7 @@
 	window.fetchUrls = [];
 	window.domUrls = [];
 
-	Object.assign(window.webvpn, {
+	Object.assign(webvpn, {
 		transformUrl,
 		decodeUrl
 	});
@@ -93,6 +93,9 @@
 		if (url.indexOf('http') < 0 && url.indexOf('//') > 0) {
 			url = url.slice(url.indexOf('//'));
 		}
+		if (url.startsWith('//')) {
+			url = webvpn.location.protocol + url;
+		}
 		if (url.indexOf('http://') > 0 || url.indexOf('https://') > 0) {
 			url = url.slice(url.indexOf('http'));
 		}
@@ -101,9 +104,6 @@
 				return url.replace('https://', 'http://')
 			}
 			return url;
-		}
-		if (url.startsWith('//')) {
-			url = 'https:' + url;
 		}
 		var u = new URL(url);
 		var subdomain = window.base32.encode(u.host);
@@ -543,7 +543,7 @@
 	setInterval(function () {
 		var location = window.__context__.location;
 		if (typeof location === 'string') {
-			window.location.href = window.webvpn.transformUrl(location);
+			window.location.href = transformUrl(location);
 		}
 	}, 500);
 

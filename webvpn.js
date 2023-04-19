@@ -467,7 +467,7 @@ class WebVPN {
 				url = url.replaceAll(/&#x\w+;/g, ele => String.fromCharCode(parseInt(ele.slice(3, -1), 16)))
 			}
 			const source = prefix + new URL(url).host
-			dict[source] = this.transformUrl(source.startsWith('http') ? source : (site.protocol + source)).slice(0, -1)
+			dict[source] = this.transformUrl(source.startsWith('http') ? source : (site.protocol + source))
 		})
 		Object.entries(dict).sort((a, b) => b[0].length - a[0].length).forEach(ele => {
 			const [key, value] = ele
