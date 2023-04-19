@@ -61,7 +61,11 @@ class WebVPN {
 		this.jsScopePrefixCode = `
 			// worker 里面创造 __context__ 环境
 			if (!self.window) {
-				var target = new URL(webvpn.targetUrl);
+				var href = self.webvpn && set.webvpn.location.href;
+				if (!href) {
+					href = location.href.replace(location.origin, '#origin#');
+				}
+				var target = new URL(href);
 				function copySource (source) {
 					var copied = Object.assign({}, source);
 					for (var key in source) copied[key] = source[key];
@@ -473,9 +477,9 @@ class WebVPN {
 	}
 
 	transformUrl (url) {
-		const { host, pathname, search } = new URL(url)
+		const { host, origin } = new URL(url)
 		const subdomain = base32.encode(host)
-		return this.config.site.origin.replace('www', subdomain) + pathname + search
+		return url.replace(origin, this.config.site.origin.replace('www', subdomain))
 	}
 
 	processHtml (ctx, res) {
@@ -509,7 +513,8 @@ class WebVPN {
 	}
 
 	refactorJsScopeCode (ctx, code) {
-		return this.jsScopePrefixCode + code + this.jsScopeSuffixCode
+		const origin = this.config.site.origin.replace('www', base32.encode(ctx.meta.target.host))
+		return this.jsScopePrefixCode.replace('#origin#', origin) + code + this.jsScopeSuffixCode
 	}
 
 	appendScript (ctx, res) {

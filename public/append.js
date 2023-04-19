@@ -390,7 +390,6 @@
 				'%cHistory 操作 拦截 go : ' + value,
 				'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
 			);
-			updateLocation(value);
 			value = transformUrl(value);
 		}
 		if (!canJump(value)) return false;
@@ -618,7 +617,6 @@
 			);
 			if (!canJump(url)) return false;
 			url = transformUrl(url);
-			updateLocation(value);
 			origin.bind(this)(state, title, url);
 		}
 	});
