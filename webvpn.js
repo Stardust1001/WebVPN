@@ -21,18 +21,15 @@ class WebVPN {
 		this.config = config
 		this.mimes = ['json', 'js', 'css', 'html', 'image', 'video', 'audio']
 		this.mimeRegs = [
-			[/\.json/, 'json'],
-			[/\.js/, 'js'],
-			[/\.css/, 'css'],
-			[/\.(png|jpg|ico|svg|gif|webp|jpeg)/, 'image'],
-			[/\.(mp4|m3u8|ts|flv)[^a-zA-Z]/, 'video'],
-			[/\.(mp3|wav|ogg)/, 'audio'],
-			[/\.(html|php|do|asp|htm|shtml)/, 'html'],
-			[/\.(ttf|eot|woff|woff2)/, 'font'],
-			[/\.pdf/, 'pdf'],
-			[/\.(doc|docx)/, 'doc'],
-			[/\.(xls|xlsx)/, 'xls'],
-			[/\.(ppt|pptx)/, 'ppt'],
+			[/\.json/i, 'json'],
+			[/\.js/i, 'js'],
+			[/\.css/i, 'css'],
+			[/\.(png|jpg|ico|svg|gif|webp|jpeg)/i, 'image'],
+			[/\.(mp4|m3u8|ts|flv)[^a-zA-Z]/i, 'video'],
+			[/\.(mp3|wav|ogg)/i, 'audio'],
+			[/\.(html|php|do|asp|htm|shtml)/i, 'html'],
+			[/\.(ttf|eot|woff|woff2)/i, 'font'],
+			[/\.(pdf|doc|docx|xls|xlsx|ppt|pptx)/i, 'pdf-office']
 		]
 		this.mimeDict = {
 			'html': 'text/html',
