@@ -11,6 +11,8 @@
 	var base = window.webvpn.base;
 	var vpnDomain = site.host.replace('www', '');
 
+	var SVG_NS = 'http://www.w3.org/2000/svg';
+
 	var targetUrl = window.webvpn.target;
 	if (targetUrl.length <= new URL(targetUrl).origin.length + 1) {
 		targetUrl = window.webvpn.target + location.href.slice(location.origin.length + 1);
@@ -136,9 +138,9 @@
 		return node;
 	}
 
-	function transformHtml (html) {
+	function transformHtml (html, root) {
 		var json = html2json(html);
-		var childs = json2dom(json);
+		var childs = json2dom(json, root);
 		var doc = document.createDocumentFragment();
 		for (var child of childs) {
 			doc.appendChild(child);
@@ -344,7 +346,7 @@
 			'%cDOM 操作 拦截 insertAdjacentHTML : ' + html,
 			'color: #606666;background-color: lime;padding: 5px 10px;'
 		);
-		html = transformHtml(html);
+		html = transformHtml(html, this);
 		return insertAdjacentHTML.bind(this)(position, html);
 	}
 
@@ -687,7 +689,7 @@
 	document.write = function () {
 		var htmls = [];
 		for (var html of arguments) {
-			htmls.push(transformHtml(html));
+			htmls.push(transformHtml(html, document.body));
 		}
 		console.log(
 			'%cDOM 操作 拦截 document.write : ' + htmls,
@@ -701,7 +703,7 @@
 	document.writeln = function () {
 		var htmls = [];
 		for (var html of arguments) {
-			htmls.push(transformHtml(html));
+			htmls.push(transformHtml(html, document.body));
 		}
 		console.log(
 			'%cDOM 操作 拦截 document.writeln : ' + htmls,
@@ -731,7 +733,7 @@
 			// 去除无用的 \n，减少 DOM 渲染，提高执行效率（不会是 pre 元素吧？）
 			html = html.replaceAll('\n', '');
 			var json = html2json(html);
-			var childs = json2dom(json);
+			var childs = json2dom(json, this);
 			console.log(
 				'%cDOM 操作 拦截 innerHTML : ' + (html.length > 100 ? (html.slice(0, 100) + '...') : html),
 				'color: #606666;background-color: lightblue;padding: 5px 10px;'
@@ -750,7 +752,7 @@
 			var node = this;
 			var parent = node.parentNode;
 			var json = html2json(html);
-			var childs = json2dom(json);
+			var childs = json2dom(json, this);
 			console.log(
 				'%cDOM 操作 拦截 outerHTML : ' + (html.length > 100 ? (html.slice(0, 100) + '...') : html),
 				'color: #606666;background-color: lightblue;padding: 5px 10px;'
@@ -762,11 +764,16 @@
 		}
 	});
 
-	function json2dom (json) {
+	function json2dom (json, root) {
+		var isSvg = root && root instanceof SVGElement || json.tag === 'svg';
 		var node;
 
 		if (json.node === 'element' || json.node === 'root') {
-			node = document.createElement(json.tag || 'div');
+			if (isSvg) {
+				node = document.createElementNS(SVG_NS, json.tag);
+			} else {
+				node = document.createElement(json.tag || 'div');
+			}
 			var attr = json.attr || {};
 			for (var key in attr) {
 				if (Array.isArray(attr[key])) {
@@ -789,7 +796,7 @@
 		if (json.child) {
 			for (var ele of json.child) {
 				if (ele.node === 'comment') continue;
-				var dom = json2dom(ele);
+				var dom = json2dom(ele, node);
 				dom._type_ = 'custom';
 				node.appendChild(dom);
 			}
