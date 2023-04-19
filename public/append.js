@@ -11,7 +11,7 @@
 	var base = window.webvpn.base;
 	var vpnDomain = site.host.replace('www', '');
 
-	var targetUrl = window.webvpn.target;
+	var targetUrl = window.webvpn.target + location.href.slice(location.origin.length + 1);
 	var target = new URL(targetUrl);
 
 	var interceptLog = window.webvpn.interceptLog;
@@ -93,7 +93,7 @@
 		}
 		var u = new URL(url);
 		var subdomain = window.base32.encode(u.host);
-		return site.origin.replace('www', subdomain) + u.pathname + u.search;
+		return url.replace(u.origin, site.origin.replace('www', subdomain));
 	}
 
 	function decodeUrl (url) {
@@ -109,7 +109,7 @@
 		}
 		var u = new URL(url);
 		var host = window.base32.decode(u.host.split('.')[0]);
-		return window.location.protocol + '//' + host + u.pathname + u.search;
+		return url.replace(u.origin, window.location.protocol + '//' + host);
 	}
 
 	function transformArgumentsNodes (nodes, funcName) {
