@@ -445,7 +445,7 @@ class WebVPN {
 	}
 
 	getHtmlLinkMatches (ctx, res) {
-		return [...new Set(res.data.match(/\s(href|src|action|srcset|poster)=(\"|\')?(http|\/\/)[^\s\>]*/g))]
+		return [...new Set(res.data.match(/\s(href|src|action|srcset|poster)=(\"|\')?(http\:|https\:|http\%3A|https\%3A|\/\/)[^\s\>]*/g))]
 	}
 
 	getCssUrlMatches (ctx, res) {
