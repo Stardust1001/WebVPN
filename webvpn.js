@@ -305,6 +305,7 @@ class WebVPN {
 
 		const isHttps = protocol.startsWith('https')
 		const options = {
+			url: ctx.meta.url,
 			method,
 			protocol,
 			hostname,
@@ -341,6 +342,7 @@ class WebVPN {
 		this.setOriginHeaders(ctx, header)
 
 		const options = {
+			url: ctx.meta.url,
 			method,
 			headers: header,
 			redirect: 'manual',
