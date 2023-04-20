@@ -313,7 +313,7 @@ class WebVPN {
 			path: ctx.meta.url.slice(protocol.length + 2 + hostname.length + (port ? port.length + 1 : 0)),
 			port: port * 1 || (isHttps ? 443 : 80)
 		}
-		if (isHttps) {
+		if (isHttps && !options.agent) {
 			options.agent = httpsAgent
 		}
 		if (await this.beforeRequest(ctx, options)) {

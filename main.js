@@ -1,3 +1,5 @@
+import HttpProxyAgent from 'http-proxy-agent'
+
 import WebVPN from './webvpn.js'
 
 // main.js 是个示例，如果要创建一个 WebVPN 服务，需要继承并实例化 WebVPN 类
@@ -22,7 +24,14 @@ class VPN extends WebVPN {
 
 	// 发送请求之前
 	async beforeRequest (ctx, options) {
-
+		// options.agent = new HttpProxyAgent({
+		// 	protocol: 'http:',
+		// 	// host: '211.83.244.26',
+		// 	// port: '10005',
+		// 	host: '111.40.62.176',
+		// 	port: '9091',
+		// 	rejectUnauthorized: false
+		// })
 	}
 
 	// 获取请求之后
