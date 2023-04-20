@@ -68,6 +68,21 @@
 })();
 
 (async function () {
+	const { target, location, logs } = webvpn;
+	logs.downloads = [];
+	const aOnClick = HTMLAnchorElement.prototype.click;
+	HTMLAnchorElement.prototype.click = function () {
+		if (this.download) {
+			if ([target.origin, location.origin].includes(this.origin)) {
+				// same origin download file
+				logs.downloads.push(['下载地址: ' + this.href, '下载名称: ' + this.download]);
+			}
+		}
+		return aOnClick.apply(this, arguments);
+	}
+})();
+
+(async function () {
 
 	const { sleep, addStyle, addScript, decodeUrl, blobs, site } = webvpn;
 
@@ -169,8 +184,8 @@
 
 	while (true) {
 		Array.from([
-			...(logs?.DOM?.['audio src'] ?? []),
-			...(logs?.DOM?.['video src'] ?? [])
+			...(webvpn.logs?.DOM?.['audio src'] ?? []),
+			...(webvpn.logs?.DOM?.['video src'] ?? [])
 		]).forEach(text => {
 			const url = text.split('src : ')[1];
 			const type = text.includes('audio src') ? 'audio' : 'video';

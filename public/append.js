@@ -14,14 +14,19 @@
 	var location = window.location;
 
 	Object.defineProperties(webvpn, {
-		target: {
+		location: {
+			get () {
+				return location;
+			}
+		},
+		url: {
 			get () {
 				return decodeUrl(location.href);
 			}
 		},
-		location: {
+		target: {
 			get () {
-				return new URL(webvpn.target);
+				return new URL(webvpn.url);
 			}
 		}
 	});
@@ -94,7 +99,7 @@
 			url = url.slice(url.indexOf('//'));
 		}
 		if (url.startsWith('//')) {
-			url = webvpn.location.protocol + url;
+			url = webvpn.target.protocol + url;
 		}
 		if (url.indexOf('http://') > 0 || url.indexOf('https://') > 0) {
 			url = url.slice(url.indexOf('http'));
@@ -439,7 +444,7 @@
 	}
 
 	// window.__location__
-	window.__location__ = Object.assign({}, copySource(location), copySource(webvpn.location));
+	window.__location__ = Object.assign({}, copySource(location), copySource(webvpn.target));
 	window.__location__.assign = window.location._assign;
 	window.__location__.replace = window.location._replace;
 
@@ -447,7 +452,7 @@
 	for (var key of ['location', '__location__']) {
 		Object.defineProperty(window[key], '__href__', {
 			get () {
-				return webvpn.location.href;
+				return webvpn.target.href;
 			},
 			set (url) {
 				console.log(
@@ -463,7 +468,7 @@
 	// __location__.href 拦截
 	Object.defineProperty(window.__location__, 'href', {
 		get () {
-			return webvpn.location.href;
+			return webvpn.target.href;
 		},
 		set (url) {
 			console.log(
@@ -479,7 +484,7 @@
 	// document.domain
 	Object.defineProperty(document, 'domain', {
 		get () {
-			return webvpn.location.hostname;
+			return webvpn.target.hostname;
 		},
 		set (value) { }
 	});
@@ -636,7 +641,7 @@
 
 	Object.defineProperty(HTMLElement.prototype, 'baseURI', {
 		get () {
-			return webvpn.target;
+			return webvpn.url;
 		}
 	});
 
@@ -939,7 +944,7 @@
 		logger.apply(console, arguments);
 	}
 
-	window.logs = {
+	var logs = webvpn.logs = {
 		all: function () {
 			var allLogs = [];
 			for (var key in logs) {

@@ -61,7 +61,7 @@ class WebVPN {
 		this.jsScopePrefixCode = `
 			// worker 里面创造 __context__ 环境
 			if (!self.window) {
-				var href = self.webvpn && set.webvpn.location.href;
+				var href = self.webvpn && set.webvpn.target.href;
 				if (!href) {
 					href = location.href.replace(location.origin, '#origin#');
 				}
@@ -533,7 +533,6 @@ class WebVPN {
 				window.webvpn = {
 					site: '${site.href}',
 					base: '${base}',
-					target: '${target.href}',
 					interceptLog: ${interceptLog},
 					disableJump: ${disableJump},
 					confirmJump: ${confirmJump}
