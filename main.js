@@ -8,8 +8,13 @@ class VPN extends WebVPN {
 		super(config)
 	}
 
+	getDomainProtocol (domain) {
+		const isIp = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(domain)
+		return isIp ? 'http:' : 'https:'
+	}
+
 	// 发送请求之前
-	async beforeRequest (ctx) {
+	async beforeRequest (ctx, options) {
 
 	}
 

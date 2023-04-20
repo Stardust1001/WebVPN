@@ -274,8 +274,7 @@ class WebVPN {
 
 	routeInit (ctx) {
 		const domain = base32.decode(ctx.subdomain)
-		const isIp = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(domain)
-		const url = (isIp ? 'http://' : 'https://') + domain + ctx.url
+		const url = this.getDomainProtocol(domain) + '//' + domain + ctx.url
 
 		ctx.meta = {
 			url,
@@ -708,6 +707,10 @@ class WebVPN {
 				delete headers[key]
 			}
 		}
+	}
+
+	getDomainProtocol (domain) {
+		return 'https:'
 	}
 
 	shouldReplaceUrls (ctx, res) {
