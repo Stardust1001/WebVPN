@@ -51,8 +51,8 @@ class WebVPN {
 			/(content-length|x-content-type-options|x-xss-protection|content-security-policy)/i,
 		]
 
-		this.noTransformMimes = ['font', 'json', 'image', 'video', 'audio', 'pdf']
-		this.cacheMimes = ['js', 'css', 'font', 'image', 'video', 'audio', 'pdf']
+		this.noTransformMimes = ['font', 'json', 'image', 'video', 'audio', 'pdf-office']
+		this.cacheMimes = ['js', 'css', 'font', 'image', 'video', 'audio', 'pdf-office']
 		this.cacheDir = config.cacheDir || 'cache'
 		this.checkCaches()
 
