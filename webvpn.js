@@ -479,9 +479,10 @@ class WebVPN {
 	}
 
 	transformUrl (url) {
-		const { host, origin } = new URL(url)
-		const subdomain = base32.encode(host)
-		return url.replace(origin, this.config.site.origin.replace('www', subdomain))
+		const u = new URL(url)
+		const subdomain = base32.encode(u.host)
+		const protocol = this.config.https ? u.protocol : 'http:'
+		return url.replace(u.origin, (protocol + '//' + this.config.site.host).replace('www', subdomain))
 	}
 
 	processHtml (ctx, res) {
@@ -529,6 +530,7 @@ class WebVPN {
 			(function () {
 				window.webvpn = {
 					site: '${site.href}',
+					protocol: '${target.protocol}',
 					base: '${base}',
 					interceptLog: ${interceptLog},
 					disableJump: ${disableJump},
@@ -710,7 +712,7 @@ class WebVPN {
 	}
 
 	getDomainProtocol (domain) {
-		return 'https:'
+		return 'http:'
 	}
 
 	shouldReplaceUrls (ctx, res) {

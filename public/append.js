@@ -21,7 +21,11 @@
 		},
 		url: {
 			get () {
-				return decodeUrl(location.href);
+				var url = decodeUrl(location.href);
+				if (!url.startsWith(webvpn.protocol)) {
+					url = url.replace(webvpn.protocol === 'https:' ? 'http:' : 'https:', webvpn.protocol);
+				}
+				return url;
 			}
 		},
 		target: {

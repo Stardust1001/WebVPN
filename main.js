@@ -9,7 +9,14 @@ class VPN extends WebVPN {
 	}
 
 	getDomainProtocol (domain) {
+		if (this.config.https) {
+			return this.config.site.protocol
+		}
 		const isIp = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(domain)
+		// 若 WebVPN 域名不支持 https，那么就只有 http 服务
+		// 那么来的请求，不知其目标网址是 http 还是 https
+		// 则，ip 算 http，域名算 https
+		// 小问题是：目标网站只支持 http 的话，则无法访问，但可以在这里以白名单形式，控制返回值 http
 		return isIp ? 'http:' : 'https:'
 	}
 
@@ -44,6 +51,8 @@ class VPN extends WebVPN {
 // 最主要的是继承并实现 WebVPN 类，然后提供一些配置 config
 
 const config = {
+	// WebVPN 域名是否支持 https
+	https: false,
 	// WebVPN 服务端口
 	port: 80,
 	// WebVPN 服务网址，访问其他网站，都从这个网址进行转换
