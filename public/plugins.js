@@ -68,12 +68,12 @@
 })();
 
 (async function () {
-	const { target, location, logs } = webvpn;
+	const { location, logs } = webvpn;
 	logs.downloads = [];
 	const aOnClick = HTMLAnchorElement.prototype.click;
 	HTMLAnchorElement.prototype.click = function () {
 		if (this.download) {
-			if ([target.origin, location.origin].includes(this.origin)) {
+			if (this.origin === location.origin) {
 				// same origin download file
 				logs.downloads.push(['下载地址: ' + this.href, '下载名称: ' + this.download]);
 			}
