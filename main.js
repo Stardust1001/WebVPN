@@ -13,11 +13,6 @@ class VPN extends WebVPN {
 
 	}
 
-	// 发送 fetch 之前
-	async beforeFetch (ctx, options) {
-
-	}
-
 	// 获取请求之后
 	afterRequest (ctx, res) {
 

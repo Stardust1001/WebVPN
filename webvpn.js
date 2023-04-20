@@ -224,10 +224,6 @@ class WebVPN {
 			}
 		}
 
-		if (await this.beforeRequest(ctx)) {
-			return
-		}
-
 		if (this.noTransformMimes.includes(ctx.meta.mime)) {
 			return await this.respondPipe(ctx)
 		}
@@ -320,10 +316,12 @@ class WebVPN {
 		if (isHttps) {
 			options.agent = httpsAgent
 		}
+		if (await this.beforeRequest(ctx, options)) {
+			return
+		}
 		await new Promise(resolve => {
 			const lib = isHttps ? https : http
-			const func = method === 'get' ? lib.get : lib.request
-			const req = func(options, res => {
+			const req = lib.request(options, res => {
 				const headers = this.initResponseHeaders(ctx, res)
 				this.deleteIgnoreHeaders(this.ignoreResponseHeaderRegexps, headers)
 				ctx.res.writeHead(res.statusCode, headers)
@@ -352,7 +350,7 @@ class WebVPN {
 		if (method === 'POST') {
 			options.body = this.processRequestBody(ctx)
 		}
-		const result = await this.beforeFetch(ctx, options)
+		const result = await this.beforeRequest(ctx, options)
 		if (result) {
 			return result
 		}
@@ -716,9 +714,7 @@ class WebVPN {
 		return true
 	}
 
-	beforeRequest (ctx) { }
-
-	beforeFetch (ctx) { }
+	beforeRequest (ctx, options) { }
 
 	afterRequest (ctx, res) { }
 
