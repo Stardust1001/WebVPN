@@ -68,18 +68,22 @@
 })();
 
 (async function () {
-	const { location, logs } = webvpn;
-	logs.downloads = [];
+
+	const downloads = [];
+
 	const aOnClick = HTMLAnchorElement.prototype.click;
 	HTMLAnchorElement.prototype.click = function () {
 		if (this.download) {
-			if (this.origin === location.origin) {
+			if (this.origin === webvpn.location.origin) {
 				// same origin download file
-				logs.downloads.push(['下载地址: ' + this.href, '下载名称: ' + this.download]);
+				downloads.push([this.href, this.download, 'a-click']);
 			}
 		}
 		return aOnClick.apply(this, arguments);
 	}
+
+	webvpn.downloads = downloads;
+
 })();
 
 (async function () {
