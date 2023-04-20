@@ -323,13 +323,18 @@ class WebVPN {
 		await new Promise(resolve => {
 			const lib = isHttps ? https : http
 			const func = method === 'get' ? lib.get : lib.request
-			func(options, res => {
+			const req = func(options, res => {
 				const headers = this.initResponseHeaders(ctx, res)
 				this.deleteIgnoreHeaders(this.ignoreResponseHeaderRegexps, headers)
 				ctx.res.writeHead(res.statusCode, headers)
 				res.pipe(ctx.res)
 				res.on('end', resolve)
 			})
+			req.on('error', err => {
+				ctx.res.writeHead(500)
+				ctx.body = err
+			})
+			req.end()
 		})
 	}
 
