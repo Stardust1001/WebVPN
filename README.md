@@ -7,6 +7,7 @@ WebVPN, fully proxy all websites
 npm install
 
 ### Run
+run nginx with ./nginx.conf
 node main.js
 
 visit [http://127.0.0.1:1001/proxy/](http://127.0.0.1:1001/proxy/)

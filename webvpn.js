@@ -48,7 +48,7 @@ class WebVPN {
 		]
 		this.ignoreResponseHeaderRegexps = [
 			/report-to/i,
-			/(content-length|x-content-type-options|x-xss-protection|content-security-policy)/i,
+			/(content-length|x-content-type-options|x-xss-protection)/i,
 		]
 
 		this.noTransformMimes = ['font', 'json', 'image', 'video', 'audio', 'pdf-office']
@@ -197,16 +197,19 @@ class WebVPN {
 		app.use(bodyParser())
 		app.use(this.proxyRoute.bind(this))
 		const host = config.host || '0.0.0.0'
-		const port = config.port || config.site.port * 1 || (config.site.protocol === 'http:' && 80 || 443)
-		app.listen(port, host)
+		app.listen(config.port, host)
 	}
 
 	async proxyRoute (ctx, next) {
+		ctx.headers['webvpn-scheme'] = ctx.headers['webvpn-scheme'] || 'https'
+		const scheme = ctx.headers['webvpn-scheme']
 		const subdomain = ctx.headers.host.replace(this.config.vpnDomain, '')
 		if (subdomain === 'www') {
 			return await this.serveWww(ctx)
 		} else if (subdomain === this.config.vpnDomain.slice(1)) {
-			ctx.res.writeHead(302, { location: this.config.site.href })
+			ctx.res.writeHead(302, {
+				location: (this.config.httpsEnabled ? scheme : 'http') + '://' + this.config.site.host
+			})
 			return
 		}
 		ctx.subdomain = subdomain
@@ -274,11 +277,16 @@ class WebVPN {
 
 	routeInit (ctx) {
 		const domain = base32.decode(ctx.subdomain)
-		const url = this.getDomainProtocol(domain) + '//' + domain + ctx.url
+		const scheme = this.config.httpsEnabled
+					? ctx.headers['webvpn-scheme']
+					: (/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(domain) ? 'http' : 'https')
+		const url = scheme + '://' + domain + ctx.url
+		delete ctx.headers['webvpn-scheme']
 
 		ctx.meta = {
 			url,
 			mime: this.getResponseType(ctx, url),
+			scheme,
 			target:  new URL(url),
 			host: ctx.headers['host'],
 			origin: ctx.headers['origin'],
@@ -346,7 +354,7 @@ class WebVPN {
 			method,
 			headers: header,
 			redirect: 'manual',
-			...this.getRequestConfig(ctx)
+			...this.getRequestOptions(ctx)
 		}
 		if (method === 'POST') {
 			options.body = this.processRequestBody(ctx)
@@ -464,14 +472,14 @@ class WebVPN {
 				url = match.slice(match.indexOf('http'), -1)
 				prefix = match.indexOf('https') > 0 ? 'https://' : 'http://'
 			} else {
-				url = 'https:' + match.slice(match.indexOf('//'), -1)
+				url = ctx.meta.scheme + ':' + match.slice(match.indexOf('//'), -1)
 				prefix = '//'
 			}
 			if (/&#x\w+;/.test(url)) {
 				url = url.replaceAll(/&#x\w+;/g, ele => String.fromCharCode(parseInt(ele.slice(3, -1), 16)))
 			}
 			const source = prefix + new URL(url).host
-			dict[source] = this.transformUrl(source.startsWith('http') ? source : (site.protocol + source))
+			dict[source] = this.transformUrl(ctx, source.startsWith('http') ? source : (ctx.meta.scheme + ':' + source))
 		})
 		Object.entries(dict).sort((a, b) => b[0].length - a[0].length).forEach(ele => {
 			const [key, value] = ele
@@ -480,10 +488,10 @@ class WebVPN {
 		return res.data
 	}
 
-	transformUrl (url) {
+	transformUrl (ctx, url) {
 		const u = new URL(url)
 		const subdomain = base32.encode(u.host)
-		const protocol = this.config.https ? u.protocol : 'http:'
+		const protocol = this.config.httpsEnabled ? (ctx.meta.scheme + ':') : 'http:'
 		return url.replace(u.origin, (protocol + '//' + this.config.site.host).replace('www', subdomain))
 	}
 
@@ -523,16 +531,17 @@ class WebVPN {
 	}
 
 	appendScript (ctx, res) {
-		const { site, interceptLog } = this.config
+		const { httpsEnabled, site, interceptLog } = this.config
 		const { disableJump = this.config.disableJump, confirmJump = this.config.confirmJump } = ctx.meta
-		const { base, target } = ctx.meta
+		const { base, scheme, target } = ctx.meta
 		const { data } = res
+		const prefix = site.origin.slice(site.origin.indexOf('//'))
 		const code = `
 		<script>
 			(function () {
 				window.webvpn = {
-					site: '${site.href}',
-					protocol: '${target.protocol}',
+					site: '${httpsEnabled ? scheme : 'http'}:${prefix}',
+					protocol: '${httpsEnabled ? scheme : 'http'}:',
 					base: '${base}',
 					interceptLog: ${interceptLog},
 					disableJump: ${disableJump},
@@ -542,11 +551,11 @@ class WebVPN {
 				${ctx.meta.appendCode || ''}
 			})();
 		</script>
-		<script src="${site.origin}/public/htmlparser.js"></script>
-		<script src="${site.origin}/public/html2json.js"></script>
-		<script src="${site.origin}/public/base32.js"></script>
-		<script src="${site.origin}/public/append.js"></script>
-		<script src="${site.origin}/public/plugins.js"></script>
+		<script src="${prefix}/public/htmlparser.js"></script>
+		<script src="${prefix}/public/html2json.js"></script>
+		<script src="${prefix}/public/base32.js"></script>
+		<script src="${prefix}/public/append.js"></script>
+		<script src="${prefix}/public/plugins.js"></script>
 		${ctx.meta.appendScriptCode || ''}
 		`
 		const hasDoctype = /^\s*?\<\!DOCTYPE html\>/i.test(res.data)
@@ -573,7 +582,7 @@ class WebVPN {
 		return 'text'
 	}
 
-	getRequestConfig (ctx) {
+	getRequestOptions (ctx) {
 		const config = { }
 		if (ctx.meta.mime === 'image') {
 			config.responseType = 'arraybuffer'
@@ -612,7 +621,12 @@ class WebVPN {
 					location = ctx.meta.target.origin + location
 				}
 			}
-			headers['location'] = this.transformUrl(location)
+			headers['location'] = this.transformUrl(ctx, location)
+		}
+		if (this.config.httpsEnabled) {
+			// TODO
+			// 会覆盖上面的 frame-ancestors，有问题吗
+			headers['Content-Security-Policy'] = 'upgrade-insecure-requests'
 		}
 		return headers
 	}
@@ -711,10 +725,6 @@ class WebVPN {
 				delete headers[key]
 			}
 		}
-	}
-
-	getDomainProtocol (domain) {
-		return 'http:'
 	}
 
 	shouldReplaceUrls (ctx, res) {

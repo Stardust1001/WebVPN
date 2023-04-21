@@ -103,7 +103,7 @@
 			url = url.slice(url.indexOf('//'));
 		}
 		if (url.startsWith('//')) {
-			url = webvpn.target.protocol + url;
+			url = webvpn.protocol + url;
 		}
 		if (url.indexOf('http://') > 0 || url.indexOf('https://') > 0) {
 			url = url.slice(url.indexOf('http'));

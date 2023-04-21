@@ -10,18 +10,6 @@ class VPN extends WebVPN {
 		super(config)
 	}
 
-	getDomainProtocol (domain) {
-		if (this.config.https) {
-			return this.config.site.protocol
-		}
-		const isIp = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(domain)
-		// 若 WebVPN 域名不支持 https，那么就只有 http 服务
-		// 那么来的请求，不知其目标网址是 http 还是 https
-		// 则，ip 算 http，域名算 https
-		// 小问题是：目标网站只支持 http 的话，则无法访问，但可以在这里以白名单形式，控制返回值 http
-		return isIp ? 'http:' : 'https:'
-	}
-
 	// 发送请求之前
 	async beforeRequest (ctx, options) {
 		// options.agent = new HttpProxyAgent({
@@ -61,9 +49,9 @@ class VPN extends WebVPN {
 
 const config = {
 	// WebVPN 域名是否支持 https
-	https: false,
+	httpsEnabled: true,
 	// WebVPN 服务端口
-	port: 80,
+	port: 1001,
 	// WebVPN 服务网址，访问其他网站，都从这个网址进行转换
 	site: new URL('http://www.webvpn.info'),
 	// cluster 模式用几个进程（为了充分利用CPU核心数）
