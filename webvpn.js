@@ -396,7 +396,7 @@ class WebVPN {
 		ctx.meta.mime = this.getMimeByResponseHeaders(headers) || ctx.meta.mime
 
 		if (this.noTransformMimes.includes(ctx.meta.mime)) {
-			if (headers['content-encoding'] === 'gzip') {
+			if (headers['content-encoding']?.includes('gzip')) {
 				delete headers['content-encoding']
 			}
 			ctx.meta.done = true
@@ -593,46 +593,60 @@ class WebVPN {
 	initResponseHeaders (ctx, res) {
 		let headers = {}
 		if (typeof res.headers.raw === 'function') {
-			headers = res.headers.raw()
-			for (let key in headers) {
-				if (headers[key].length === 1) {
-					headers[key] = headers[key][0]
-				}
+			const raw = res.headers.raw()
+			for (let key in raw) {
+				headers[key.toLowerCase()] = raw[key]
 			}
 		} else {
-			headers = res.headers
+			for (let key in res.headers) {
+				headers[key.toLowerCase()] = [res.headers[key]]
+			}
 		}
-		const acao = headers['access-control-allow-origin']
-		if (acao && acao !== '*') {
-			const host = acao.indexOf('http') >= 0 ? new URL(acao).host : acao
-			headers['access-control-allow-origin'] = acao.replace(host, base32.encode(host) + this.config.vpnDomain)
-		} else {
-			headers['access-control-allow-origin'] = '*'
+		if (headers['access-control-allow-origin']) {
+			headers['access-control-allow-origin'] = headers['access-control-allow-origin'].map(e => {
+				if (e === '*') return e
+				const host = e.indexOf('http') >= 0 ? new URL(e).host : e
+				return e.replace(host, base32.encode(host) + this.config.vpnDomain)
+			})
 		}
-		headers['content-type'] = headers['content-type'] || 'text/html'
-		const csp = headers['content-security-policy']
-		if (csp && csp.indexOf('frame-ancestors') >= 0) {
-			headers['content-security-policy'] = csp.replace('frame-ancestors', 'frame-ancestors ' + this.config.site.origin.replace('www', '*'))
+		headers['content-type'] = [headers['content-type']?.[0] || 'text/html']
+		if (headers['content-security-policy']) {
+			headers['content-security-policy'] = headers['content-security-policy'].map(e => {
+				if (e.includes('-src') || e.includes('unsafe-')) return ''
+				if (e.indexOf('frame-ancestors') < 0) return e
+				return e.replace('frame-ancestors', 'frame-ancestors ' + this.config.site.origin.replace('www', '*'))
+			})
 		}
 		if (headers['location']) {
-			let location = headers['location']
-			if (!location.startsWith('http')) {
-				if (location[0] === '/') {
-					location = ctx.meta.target.origin + location
+			headers['location'] = headers['location'].map(e => {
+				if (!e.startsWith('http')) {
+					if (e[0] === '/') {
+						e = ctx.meta.target.origin + e
+					}
 				}
-			}
-			headers['location'] = this.transformUrl(ctx, location)
+				return this.transformUrl(ctx, e)
+			})
+		}
+		if (headers['set-cookie']) {
+			headers['set-cookie'] = headers['set-cookie'].map(e => {
+				if (!/domain=/i.test(e)) return e
+				return e.split('; ').map(p => {
+					if (!/domain=/i.test(p)) return p
+					return 'domain=' + this.config.vpnDomain
+				}).join('; ')
+			})
 		}
 		if (this.config.httpsEnabled) {
-			// TODO
-			// 会覆盖上面的 frame-ancestors，有问题吗
-			headers['Content-Security-Policy'] = 'upgrade-insecure-requests'
+			if (!headers['content-security-policy']) {
+				headers['content-security-policy'] = []
+			}
+			headers['content-security-policy'].push('upgrade-insecure-requests')
 		}
 		return headers
 	}
 
 	getMimeByResponseHeaders (headers) {
-		const contentType = headers['content-type'] || ''
+		const contentType = headers['content-type']?.[0] || ''
 		const mime = Object.keys(this.mimeDict).find(mime => {
 			const parts = this.mimeDict[mime].replaceAll(' ', '').split(',')
 			return parts.some(part => {
@@ -674,7 +688,7 @@ class WebVPN {
 		}
 		const buffer = Buffer.from(await res.arrayBuffer())
 		const text = iconv.decode(buffer, 'utf-8')
-		let contentType = headers['content-type'] || ''
+		let contentType = headers['content-type']?.[0] || ''
 		let charset = contentType.split('charset=')[1]
 		if (!charset) {
 			let match = text.match(/<meta charset=[\"\'][^"'\/>]+/)
@@ -694,7 +708,7 @@ class WebVPN {
 				return text
 			}
 		}
-		headers['content-type'] = contentType.replace(charset, 'utf-8')
+		headers['content-type'] = [contentType.replace(charset, 'utf-8')]
 		const data = iconv.decode(Buffer.from(buffer), charset)
 		return data.replace(/<meta charset="\w+">/, '<meta charset="utf-8">')
 	}
