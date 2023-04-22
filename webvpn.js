@@ -599,7 +599,8 @@ class WebVPN {
 			}
 		} else {
 			for (let key in res.headers) {
-				headers[key.toLowerCase()] = [res.headers[key]]
+				const value = res.headers[key]
+				headers[key.toLowerCase()] = Array.isArray(value) ? value : [value]
 			}
 		}
 		if (headers['access-control-allow-origin']) {
@@ -614,7 +615,11 @@ class WebVPN {
 			headers['content-security-policy'] = headers['content-security-policy'].map(e => {
 				if (e.includes('-src') || e.includes('unsafe-')) return ''
 				if (e.indexOf('frame-ancestors') < 0) return e
-				return e.replace('frame-ancestors', 'frame-ancestors ' + this.config.site.origin.replace('www', '*'))
+				const protocol = (this.config.httpsEnabled ? ctx.meta.scheme : 'http') + '://'
+				return e.replace(
+					'frame-ancestors',
+					'frame-ancestors ' + protocol + this.config.site.host.replace('www', '*')
+				)
 			})
 		}
 		if (headers['location']) {
@@ -635,6 +640,9 @@ class WebVPN {
 					return 'domain=' + this.config.vpnDomain
 				}).join('; ')
 			})
+		}
+		if (!headers['access-control-allow-origin']) {
+			headers['access-control-allow-origin'] = ['*']
 		}
 		if (this.config.httpsEnabled) {
 			if (!headers['content-security-policy']) {

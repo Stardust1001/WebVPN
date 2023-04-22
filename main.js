@@ -49,7 +49,7 @@ class VPN extends WebVPN {
 
 const config = {
 	// WebVPN 域名是否支持 https
-	httpsEnabled: true,
+	httpsEnabled: false,
 	// WebVPN 服务端口
 	port: 1001,
 	// WebVPN 服务网址，访问其他网站，都从这个网址进行转换
