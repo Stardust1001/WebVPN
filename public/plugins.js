@@ -131,7 +131,7 @@
 
 	const download = async (url, blob, filename) => {
 		if (!window.saveAs) {
-			await addScript(site + 'public/filesaver.js');
+			await addScript(site + '/public/filesaver.js');
 		}
 		if (blob) {
 			await downloadBlob(blob, filename);
