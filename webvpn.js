@@ -475,6 +475,8 @@ class WebVPN {
 				url = ctx.meta.scheme + ':' + match.slice(match.indexOf('//'), -1)
 				prefix = '//'
 			}
+			const u = url.slice(url.indexOf('//') + 2)
+			if (!u || !/[\w]+\./.test(u)) return
 			if (/&#x\w+;/.test(url)) {
 				url = url.replaceAll(/&#x\w+;/g, ele => String.fromCharCode(parseInt(ele.slice(3, -1), 16)))
 			}
