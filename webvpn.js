@@ -201,8 +201,7 @@ class WebVPN {
 	}
 
 	async proxyRoute (ctx, next) {
-		ctx.headers['webvpn-scheme'] = ctx.headers['webvpn-scheme'] || 'https'
-		const scheme = ctx.headers['webvpn-scheme']
+		const scheme = ctx.headers['webvpn-scheme'] || 'https'
 		const subdomain = ctx.headers.host.replace(this.config.vpnDomain, '')
 		if (subdomain === 'www') {
 			return await this.serveWww(ctx)
@@ -277,9 +276,8 @@ class WebVPN {
 
 	routeInit (ctx) {
 		const domain = base32.decode(ctx.subdomain)
-		const scheme = this.config.httpsEnabled
-					? ctx.headers['webvpn-scheme']
-					: (/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(domain) ? 'http' : 'https')
+		const isIp = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(domain)
+		const scheme = this.config.httpsEnabled && ctx.headers['webvpn-scheme'] || isIp && 'http' || 'https'
 		const url = scheme + '://' + domain + ctx.url
 		delete ctx.headers['webvpn-scheme']
 
@@ -646,7 +644,7 @@ class WebVPN {
 		if (!headers['access-control-allow-origin']) {
 			headers['access-control-allow-origin'] = ['*']
 		}
-		if (this.config.httpsEnabled) {
+		if (this.config.httpsEnabled && ctx.meta.scheme === 'https') {
 			if (!headers['content-security-policy']) {
 				headers['content-security-policy'] = []
 			}
