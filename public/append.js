@@ -78,16 +78,32 @@
 
 	var ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:'];
 
-	var escaped = {
-		'&amp;': '&',
-		'&quot;': '"',
-		'&lt;': '<',
-		'&gt;': '>',
-		'&nbsp;': ' ',
-		'&ensp;': ' ',
-		'&emsp;': ' ',
-		'&copy;': '©'
-	};
+	var escaped = {};
+	Array.from([
+		['&amp;', '&'], ['&quot;', '"'], ['&lt;', '<'], ['&gt;', '>'], ['&nbsp;', ' '],
+		['&ensp;', ' '], ['&emsp;', ' '], ['&copy;', '©'], ['&iexcl;', '¡'],
+		['&Aacute;', 'Á'], ['&aacute;', 'á'], ['&cent;', '¢'], ['&circ;', 'ˆ'], ['&acirc;', 'â'],
+		['&pound;', '£'], ['&Atilde;', 'Ã'], ['&atilde;', 'ã'], ['&curren;', '¤'], ['&Auml', 'Ä'],
+		['&auml;', 'ä'], ['&yen;', '¥'], ['&ring;', '˚'], ['&aring;', 'å'], ['&brvbar;', '¦'],
+		['&AElig;', 'Æ'], ['&aelig;', 'æ'], ['&sect;', '§'], ['&Ccedil;', 'Ç'], ['&ccedil;', 'ç'],
+		['&uml;', '¨'], ['&Egrave;', 'È'], ['&egrave;', 'è'], ['&copy;', '©'], ['&Eacute;', 'É'],
+		['&eacute;', 'é'], ['&ordf;', 'ª'], ['&Ecirc;', 'Ê'], ['&ecirc;', 'ê'], ['&laquo;', '«'],
+		['&Euml;', 'Ë'], ['&euml;', 'ë'], ['&not;', '¬'], ['&Igrave;', 'Ì'], ['&igrave;', 'ì'],
+		['&shy;', '­'], ['&Iacute;', 'Í'], ['&iacute;', 'í'], ['&reg;', '®'], ['&Icirc;', 'Î'],
+		['&icirc;', 'î'], ['&macr;', '¯'], ['&Iuml;', 'Ï'], ['&iuml;', 'ï'], ['&deg;', '°'],
+		['&ETH;', 'Ð'], ['&plusmn;', '±'], ['&Ntilde;', 'Ñ'], ['&ntilde;', 'ñ'],
+		['&sup2;', '²'], ['&Ograve;', 'Ò'], ['&ograve;', 'ò'], ['&sup3;', '³'], ['&Oacute;', 'Ó'],
+		['&oacute;', 'ó'], ['&acute;', '´'], ['&Ocirc;', 'Ô'], ['&ocirc;', 'ô'], ['&micro;', 'µ'],
+		['&Otilde;', 'Õ'], ['&otilde;', 'õ'], ['&para;', '¶'], ['&Ouml;', 'Ö'], ['&ouml;', 'ö'],
+		['&middot;', '·'], ['&times;', '×'], ['&divide;', '÷'], ['&cedil;', '¸'], ['&Oslash;', 'Ø'],
+		['&oslash;', 'ø'], ['&sup1;', '¹'], ['&Ugrave;', 'Ù'], ['&ugrave;', 'ù'], ['&ordm;', 'º'],
+		['&Uacute;', 'Ú'], ['&uacute;', 'ú'], ['&raquo;', '»'], ['&Ucirc;', 'Û'], ['&ucirc;', 'û'],
+		['&frac14;', '¼'], ['&Uuml;', 'Ü'], ['&uuml;', 'ü'], ['&frac12;', '½'], ['&Yacute;', 'Ý'],
+		['&yacute;', 'ý'], ['&frac34;', '¾'], ['&THORN;', 'Þ'], ['&thorn;', 'þ'], ['&iquest;', '¿'],
+		['&szlig;', 'ß'], ['&yuml;', 'ÿ'], ['&Agrave;', 'À'], ['&agrave;', 'à']
+	]).forEach(function (ele) {
+		escaped[ele[0]] = ele[1];
+	});
 
 	function transformUrl (url) {
 		url = (url ? url.toString() : '').trim();
