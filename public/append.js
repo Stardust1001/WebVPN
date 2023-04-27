@@ -124,13 +124,13 @@
 		if (url.indexOf('http://') > 0 || url.indexOf('https://') > 0) {
 			url = url.slice(url.indexOf('http'));
 		}
-		if (url.indexOf(vpnDomain) > 0) {
-			if (url.startsWith('http')) {
+		var u = new URL(url);
+		if (u.hostname.includes(vpnDomain)) {
+			if (url.startsWith('http') && webvpn.protocol === 'http:') {
 				return url.replace('https://', 'http://')
 			}
 			return url;
 		}
-		var u = new URL(url);
 		var subdomain = window.base32.encode(u.host);
 		return url.replace(u.origin, site.origin.replace('www', subdomain));
 	}
@@ -182,6 +182,7 @@
 		html = Array.from(doc.childNodes).map(function (child) {
 			return child.outerHTML;
 		}).join('');
+		html = html.replaceAll('&amp;amp;', '&amp;');
 		return html;
 	}
 
@@ -814,6 +815,9 @@
 				}
 				if (hasEscaped(attr[key], 2)) {
 					attr[key] = replaceEscaped(attr[key], 2);
+				}
+				if (linkTags.includes(json.tag) && urlAttrs.includes(key)) {
+					attr[key] = transformUrl(attr[key]);
 				}
 				node.setAttribute(key, attr[key], 'custom');
 			}
