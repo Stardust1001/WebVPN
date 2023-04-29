@@ -512,7 +512,14 @@ class WebVPN {
       let isScript = true
       if (typeIndex > 0) {
         const type = match[1].slice(typeIndex + 6).split(match[1][typeIndex + 5])[0]
-        isScript = type.indexOf('text/javascript') >= 0 || type.indexOf('text/') < 0
+        isScript = type.indexOf('javascript') >= 0
+        if (
+          !isScript
+          && type.indexOf('text/') < 0
+          && !type.includes('json')
+        ) {
+          isScript = true
+        }
       }
       return isScript && match[2]
     })
