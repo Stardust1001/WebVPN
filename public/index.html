@@ -1,45 +1,45 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>WebVPN</title>
-	<style>
-		* {
-			box-sizing: border-box;
-		}
-		body {
-			text-align: center;
-			color: #303333;
-			padding-top: 10vh;
-		}
-		input {
-			padding: 7px 10px;
-			border-radius: 4px;
-			outline: none;
-			border: 1px solid #606666;
-			display: block;
-			margin: 20px auto;
-			width: 90%;
-		}
-		input:hover, input:focus {
-			border-color: skyblue;
-		}
-		.button {
-			display: inline-block;
-			border: 1px solid steelblue;
-			background-color: skyblue;
-			color: white;
-			width: 90%;
-			height: 32px;
-			line-height: 30px;
-			border-radius: 4px;
-			cursor: pointer;
-		}
-		.button:hover {
-			opacity: 0.8;
-		}
-	</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebVPN</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      text-align: center;
+      color: #303333;
+      padding-top: 10vh;
+    }
+    input {
+      padding: 7px 10px;
+      border-radius: 4px;
+      outline: none;
+      border: 1px solid #606666;
+      display: block;
+      margin: 20px auto;
+      width: 90%;
+    }
+    input:hover, input:focus {
+      border-color: skyblue;
+    }
+    .button {
+      display: inline-block;
+      border: 1px solid steelblue;
+      background-color: skyblue;
+      color: white;
+      width: 90%;
+      height: 32px;
+      line-height: 30px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .button:hover {
+      opacity: 0.8;
+    }
+  </style>
 </head>
 <body>
 <h2>WebVPN</h2>
@@ -56,46 +56,46 @@ const outputInput = document.querySelector('#output-url')
 const button = document.querySelector('#goto')
 
 urlInput.addEventListener('change', () => {
-	let url = urlInput.value.trim()
-	if (!/\w+\.\w+/.test(url) && !/localhost/.test(url)) {
-		return
-	}
-	url = url.replace('localhost', '127.0.0.1')
-	if (url.indexOf('http') < 0) {
-		if (url.split('.').length === 1) {
-			url = 'www.' + url + '.com'
-		}
-		url = 'https://' + url
-	}
-	if (url.indexOf(location.hostname.replace('www', '')) > 0) {
-		url = decodeUrl(url)
-	} else {
-		url = transformUrl(url)
-	}
-	outputInput.value = url
+  let url = urlInput.value.trim()
+  if (!/\w+\.\w+/.test(url) && !/localhost/.test(url)) {
+    return
+  }
+  url = url.replace('localhost', '127.0.0.1')
+  if (url.indexOf('http') < 0) {
+    if (url.split('.').length === 1) {
+      url = 'www.' + url + '.com'
+    }
+    url = 'https://' + url
+  }
+  if (url.indexOf(location.hostname.replace('www', '')) > 0) {
+    url = decodeUrl(url)
+  } else {
+    url = transformUrl(url)
+  }
+  outputInput.value = url
 })
 
 outputInput.addEventListener('keyup', (e) => {
-	if (e.keyCode === 13) {
-		window.open(outputInput.value)
-	}
+  if (e.keyCode === 13) {
+    window.open(outputInput.value)
+  }
 })
 
 button.addEventListener('click', () => {
-	window.open(outputInput.value)
+  window.open(outputInput.value)
 })
 
 function transformUrl (url) {
-	const { host, origin } = new URL(url)
-	const subdomain = base32.encode(host).replaceAll('=', '')
-	return location.origin.replace('www', subdomain) + url.slice(origin.length)
+  const { host, origin } = new URL(url)
+  const subdomain = base32.encode(host).replaceAll('=', '')
+  return location.origin.replace('www', subdomain) + url.slice(origin.length)
 }
 
 function decodeUrl (url) {
-	const { host, pathname, search } = new URL(url)
-	const subdomain = host.split('.')[0]
-	const isIp = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(subdomain)
-	return (isIp ? 'http://' : 'https://') + base32.decode(subdomain) + pathname + search
+  const { host, pathname, search } = new URL(url)
+  const subdomain = host.split('.')[0]
+  const isIp = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(subdomain)
+  return (isIp ? 'http://' : 'https://') + base32.decode(subdomain) + pathname + search
 }
 
 </script>
