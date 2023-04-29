@@ -130,9 +130,7 @@
 
   const decodeUrl = (url) => {
     url = (url || '').trim()
-    if (!url) {
-      return url
-    }
+    if (!url) return url
     if (url.split('?')[0].indexOf('http') < 0) {
       return urljoin(location.href, url)
     }
@@ -704,7 +702,7 @@
       html = (html || '').toString()
       const node = this
       const oldHtml = node.innerHTML
-      const appendHtml = ''
+      let appendHtml = ''
       if (oldHtml && oldHtml.length > 0 && html.startsWith(oldHtml)) {
         appendHtml = html.slice(oldHtml.length)
       }

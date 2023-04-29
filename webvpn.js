@@ -466,11 +466,13 @@ class WebVPN {
     matches.filter(m => m.indexOf(vpnDomain) < 0).forEach(match => {
       let url = ''
       let prefix = ''
+      let quote = ''
       if (match.slice(0, match.indexOf('//')).indexOf('http') >= 0) {
         url = match.slice(match.indexOf('http'), -1)
         prefix = match.indexOf('https') > 0 ? 'https://' : 'http://'
       } else {
         url = ctx.meta.scheme + ':' + match.slice(match.indexOf('//'), -1)
+        quote = match[match.indexOf('//') - 1]
         prefix = '//'
       }
       const u = url.slice(url.indexOf('//') + 2)
@@ -479,7 +481,8 @@ class WebVPN {
         url = url.replaceAll(/&#x\w+;/g, ele => String.fromCharCode(parseInt(ele.slice(3, -1), 16)))
       }
       const source = prefix + new URL(url).host
-      dict[source] = this.transformUrl(ctx, source.startsWith('http') ? source : (ctx.meta.scheme + ':' + source))
+      const value = this.transformUrl(ctx, source.startsWith('http') ? source : (ctx.meta.scheme + ':' + source))
+      dict[quote + source] = quote + value
     })
     Object.entries(dict).sort((a, b) => b[0].length - a[0].length).forEach(ele => {
       const [key, value] = ele
@@ -555,7 +558,6 @@ class WebVPN {
     <script src="${prefix}/public/html2json.js"></script>
     <script src="${prefix}/public/base32.js"></script>
     <script src="${prefix}/public/append.js"></script>
-    <script src="${prefix}/public/plugins.js"></script>
     ${ctx.meta.appendScriptCode || ''}
     `
     const hasDoctype = /^\s*?\<\!DOCTYPE html\>/i.test(res.data)
