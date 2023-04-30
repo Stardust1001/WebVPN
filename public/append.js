@@ -716,51 +716,56 @@
   // 现在的仅是通过创建节点，设置节点子节点、文本内容，没有设置 html 内容的功能
 
   // innerHTML 拦截
+  const ihDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML')
+  Object.defineProperty(Element.prototype, '__innerHTML__', {
+    enumerable: true,
+    configurable: true,
+    set: ihDescriptor.set
+  })
   Object.defineProperty(Element.prototype, 'innerHTML', {
+    enumerable: true,
+    configurable: true,
     set (html) {
       html = (html || '').toString()
-      const node = this
-      const oldHtml = node.innerHTML
-      let appendHtml = ''
-      if (oldHtml && oldHtml.length > 0 && html.startsWith(oldHtml)) {
-        appendHtml = html.slice(oldHtml.length)
-      }
-      if (appendHtml.length > 0) {
-        html = appendHtml
-      } else {
-        removeChilds(node)
-      }
       // 去除无用的 \n，减少 DOM 渲染，提高执行效率（不会是 pre 元素吧？）
-      html = html.replaceAll('\n', '')
       const json = html2json(html)
       const childs = json2dom(json, this)
       console.log(
         '%cDOM 操作 拦截 innerHTML : ' + (html.length > 100 ? (html.slice(0, 100) + '...') : html),
         'color: #606666;background-color: lightblue;padding: 5px 10px;'
       )
-      const attacher = getAttacher(node)
+      const container = document.createElement('div')
       for (const child of childs) {
-        attacher.appendChild(child)
+        container.appendChild(child)
       }
+      html = container.innerHTML
+      ihDescriptor.set.apply(this, [html])
     }
   })
 
   // outerHTML 拦截
+  const ohDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'outerHTML')
+  Object.defineProperty(Element.prototype, '__outerHTML__', {
+    enumerable: true,
+    configurable: true,
+    set: ohDescriptor.set
+  })
   Object.defineProperty(Element.prototype, 'outerHTML', {
+    enumerable: true,
+    configurable: true,
     set (html) {
       html = (html || '').toString()
-      const node = this
-      const parent = node.parentNode
       const json = html2json(html)
       const childs = json2dom(json, this)
       console.log(
         '%cDOM 操作 拦截 outerHTML : ' + (html.length > 100 ? (html.slice(0, 100) + '...') : html),
         'color: #606666;background-color: lightblue;padding: 5px 10px;'
       )
+      const container = document.createElement(this.nodeName)
       for (const child of childs) {
-        parent.insertBefore(child, node)
+        container.appendChild(child)
       }
-      node.remove()
+      ohDescriptor.set.apply(this, [container.innerHTML])
     }
   })
 
