@@ -59,47 +59,61 @@ class WebVPN {
     this.ignoredIdentifiers = ['window', 'document', 'globalThis', 'parent', 'self', 'top', 'location']
     this.jsExternalName = '_ext_'
     this.jsScopePrefixCode = `
+    (function () {
       // worker 里面创造 __context__ 环境
       if (!self.window) {
-        var href = self.webvpn && set.webvpn.target.href;
+        var href = self.webvpn && set.webvpn.target.href
         if (!href) {
-          href = location.href.replace(location.origin, '#origin#');
+          href = location.href.replace(location.origin, '#origin#')
         }
-        var target = new URL(href);
+        var target = new URL(href)
         function copySource (source) {
-          var copied = Object.assign({}, source);
-          for (var key in source) copied[key] = source[key];
-          return copied;
+          var copied = Object.assign({}, source)
+          for (var key in source) copied[key] = source[key]
+          return copied
         }
-        self.__location__ = Object.assign({}, copySource(self.location), copySource(target));
+        self.__location__ = Object.assign({}, copySource(self.location), copySource(target))
         for (var con of ['globalThis', 'self']) {
           self['__' + con + '__'] = new Proxy(self[con], {
             get (target, property, receiver) {
               if (['self', 'location'].includes(property)) {
-                return self['__' + property + '__'];
+                return self['__' + property + '__']
               }
-              var value = target[property];
-              return (typeof value === 'function' && !value.prototype) ? value.bind(target) : value;
+              var value = target[property]
+              return (typeof value === 'function' && !value.prototype) ? value.bind(target) : value
             },
             set (target, property, value) {
               if (['self', 'location'].includes(property)) {
-                return false;
+                return false
               }
-              target[property] = value;
-              return true;
+              target[property] = value
+              return true
             }
-          });
+          })
         }
         self.__context__ = {
           self: __self__,
           globalThis: __globalThis__,
           location: __location__
-        };
+        }
+        self.__context_proxy__ = new Proxy(self.__context__, {
+          has (target, prop) {
+            return true
+          },
+          get (target, prop) {
+            return window[prop]
+          },
+          set (target, prop, value) {
+            window[prop] = value
+            return value
+          }
+        })
       }
-      with (self.__context__) {
+      with (self.__context_proxy__) {
     `
     this.jsScopeSuffixCode = `
       }
+    }).call(self.__context__.self)
     `
 
     this.public = []

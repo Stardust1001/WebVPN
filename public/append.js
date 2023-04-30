@@ -525,6 +525,25 @@
     location: __location__
   }
 
+  for (let key in window) {
+    if (typeof window[key] === 'function') {
+      window[key] = window[key].bind(window)
+    }
+  }
+
+  window.__context_proxy__ = new Proxy(window.__context__, {
+    has (target, prop) {
+      return true
+    },
+    get (target, prop) {
+      return window[prop]
+    },
+    set (target, prop, value) {
+      window[prop] = value
+      return value
+    }
+  })
+
   setInterval(() => {
     const location = window.__context__.location
     if (typeof location === 'string') {
