@@ -673,23 +673,41 @@
   // style.backgroundImage 拦截
   const sDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'style')
   Object.defineProperty(HTMLElement.prototype, 'style', {
-    enumerable: true,
-    configurable: true,
     get () {
       const style = sDescriptor.get.call(this)
       return new Proxy(style, {
+        get (target, property) {
+          return target[property]
+        },
         set (target, property, value) {
           if (property === 'background' || property === 'backgroundImage') {
-            let url = value.replace(/(url\(|\)|\'|\")/g, '')
+            value = value.replace(/url\(([^\)]+)\)/g, text => {
+              const url = text.replace(/(url\(|\)|\'|\")/g, '')
+              return text.replace(url, transformUrl(url))
+            })
             console.log(
-              '%cstyle 操作 拦截 ' + property + ' : ' + url,
+              '%cstyle 操作 拦截 ' + property + ' : ' + value,
               'color: #606666;background-color: lime;padding: 5px 10px;'
             )
-            value = value.replace(url, transformUrl(url))
           }
           target[property] = value
         }
       })
+    }
+  })
+
+  const ctDescriptor = Object.getOwnPropertyDescriptor(CSSStyleDeclaration.prototype, 'cssText')
+  Object.defineProperty(CSSStyleDeclaration.prototype, 'cssText', {
+    set (value) {
+      value = value.replace(/url\(([^\)]+)\)/g, text => {
+        const url = text.replace(/(url\(|\)|\'|\")/g, '')
+        return text.replace(url, transformUrl(url))
+      })
+      console.log(
+        '%cstyle 操作 拦截 cssText : ' + value,
+        'color: #606666;background-color: lime;padding: 5px 10px;'
+      )
+      ctDescriptor.set.apply(this, [value])
     }
   })
 
@@ -727,13 +745,9 @@
   // innerHTML 拦截
   const ihDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML')
   Object.defineProperty(Element.prototype, '__innerHTML__', {
-    enumerable: true,
-    configurable: true,
     set: ihDescriptor.set
   })
   Object.defineProperty(Element.prototype, 'innerHTML', {
-    enumerable: true,
-    configurable: true,
     set (html) {
       html = (html || '').toString()
       // 去除无用的 \n，减少 DOM 渲染，提高执行效率（不会是 pre 元素吧？）
@@ -755,13 +769,9 @@
   // outerHTML 拦截
   const ohDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'outerHTML')
   Object.defineProperty(Element.prototype, '__outerHTML__', {
-    enumerable: true,
-    configurable: true,
     set: ohDescriptor.set
   })
   Object.defineProperty(Element.prototype, 'outerHTML', {
-    enumerable: true,
-    configurable: true,
     set (html) {
       html = (html || '').toString()
       const json = html2json(html)
