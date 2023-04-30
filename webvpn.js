@@ -554,14 +554,14 @@ class WebVPN {
             + (isJsFile ? this.jsWorkerContextCode : '')
             + code
             + '\n}\n'
-            + this.calcHoistFunctionCode(code)
+            + this.calcHoistIdentifiersCode(code)
             + this.jsScopeSuffixCode
   }
 
-  calcHoistFunctionCode (code) {
-    const matches = [...code.matchAll(/function\s+(\w+)\s*\(/g)]
+  calcHoistIdentifiersCode (code) {
+    const matches = [...code.matchAll(/(function|class)\s+(\w+)\s*\(/g)]
     if (!matches.length) return ''
-    const names = matches.map(m => m[1])
+    const names = matches.map(m => m[2])
     return names.map(n => `try { window.${n} = ${n}; } catch {}`).join('\n')
   }
 
