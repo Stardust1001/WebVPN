@@ -788,6 +788,13 @@
     }
   })
 
+  const cwDescriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow')
+  Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
+    get () {
+      return Object.assign({}, cwDescriptor.get.apply(this, []), window.__context__)
+    }
+  })
+
   const json2dom = (json, root) => {
     const isSvg = root && root instanceof SVGElement || json.tag === 'svg'
     let node
