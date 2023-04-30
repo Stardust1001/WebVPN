@@ -56,10 +56,7 @@ class WebVPN {
     this.cacheDir = config.cacheDir || 'cache'
     this.checkCaches()
 
-    this.ignoredIdentifiers = ['window', 'document', 'globalThis', 'parent', 'self', 'top', 'location']
-    this.jsExternalName = '_ext_'
-    this.jsScopePrefixCode = `
-    (function () {
+    this.jsWorkerContextCode = `
       // worker 里面创造 __context__ 环境
       if (!self.window) {
         var href = self.webvpn && set.webvpn.target.href
@@ -109,6 +106,9 @@ class WebVPN {
           }
         })
       }
+    `
+    this.jsScopePrefixCode = `
+    (function () {
       with (self.__context_proxy__) {
     `
     this.jsScopeSuffixCode = `
@@ -546,12 +546,12 @@ class WebVPN {
   }
 
   processJsScopeCode (ctx, code) {
-    return this.refactorJsScopeCode(ctx, code)
+    return this.refactorJsScopeCode(ctx, code, true)
   }
 
-  refactorJsScopeCode (ctx, code) {
+  refactorJsScopeCode (ctx, code, isJsFile = false) {
     const origin = this.config.site.origin.replace('www', base32.encode(ctx.meta.target.host))
-    return this.jsScopePrefixCode.replace('#origin#', origin) + code + this.jsScopeSuffixCode
+    return this.jsScopePrefixCode.replace('#origin#', origin) + (isJsFile ? this.jsWorkerContextCode : '') + code + this.jsScopeSuffixCode
   }
 
   appendScript (ctx, res) {
@@ -565,7 +565,7 @@ class WebVPN {
       (function () {
         window.webvpn = {
           site: '${httpsEnabled ? scheme : 'http'}:${prefix}',
-          protocol: '${httpsEnabled ? scheme : 'http'}:',
+          protocol: '${scheme}:',
           base: '${base}',
           interceptLog: ${interceptLog},
           disableJump: ${disableJump},
