@@ -536,7 +536,7 @@
       return true
     },
     get (target, prop) {
-      return window[prop]
+      return prop in target ? target[prop] : window[prop]
     },
     set (target, prop, value) {
       window[prop] = value

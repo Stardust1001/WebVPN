@@ -550,14 +550,19 @@ class WebVPN {
 
   refactorJsScopeCode (ctx, code, isJsFile = false) {
     const origin = this.config.site.origin.replace('www', base32.encode(ctx.meta.target.host))
-    return this.jsScopePrefixCode.replace('#origin#', origin) + (isJsFile ? this.jsWorkerContextCode : '') + code + '}' + this.calcHoistFunctionCode(code) + this.jsScopeSuffixCode
+    return this.jsScopePrefixCode.replace('#origin#', origin)
+            + (isJsFile ? this.jsWorkerContextCode : '')
+            + code
+            + '\n}\n'
+            + this.calcHoistFunctionCode(code)
+            + this.jsScopeSuffixCode
   }
 
   calcHoistFunctionCode (code) {
     const matches = [...code.matchAll(/function\s+(\w+)\s*\(/g)]
     if (!matches.length) return ''
     const names = matches.map(m => m[1])
-    return names.map(n => `var ${n} = window.${n} = ${n};`).join('\n')
+    return names.map(n => `try { window.${n} = ${n}; } catch {}`).join('\n')
   }
 
   appendScript (ctx, res) {
