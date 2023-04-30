@@ -476,7 +476,7 @@
   })
 
   // document.referrer
-  const _referrer = decodeUrl(document.referrer)
+  const _referrer = decodeUrl(document.referrer.includes(webvpn.site) ? location.origin : document.referrer)
   Object.defineProperty(document, 'referrer', {
     get () {
       return _referrer
@@ -663,8 +663,8 @@
           '%cDOM 操作 拦截 a ' + attr + ' getter',
           'color: #606666;background-color: lime;padding: 5px 10px;'
         )
-        const url = this.getAttribute('href')
-        if (!url || attr === 'href') return url
+        const url = this.getAttribute('href') || decodeUrl(location.href)
+        if (attr === 'href') return url
         return new URL(url)[attr]
       }
     })

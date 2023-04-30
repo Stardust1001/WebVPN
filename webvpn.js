@@ -48,7 +48,7 @@ class WebVPN {
     ]
     this.ignoreResponseHeaderRegexps = [
       /report-to/i,
-      /(content-length|x-content-type-options|x-xss-protection|x-frame-options|cross-origin-opener-policy|content-security-policy-report-only)/i,
+      /(content-length|x-content-type-options|x-xss-protection|cross-origin-opener-policy|content-security-policy-report-only)/i,
     ]
 
     this.noTransformMimes = ['font', 'json', 'image', 'video', 'audio', 'pdf-office']
@@ -684,6 +684,7 @@ class WebVPN {
       }
       headers['content-security-policy'].push('upgrade-insecure-requests')
     }
+    headers['x-frame-options'] = ['allowall']
     return headers
   }
 
