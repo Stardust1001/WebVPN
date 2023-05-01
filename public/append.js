@@ -944,6 +944,12 @@
     return drel.apply(document, arguments)
   }
 
+  const createTreeWalker = HTMLDocument.prototype.createTreeWalker
+  HTMLDocument.prototype.createTreeWalker = function (node, ...props) {
+    if (node === __document__) node = document
+    return createTreeWalker.apply(document, [node, ...props])
+  }
+
   const logger = console.log
   console.log = function () {
     const isCustom = arguments[0] === 'custom'

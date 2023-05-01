@@ -57,7 +57,7 @@ class WebVPN {
     ]
     this.ignoreResponseHeaderRegexps = [
       /report-to/i,
-      /(content-length|x-content-type-options|x-xss-protection|cross-origin-opener-policy|content-security-policy-report-only)/i,
+      /(content-length|x-content-type-options|x-xss-protection|cross-origin-resource-policy|cross-origin-opener-policy|content-security-policy-report-only)/i,
     ]
 
     this.noTransformMimes = ['font', 'json', 'image', 'video', 'audio', 'pdf-office']
@@ -657,7 +657,11 @@ class WebVPN {
     headers['content-type'] = [headers['content-type']?.[0] || 'text/html']
     if (headers['content-security-policy']) {
       headers['content-security-policy'] = headers['content-security-policy'].map(e => {
-        if (e.includes('-src') || e.includes('unsafe-')) return ''
+        if (
+          e.includes('-src')
+          || e.includes('unsafe-')
+          || e.includes('require-trusted-types-for')
+        ) return ''
         if (e.indexOf('frame-ancestors') < 0) return e
         const protocol = (this.config.httpsEnabled ? ctx.meta.scheme : 'http') + '://'
         return e.replace(
