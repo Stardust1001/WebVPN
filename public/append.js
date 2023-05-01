@@ -1,8 +1,6 @@
 (function () {
 
-  if (window.location.__href__) {
-    return
-  }
+  if (window.webvpn.transformUrl) return
 
   const logTypes = ['AJAX', 'fetch', 'History']
 
@@ -72,6 +70,7 @@
   })
 
   const ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:']
+  const globalCons = ['window', 'document', 'globalThis', 'parent', 'self', 'top']
 
   const escaped = {}
   Array.from([
@@ -361,6 +360,24 @@
     return aOnClick.apply(this, arguments)
   }
 
+  // document.domain
+  Object.defineProperty(document, 'domain', {
+    get () {
+      return webvpn.target.hostname
+    },
+    set (value) {
+      alert('set document.domain: ' + value)
+    }
+  })
+
+  // document.referrer
+  const _referrer = decodeUrl(document.referrer.includes(webvpn.site) ? (location.origin + '/') : document.referrer)
+  Object.defineProperty(document, 'referrer', {
+    get () {
+      return _referrer
+    }
+  })
+
   // open 拦截
   const open = window.open
   window.open = function (url, name, specs, replace) {
@@ -429,120 +446,89 @@
     return copied
   }
 
-  // window.__location__
-  window.__location__ = Object.assign({}, copySource(location), copySource(webvpn.target))
-  window.__location__.assign = window.location._assign
-  window.__location__.replace = window.location._replace
+  function redefineGlobals (win) {
+    // window.__location__
+    win.__location__ = Object.assign({}, copySource(location), copySource(webvpn.target))
+    win.__location__.assign = win.location._assign
+    win.__location__.replace = win.location._replace
 
-  // location.__href__, __location__.__href__ 拦截
-  for (const key of ['location', '__location__']) {
-    Object.defineProperty(window[key], '__href__', {
+    // __location__.href 拦截
+    Object.defineProperty(win.__location__, 'href', {
       get () {
-        return webvpn.target.href
+        return decodeUrl(win.location.href)
       },
       set (url) {
         console.log(
-          '%c' + key + ' 拦截 __href__ : ' + url,
+          '%c__location__ 拦截 href : ' + url,
           'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
         )
         if (!canJump(url)) return false
         url = transformUrl(url)
-        window.location.href = url
+        win.location.href = url
       }
     })
-  }
-  // __location__.href 拦截
-  Object.defineProperty(window.__location__, 'href', {
-    get () {
-      return webvpn.target.href
-    },
-    set (url) {
-      console.log(
-        '%c__location__ 拦截 href : ' + url,
-        'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
-      )
-      if (!canJump(url)) return false
-      url = transformUrl(url)
-      window.location.href = url
-    }
-  })
 
-  // document.domain
-  Object.defineProperty(document, 'domain', {
-    get () {
-      return webvpn.target.hostname
-    },
-    set (value) { }
-  })
-
-  // document.referrer
-  const _referrer = decodeUrl(document.referrer.includes(webvpn.site) ? location.origin : document.referrer)
-  Object.defineProperty(document, 'referrer', {
-    get () {
-      return _referrer
-    }
-  })
-
-  // __window__, __document__, _globalThis, __parent__, __self__, __top__
-  for (const con of ['window', 'document', 'globalThis', 'parent', 'self', 'top']) {
-    window['__' + con + '__'] = new Proxy(window[con], {
-      get (obj, property, receiver) {
-        const win = (obj === parent || obj === top) ? obj : window
-        if (property === 'window') return win.__window__
-        if (property === 'location') return win.__location__
-        const value = obj[property]
-        // 如果 value 是 function，不一定是真的函数，也可能是 Promise 这种，Promise 有 prototype
-        return (typeof value === 'function' && !value.prototype) ? value.bind(obj) : value
-      },
-      set (obj, property, value) {
-        if (property === 'window') return false
-        if (property === 'location') {
-          if (obj === parent || obj === top) {
-            obj.__location__.href = value
-            return true
+    for (const con of globalCons) {
+      win['__' + con + '__'] = new Proxy(win[con], {
+        get (obj, property, receiver) {
+          const w = (obj === parent || obj === top) ? obj : win
+          if (globalCons.includes(property) || property === 'location') {
+            return w['__' + property + '__']
           }
-          console.log(
-            '%clocation 操作 拦截 location = : ' + value,
-            'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
-          )
-          if (!canJump(value)) return true
-          value = transformUrl(value)
-          window.location.href = value
+          const value = obj[property]
+          // 如果 value 是 function，不一定是真的函数，也可能是 Promise 这种，Promise 有 prototype
+          return (typeof value === 'function' && !value.prototype) ? value.bind(obj) : value
+        },
+        set (obj, property, value) {
+          if (property === 'window') return false
+          if (property === 'location') {
+            if (obj === parent || obj === top) {
+              obj.__location__.href = value
+              return true
+            }
+            console.log(
+              '%clocation 操作 拦截 location = : ' + value,
+              'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
+            )
+            if (!canJump(value)) return true
+            value = transformUrl(value)
+            win.location.href = value
+          }
+          obj[property] = value
+          return true
         }
-        obj[property] = value
+      })
+    }
+    win.__context__ = {
+      self: win.__self__,
+      window: win.__window__,
+      document: win.__document__,
+      globalThis: win.__globalThis__,
+      parent: win.__parent__,
+      top: win.__top__,
+      location: win.__location__
+    }
+    win.__context_proxy__ = new Proxy(win.__context__, {
+      has (target, prop) {
         return true
+      },
+      get (target, prop) {
+        return prop in target ? target[prop] : win[prop]
+      },
+      set (target, prop, value) {
+        win[prop] = value
+        return value
       }
     })
   }
 
-  window.__context__ = {
-    self: __self__,
-    window: __window__,
-    document: __document__,
-    globalThis: __globalThis__,
-    parent: __parent__,
-    top: __top__,
-    location: __location__
-  }
+  redefineGlobals(window)
 
   for (let key in window) {
     if (typeof window[key] === 'function') {
       window[key] = window[key].bind(window)
     }
   }
-
-  window.__context_proxy__ = new Proxy(window.__context__, {
-    has (target, prop) {
-      return true
-    },
-    get (target, prop) {
-      return prop in target ? target[prop] : window[prop]
-    },
-    set (target, prop, value) {
-      window[prop] = value
-      return value
-    }
-  })
 
   setInterval(() => {
     const location = window.__context__.location
@@ -674,10 +660,15 @@
   const sDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'style')
   Object.defineProperty(HTMLElement.prototype, 'style', {
     get () {
+      const node = this
       const style = sDescriptor.get.call(this)
       return new Proxy(style, {
         get (target, property) {
-          return target[property]
+          let value = target[property]
+          if (typeof value === 'function') {
+            return (...props) => this.set.apply(this, props)
+          }
+          return value
         },
         set (target, property, value) {
           if (property === 'background' || property === 'backgroundImage') {
@@ -691,6 +682,7 @@
             )
           }
           target[property] = value
+          return true
         }
       })
     }
@@ -699,11 +691,13 @@
   const ctDescriptor = Object.getOwnPropertyDescriptor(CSSStyleDeclaration.prototype, 'cssText')
   Object.defineProperty(CSSStyleDeclaration.prototype, 'cssText', {
     set (value) {
+      let hasUrl = false
       value = value.replace(/url\(([^\)]+)\)/g, text => {
+        hasUrl = true
         const url = text.replace(/(url\(|\)|\'|\")/g, '')
         return text.replace(url, transformUrl(url))
       })
-      console.log(
+      hasUrl && console.log(
         '%cstyle 操作 拦截 cssText : ' + value,
         'color: #606666;background-color: lime;padding: 5px 10px;'
       )
@@ -788,10 +782,35 @@
     }
   })
 
+  const fDescriptor = Object.getOwnPropertyDescriptor(window, 'frames')
+  Object.defineProperty(window, 'frames', {
+    get () {
+      const frames = fDescriptor.get.apply(this, [])
+      return new Proxy(frames, {
+        get (obj, property, receiver) {
+          const value = obj[property]
+          if (!/^\d+$/.test(property)) return value
+          redefineGlobals(value)
+          return Object.assign({}, value, { ...value.__context__ })
+        }
+      })
+    }
+  })
+
   const cwDescriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow')
   Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
     get () {
-      return Object.assign({}, cwDescriptor.get.apply(this, []), window.__context__)
+      const cw = cwDescriptor.get.apply(this, [])
+      if (!cw) return cw
+      redefineGlobals(cw)
+      return Object.assign({}, cw, { ...cw.__context__ })
+    }
+  })
+
+  const cdDescriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentDocument')
+  Object.defineProperty(HTMLIFrameElement.prototype, 'contentDocument', {
+    get () {
+      return this.contentWindow.__document__
     }
   })
 

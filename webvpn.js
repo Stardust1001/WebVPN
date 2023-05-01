@@ -42,6 +42,15 @@ class WebVPN {
       'audio': 'audio/webm, audio/mpeg',
       'stream': 'application/octet-stream, application/protobuffer'
     }
+    this.jsKeywords = [
+      'break', 'case', 'catch', 'continue', 'default', 'delete', 'do', 'else', 'finaly', 'for',
+      'function', 'if', 'in', 'instanceof', 'new', 'return', 'switch', 'this', 'throw', 'try',
+      'typeof', 'var', 'void', 'while', 'with',
+      'boolean', 'byte', 'char', 'class', 'const', 'debugger', 'double', 'enum', 'export',
+      'extends', 'final', 'float', 'goto', 'implements', 'import', 'int', 'interface', 'long',
+      'native', 'package', 'private', 'protected', 'public', 'short', 'static', 'super',
+      'synchronized', 'throws', 'transient', 'volatile'
+    ]
     this.ignoreRequestHeaderRegexps = [
       /^x-/i,
       /upgrade-insecure-requests/i
@@ -54,6 +63,7 @@ class WebVPN {
     this.noTransformMimes = ['font', 'json', 'image', 'video', 'audio', 'pdf-office']
     this.cacheMimes = ['js', 'css', 'font', 'image', 'video', 'audio', 'pdf-office']
     this.cacheDir = config.cacheDir || 'cache'
+
     this.checkCaches()
 
     this.jsWorkerContextCode = `
@@ -561,7 +571,7 @@ class WebVPN {
   calcHoistIdentifiersCode (code) {
     const matches = [...code.matchAll(/(function|class)\s+(\w+)\s*\(/g)]
     if (!matches.length) return ''
-    const names = matches.map(m => m[2])
+    const names = matches.map(m => m[2]).filter(k => !this.jsKeywords.includes(k))
     return names.map(n => `try { window.${n} = ${n}; } catch {}`).join('\n')
   }
 
@@ -675,7 +685,7 @@ class WebVPN {
         }).join('; ')
       })
     }
-    if (!headers['access-control-allow-origin']) {
+    if (!headers['access-control-allow-origin'] && ctx.request.method === 'OPTIONS') {
       headers['access-control-allow-origin'] = ['*']
     }
     if (this.config.httpsEnabled && ctx.meta.scheme === 'https') {
