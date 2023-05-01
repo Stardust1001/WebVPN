@@ -366,7 +366,7 @@
       return webvpn.target.hostname
     },
     set (value) {
-      alert('set document.domain: ' + value)
+      console.log('%cset document.domain: ' + value, 'background-color: red; color: white; padding: 5px 10px;')
     }
   })
 
