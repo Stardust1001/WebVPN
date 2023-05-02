@@ -689,7 +689,7 @@ class WebVPN {
         }).join('; ')
       })
     }
-    if (!headers['access-control-allow-origin'] && ctx.request.method === 'OPTIONS') {
+    if (!headers['access-control-allow-origin']) {
       headers['access-control-allow-origin'] = ['*']
     }
     if (this.config.httpsEnabled && ctx.meta.scheme === 'https') {
