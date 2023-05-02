@@ -600,6 +600,10 @@ class WebVPN {
     <script src="${prefix}/public/html2json.js"></script>
     <script src="${prefix}/public/base32.js"></script>
     <script src="${prefix}/public/append.js"></script>
+    <script>
+      const ss = Array.from(document.querySelectorAll('script'));
+      ss.forEach(script => script.remove());
+    </script>
     ${ctx.meta.appendScriptCode || ''}
     `
     const hasDoctype = /^\s*?\<\!DOCTYPE html\>/i.test(res.data)
