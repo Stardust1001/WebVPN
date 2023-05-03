@@ -500,6 +500,7 @@
       })
     }
     win.__context__ = {
+      __this__: win.__self__,
       self: win.__self__,
       window: win.__window__,
       document: win.__document__,
@@ -523,6 +524,8 @@
   }
 
   redefineGlobals(window)
+
+  window.__this__ = __window__
 
   for (let key in window) {
     if (typeof window[key] === 'function') {
@@ -625,7 +628,7 @@
   nodeAttrSetters.forEach((item) => {
     Object.defineProperty(item[0].prototype, item[2], {
       get () {
-        const value = this.getAttribute(item[2], 'custom')
+        const value = this.getAttribute(item[2], 'custom') || ''
         console.log(
           '%cDOM 操作 拦截 ' + item[1] + ' ' + item[2] + ' getter : ' + value,
           'color: #606666;background-color: lime;padding: 5px 10px;'
@@ -912,7 +915,7 @@
 
   const srcLog = (tag, urlAttr, url) => {
     console.log(
-      `%cDOM 操作 拦截 ${tag} ${urlAttr} : ` + url,
+      '%cDOM 操作 拦截 ' + tag + ' ' + urlAttr + ' : ' + url,
       'color: #606666;background-color: lime;padding: 5px 10px;'
     )
   }

@@ -100,6 +100,7 @@ class WebVPN {
         }
         self.__context__ = {
           self: __self__,
+          __this__: __self__,
           globalThis: __globalThis__,
           location: __location__
         }
@@ -119,6 +120,7 @@ class WebVPN {
     `
     this.jsScopePrefixCode = `
     (function () {
+      var __this__ = self.__context__.self
       with (self.__context_proxy__) {
     `
     this.jsScopeSuffixCode = `
@@ -562,10 +564,36 @@ class WebVPN {
     const origin = this.config.site.origin.replace('www', base32.encode(ctx.meta.target.host))
     return this.jsScopePrefixCode.replace('#origin#', origin)
             + (isJsFile ? this.jsWorkerContextCode : '')
-            + code
+            + this.replaceThisInCode(code)
             + '\n}\n'
             + this.calcHoistIdentifiersCode(code)
             + this.jsScopeSuffixCode
+  }
+
+  replaceThisInCode (code) {
+    const thisCode = 'const __this__ = this;'
+    const tryThisCode = `const __this__ = (() => { try { return this === window ? window : this } catch { return this === self ? self : this } })();`
+    const func = text => {
+      if (/constructor\s*\(/.test(text)) {
+        return text + thisCode
+      }
+      if (/(if|for|switch|catch|extends)\s*\(/.test(text)) return text
+      return text + tryThisCode
+    }
+    return code.replaceAll('this', '__this__')
+              .replace(/function\s*([a-zA-Z0-9\$\_]+)?\s*\([^\)]*\)\s*\{/g, func)
+              .replace(/(\s|\{)([a-zA-Z0-9\$\_]+)\s*\([^\)]*\)\s*\{/g, func)
+              .replace(/([a-zA-Z0-9\$\_]+)\s*\([^\)]*\)\s*\{/g, text => {
+                if (/(if|for|switch|catch|extends)\s*\(/.test(text)) return text
+                if (/function\s*\([^\)]*\)\s*\{/.test(text)) return text
+                return text + 'const __this__ = this;'
+              })
+              .replaceAll(tryThisCode + tryThisCode, tryThisCode)
+              .replaceAll(thisCode + tryThisCode, tryThisCode)
+              .replaceAll(thisCode + thisCode, thisCode)
+              .replace(/const __this__ = this\;\s*super\([^\)]*\),?/g, text => {
+                return 'super();' + thisCode
+              })
   }
 
   calcHoistIdentifiersCode (code) {
