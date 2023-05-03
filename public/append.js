@@ -448,25 +448,30 @@
 
   function redefineGlobals (win) {
     // window.__location__
+    Array.from(['host', 'hostname', 'origin', 'href', 'protocol']).forEach(key => {
+      win.location['__' + key + '__'] = webvpn.target[key]
+    })
     win.__location__ = Object.assign({}, copySource(location), copySource(webvpn.target))
     win.__location__.assign = win.location._assign
     win.__location__.replace = win.location._replace
 
     // __location__.href 拦截
-    Object.defineProperty(win.__location__, 'href', {
-      get () {
-        return decodeUrl(win.location.href)
-      },
-      set (url) {
-        console.log(
-          '%c__location__ 拦截 href : ' + url,
-          'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
-        )
-        if (!canJump(url)) return false
-        url = transformUrl(url)
-        win.location.href = url
-      }
-    })
+    for (let key of ['href', '__href__']) {
+      Object.defineProperty(win.__location__, key, {
+        get () {
+          return decodeUrl(win.location.href)
+        },
+        set (url) {
+          console.log(
+            '%c__location__ 拦截 href : ' + url,
+            'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
+          )
+          if (!canJump(url)) return false
+          url = transformUrl(url)
+          win.location.href = url
+        }
+      })
+    }
 
     for (const con of globalCons) {
       win['__' + con + '__'] = new Proxy(win[con], {
