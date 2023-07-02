@@ -1,4 +1,4 @@
-import HttpProxyAgent from 'http-proxy-agent'
+// import HttpProxyAgent from 'http-proxy-agent'
 
 import WebVPN from './webvpn.js'
 
@@ -14,10 +14,8 @@ class VPN extends WebVPN {
   async beforeRequest (ctx, options) {
     // options.agent = new HttpProxyAgent({
     //   protocol: 'http:',
-    //   // host: '211.83.244.26',
-    //   // port: '10005',
-    //   host: '111.40.62.176',
-    //   port: '9091',
+    //   host: '',
+    //   port: '',
     //   rejectUnauthorized: false
     // })
   }
