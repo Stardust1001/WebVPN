@@ -628,9 +628,10 @@
   })
 
   nodeAttrSetters.forEach((item) => {
+    const descriptor = Object.getOwnPropertyDescriptor(item[0].prototype, item[2])
     Object.defineProperty(item[0].prototype, item[2], {
       get () {
-        const value = this.getAttribute(item[2], 'custom') || ''
+        const value = descriptor.get.call(this) || ''
         console.log(
           '%cDOM 操作 拦截 ' + item[1] + ' ' + item[2] + ' getter : ' + value,
           'color: #606666;background-color: lime;padding: 5px 10px;'
@@ -640,7 +641,7 @@
       },
       set (url) {
         srcLog(item[1], item[2], url)
-        this.setAttribute(item[2], transformUrl(url), 'custom')
+        descriptor.set.call(this, transformUrl(url))
       }
     })
   })
