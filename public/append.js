@@ -672,7 +672,7 @@
         get (target, property) {
           let value = target[property]
           if (typeof value === 'function') {
-            return (...props) => this.set.apply(this, props)
+            return (...props) => value.apply(target, props)
           }
           return value
         },
@@ -694,6 +694,7 @@
     }
   })
 
+  // 附注：这里只是拦截 CSS 操作，不知道所属哪个节点，如果想知道，可以放在上面，通过 style.cssText 拦截
   const ctDescriptor = Object.getOwnPropertyDescriptor(CSSStyleDeclaration.prototype, 'cssText')
   Object.defineProperty(CSSStyleDeclaration.prototype, 'cssText', {
     set (value) {
