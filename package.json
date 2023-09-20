@@ -16,6 +16,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@stardust-js/node": "^1.1.8",
     "base32": "^0.0.7",
     "chalk": "^5.0.1",
     "http-proxy-agent": "^5.0.0",
