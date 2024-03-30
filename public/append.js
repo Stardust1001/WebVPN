@@ -628,7 +628,11 @@
   })
 
   nodeAttrSetters.forEach((item) => {
-    const descriptor = Object.getOwnPropertyDescriptor(item[0].prototype, item[2])
+    let descriptor = Object.getOwnPropertyDescriptor(item[0].prototype, item[2])
+    // audio video 的 src 描述符没了，转到了 media 的描述符上
+    if (!descriptor && ['audio', 'video'].includes(item[1]) && item[2] === 'src') {
+      descriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src')
+    }
     Object.defineProperty(item[0].prototype, item[2], {
       get () {
         const value = descriptor.get.call(this) || ''

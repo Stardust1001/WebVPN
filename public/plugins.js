@@ -168,7 +168,7 @@
   const medias = []
 
   const checkMediaUrl = (url, type) => {
-    if (!medias.includes(url)) {
+    if (url && !medias.includes(url)) {
       medias.push(url)
       provideDownloads(url, blobs[url], type, medias.length)
     }
@@ -188,11 +188,17 @@
 
   while (true) {
     Array.from([
-      ...(webvpn.logs?.DOM?.['audio src'] ?? []),
-      ...(webvpn.logs?.DOM?.['video src'] ?? [])
+      ...(webvpn.logs?.DOM?.['audio src setter'] ?? []),
+      ...(webvpn.logs?.DOM?.['video src setter'] ?? [])
     ]).forEach(text => {
       const url = text.split('src : ')[1]
       const type = text.includes('audio src') ? 'audio' : 'video'
+      checkMediaUrl(url, type)
+    })
+    Array.from(webvpn.logs?.DOM?.['setAttribute'] ?? []).forEach(text => {
+      if (!text.includes('audio - src') && !text.includes('video - src')) return
+      const [brief, attr, url] = text.split(' - ')
+      const type = brief.split(' : ')[1]
       checkMediaUrl(url, type)
     })
     await sleep(1000)
