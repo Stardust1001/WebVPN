@@ -71,6 +71,7 @@
 
   const ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:']
   const globalCons = ['window', 'document', 'globalThis', 'parent', 'self', 'top']
+  const locationAttrs = ['hash', 'host', 'hostname', 'href', 'origin', 'pathname', 'port', 'protocol', 'search']
 
   const escaped = {}
   Array.from([
@@ -448,30 +449,31 @@
 
   function redefineGlobals (win) {
     // window.__location__
-    Array.from(['host', 'hostname', 'origin', 'href', 'protocol']).forEach(key => {
+    win.__location__ = {}
+    locationAttrs.forEach(key => {
       win.location['__' + key + '__'] = webvpn.target[key]
-    })
-    win.__location__ = new Proxy({}, {
-      get (obj, property) {
-        if (property === 'href' || property === '__href__') {
-          return decodeUrl(win.location.href)
+      Object.defineProperty(win.__location__, key, {
+        get () {
+          if (key === 'href' || key === '__href__') {
+            return decodeUrl(win.location.href)
+          }
+          return webvpn.target[key] || location[key]
+        },
+        set (value) {
+          if (key === 'href' || key === '__href__') {
+            console.log(
+              '%c__location__ 拦截 href : ' + value,
+              'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
+            )
+            if (!canJump(value)) return false
+            value = transformUrl(value)
+            win.location.href = value
+          } else {
+            location[key] = value
+          }
+          return true
         }
-        return webvpn.target[property] || location[property]
-      },
-      set (obj, property, value) {
-        if (property === 'href' || property === '__href__') {
-          console.log(
-            '%c__location__ 拦截 href : ' + url,
-            'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
-          )
-          if (!canJump(url)) return false
-          url = transformUrl(url)
-          win.location.href = url
-        } else {
-          location[property] = value
-        }
-        return true
-      }
+      })
     })
     win.__location__.assign = win.location._assign
     win.__location__.replace = win.location._replace
