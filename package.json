@@ -7,7 +7,7 @@
   "scripts": {
     "push": "git add . && git commit -m \"add\" && git push origin master",
     "pull": "git checkout . && git pull origin master",
-    "cloc": "cloc *.js public"
+    "cloc": "cloc *.js public/append.js public/index.html public/plugins.js"
   },
   "repository": {
     "type": "git",
