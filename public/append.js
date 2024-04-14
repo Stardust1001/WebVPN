@@ -452,28 +452,31 @@
     win.__location__ = {}
     locationAttrs.forEach(key => {
       win.location['__' + key + '__'] = webvpn.target[key]
-      Object.defineProperty(win.__location__, key, {
-        get () {
-          if (key === 'href' || key === '__href__') {
-            return decodeUrl(win.location.href)
+      for (let i = 0; i < 2; i++) {
+        if (i) key = '__' + key + '__'
+        Object.defineProperty(win.__location__, key, {
+          get () {
+            if (key === 'href' || key === '__href__') {
+              return decodeUrl(win.location.href)
+            }
+            return webvpn.target[key] || location[key]
+          },
+          set (value) {
+            if (key === 'href' || key === '__href__') {
+              console.log(
+                '%c__location__ 拦截 href : ' + value,
+                'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
+              )
+              if (!canJump(value)) return false
+              value = transformUrl(value)
+              win.location.href = value
+            } else {
+              location[key] = value
+            }
+            return true
           }
-          return webvpn.target[key] || location[key]
-        },
-        set (value) {
-          if (key === 'href' || key === '__href__') {
-            console.log(
-              '%c__location__ 拦截 href : ' + value,
-              'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
-            )
-            if (!canJump(value)) return false
-            value = transformUrl(value)
-            win.location.href = value
-          } else {
-            location[key] = value
-          }
-          return true
-        }
-      })
+        })
+      }
     })
     win.__location__.assign = win.location._assign
     win.__location__.replace = win.location._replace
