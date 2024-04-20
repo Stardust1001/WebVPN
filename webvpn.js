@@ -5,7 +5,7 @@ import path from 'node:path'
 import cluster from 'node:cluster'
 import chalk from 'chalk'
 import Koa from 'koa'
-import bodyParser from 'koa-bodyparser'
+// import bodyParser from 'koa-bodyparser'
 import fetch from 'node-fetch'
 import iconv from 'iconv-lite'
 import base32 from 'base32'
@@ -218,7 +218,7 @@ class WebVPN {
   createApp () {
     const { config } = this
     const app = new Koa()
-    app.use(bodyParser())
+    // app.use(bodyParser())
     app.use(this.proxyRoute.bind(this))
     const host = config.host || '0.0.0.0'
     app.listen(config.port, host)
