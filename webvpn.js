@@ -119,6 +119,7 @@ class WebVPN {
     `
     this.jsScopePrefixCode = `
     (function () {
+      atob = window.atob.bind(window);
       with (self.__context_proxy__) {
     `
     this.jsScopeSuffixCode = `
