@@ -503,6 +503,9 @@ class WebVPN {
       if (/&#x\w+;/.test(url)) {
         url = url.replaceAll(/&#x\w+;/g, ele => String.fromCharCode(parseInt(ele.slice(3, -1), 16)))
       }
+      if (url.includes('"')) {
+        url = url.replaceAll('"', '')
+      }
       const source = prefix + new URL(url).host
       const value = this.transformUrl(ctx, source.startsWith('http') ? source : (ctx.meta.scheme + ':' + source))
       dict[quote + source] = quote + value
