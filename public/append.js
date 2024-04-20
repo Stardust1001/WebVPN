@@ -438,6 +438,12 @@
     return window.location.replace(url)
   }
 
+  // location toString
+  window.location._toString = function () {
+    return window.location.__href__
+  }
+  window.location.__toString__ = window.location._toString
+
   function copySource (source) {
     const copied = Object.assign({}, source)
     for (const key in source) {
@@ -480,6 +486,7 @@
     })
     win.__location__.assign = win.location._assign
     win.__location__.replace = win.location._replace
+    win.__location__.toString = win.location._toString
 
     for (const con of globalCons) {
       win['__' + con + '__'] = new Proxy(win[con], {
