@@ -438,6 +438,13 @@
     return window.location.replace(url)
   }
 
+  // location reload
+  window.location._reload = function () {
+    if (!canJump(location.href)) return false
+    return window.location.reload()
+  }
+  window.location.__reload__ = window.location._reload
+
   // location toString
   window.location._toString = function () {
     return window.location.__href__

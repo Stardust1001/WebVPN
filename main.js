@@ -35,7 +35,7 @@ class VPN extends WebVPN {
                 .replaceAll(' integrity', ' no-integrity')
                 .replaceAll('use strict', '')
                 // 这个替换并不优雅，也不完整，有问题就取消
-                .replace(/location\.(host|hostname|origin|href|protocol|toString)/, 'location.__$1__')
+                .replace(/location\.(host|hostname|origin|href|protocol|reload|toString)/g, 'location.__$1__')
     }
   }
 
