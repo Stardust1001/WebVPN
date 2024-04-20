@@ -423,10 +423,12 @@ class WebVPN {
       }
       ctx.meta.done = true
       if (ctx.meta.mime === 'json') {
+        data = await res.text()
+        if (data === '') data = '{}'
         return {
-          headers,
           status: res.status,
-          data: await res.text()
+          data,
+          headers
         }
       }
       ctx.res.writeHead(res.status, headers)
