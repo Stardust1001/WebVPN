@@ -315,39 +315,58 @@
   }
 
   // appendChild 拦截
-  const appendChild = Node.prototype.appendChild
-  Node.prototype.appendChild = function (node) {
-    if (!(node instanceof Node)) return
-    if (node._type_ !== 'custom') {
-      domLog(node, 'appendChild')
-      node = transformNode(node)
+  function appendChild_wrap (func) {
+    return function (node) {
+      if (!(node instanceof Node)) return
+      if (node._type_ !== 'custom') {
+        domLog(node, 'appendChild')
+        node = transformNode(node)
+      }
+      return func.call(this, node)
     }
-    return appendChild.call(this, node)
   }
+  Node.__appendChild__ = Node.prototype.appendChild
+  Node.prototype.appendChild = appendChild_wrap(Node.__appendChild__)
 
   // insertBefore 拦截
-  const insertBefore = Node.prototype.insertBefore
-  Node.prototype.insertBefore = function (node, sibling) {
-    domLog(node, 'insertBefore')
-    node = transformNode(node)
-    return insertBefore.bind(this)(node, sibling)
+  function insertBefore_wrap (func) {
+    return function (node, sibling) {
+      domLog(node, 'insertBefore')
+      node = transformNode(node)
+      return func.bind(this)(node, sibling)
+    }
   }
+  Node.__insertBefore__ = Node.prototype.insertBefore
+  Node.prototype.insertBefore = insertBefore_wrap(Node.__insertBefore__)
 
   // replaceChild 拦截
-  const replaceChild = Node.prototype.replaceChild
-  Node.prototype.replaceChild = function (node, oldNode) {
-    domLog(node, 'replaceChild')
-    node = transformNode(node)
-    return replaceChild.bind(this)(node, oldNode)
+  function replaceChild_wrap (func) {
+    return function (node, oldNode) {
+      domLog(node, 'replaceChild')
+      node = transformNode(node)
+      return func.bind(this)(node, oldNode)
+    }
   }
+  Node.__replaceChild__ = Node.prototype.replaceChild
+  Node.prototype.replaceChild = replaceChild_wrap(Node.__replaceChild__)
 
-  Array.from(['replaceChildren', 'prepend', 'append', 'before', 'after']).forEach((name) => {
-    const origin = Element.prototype[name]
-    Element.prototype[name] = function () {
+  function nodesMethod_wrap (func, name) {
+    return function () {
       const nodes = arguments
       transformArgumentsNodes(nodes, name)
-      return origin.apply(this, nodes)
+      return func.apply(this, nodes)
     }
+  }
+  Array.from(['replaceChildren', 'prepend', 'append', 'before', 'after']).forEach((name) => {
+    const origin = Element.prototype[name]
+    Element['__' + name + '__'] = origin
+    Element.prototype[name] = nodesMethod_wrap(origin, name)
+  })
+
+  Array.from(['replaceChildren', 'append', 'prepend']).forEach((name) => {
+    const origin = DocumentFragment.prototype[name]
+    DocumentFragment['__' + name + '__'] = origin
+    DocumentFragment.prototype[name] = nodesMethod_wrap(origin, name)
   })
 
   // setAttribute 拦截
@@ -364,15 +383,32 @@
   }
 
   // insertAdjacentHTML 拦截
-  const insertAdjacentHTML = Element.prototype.insertAdjacentHTML
-  Element.prototype.insertAdjacentHTML = function (position, html) {
-    console.log(
-      '%cDOM 操作 拦截 insertAdjacentHTML : ' + html,
-      'color: #606666;background-color: lime;padding: 5px 10px;'
-    )
-    html = transformHtml(html, this)
-    return insertAdjacentHTML.bind(this)(position, html)
+  function insertAdjacentHTML_wrap (func) {
+    return function (position, html) {
+      console.log(
+        '%cDOM 操作 拦截 insertAdjacentHTML : ' + html,
+        'color: #606666;background-color: lime;padding: 5px 10px;'
+      )
+      html = transformHtml(html, this)
+      return func.bind(this)(position, html)
+    }
   }
+  Element.__insertAdjacentHTML__ = Element.prototype.insertAdjacentHTML
+  Element.prototype.insertAdjacentHTML = insertAdjacentHTML_wrap(Element.__insertAdjacentHTML__)
+
+  // insertAdjacentElement 拦截
+  function insertAdjacentElement_wrap (func) {
+    return function (position, node) {
+      console.log(
+        '%cDOM 操作 拦截 insertAdjacentElement : ',
+        'color: #606666;background-color: lime;padding: 5px 10px;'
+      )
+      node = transformNode(node)
+      return func.bind(this)(position, node)
+    }
+  }
+  Element.__insertAdjacentElement__ = Element.prototype.insertAdjacentElement
+  Element.prototype.insertAdjacentElement = insertAdjacentHTML_wrap(Element.__insertAdjacentElement__)
 
   // a 元素 click 拦截
   const aOnClick = HTMLAnchorElement.prototype.click
@@ -956,17 +992,8 @@
     }
   }
 
-  const removeChilds = (node) => {
-    const childs = Array.from(node.childNodes || [])
-    childs.forEach(child => child.remove())
-  }
-
   const getNodeName = (node) => {
     return (node.nodeName || node.tagName || '').toLowerCase()
-  }
-
-  const getAttacher = (node) => {
-    return getNodeName(node) === 'template' ? node.content : node
   }
 
   const domLog = (node, funcName) => {
