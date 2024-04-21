@@ -415,6 +415,7 @@
     url = transformUrl(url)
     return window.navigate(url)
   }
+  window.location.__navigate__ = window.location._navigate
 
   // location _assign 拦截
   window.location._assign = function (url) {
@@ -426,6 +427,7 @@
     url = transformUrl(url)
     return window.location.assign(url)
   }
+  window.location.__asign__ = window.location._assign
 
   // location _replace 拦截
   window.location._replace = function (url) {
@@ -437,6 +439,7 @@
     url = transformUrl(url)
     return window.location.replace(url)
   }
+  window.location.__replace__ = window.location._replace
 
   // location reload
   window.location._reload = function () {
@@ -635,6 +638,7 @@
   })
 
   const canJump = (url) => {
+    if (transformUrl(url).split(/(\?#)/)[0] === location.href.split(/(\?#)/)[0]) return false
     if (disableJump) return false
     if (confirmJump) {
       const ok = confirm('允许跳转到 ' + url + ' 吗？')
