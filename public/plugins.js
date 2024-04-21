@@ -57,7 +57,7 @@
       return sum + buf.length
     }, 0)
     const union = new Uint8Array(sum)
-    const index = 0
+    let index = 0
     buffers.forEach(buf => {
       union.set(buf, index)
       index += buf.length
