@@ -518,9 +518,10 @@
         })
       }
     })
-    win.__location__.assign = win.location._assign
-    win.__location__.replace = win.location._replace
-    win.__location__.toString = win.location._toString
+    for (let key of ['navigate', 'assign', 'replace', 'reload', 'toString']) {
+      win.__location__[key] = win.location['_' + key]
+      win.__location__['__' + key + '__'] = win.location['_' + key]
+    }
 
     for (const con of globalCons) {
       win['__' + con + '__'] = new Proxy(win[con], {
