@@ -593,6 +593,7 @@ class WebVPN {
         window.webvpn = {
           site: '${httpsEnabled ? scheme : 'http'}:${prefix}',
           protocol: '${scheme}:',
+          hostname: '${target.hostname}',
           base: '${base}',
           interceptLog: ${interceptLog},
           disableJump: ${disableJump},

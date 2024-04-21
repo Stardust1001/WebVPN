@@ -139,7 +139,11 @@
     }
     const u = new URL(url)
     const host = window.base32.decode(u.host.split('.')[0])
-    return url.replace(u.origin, window.location.protocol + '//' + host)
+    url = url.replace(u.origin, window.location.protocol + '//' + host)
+    if (webvpn.hostname.includes(host) && webvpn.protocol === 'https:' && url.startsWith('http:')) {
+      url = url.replace('http:', 'https:')
+    }
+    return url
   }
 
   const transformArgumentsNodes = (nodes, funcName) => {
@@ -172,6 +176,20 @@
     }
     html = Array.from(doc.childNodes).map(child => child.outerHTML).join('')
     html = html.replaceAll('&amp;amp;', '&amp;')
+    return html
+  }
+
+  const decodeUrlInHtml = (html) => {
+    // TODO 先不管 srcset data codebase 之类的
+    const urls = new Set()
+    Array.from(html.matchAll(/(href|src|poster|action)="([^"]*)"/g)).forEach(match => {
+      if (match[2].includes(vpnDomain)) urls.add(match[2])
+    })
+    if (urls.size) {
+      Array.from(urls).sort((a, b) => b.length - a.length).forEach(url => {
+        html = html.replaceAll(url, decodeUrl(url))
+      })
+    }
     return html
   }
 
@@ -289,6 +307,12 @@
   }
 
   // dom 操作拦截
+
+  const getInnerHTML = Element.prototype.getInnerHTML
+  Element.prototype.getInnerHTML = function () {
+    domLog(this, 'getInnerHTML')
+    return this.innerHTML
+  }
 
   // appendChild 拦截
   const appendChild = Node.prototype.appendChild
@@ -779,6 +803,10 @@
     set: ihDescriptor.set
   })
   Object.defineProperty(Element.prototype, 'innerHTML', {
+    get () {
+      const html = ihDescriptor.get.call(this)
+      return decodeUrlInHtml(html)
+    },
     set (html) {
       html = (html || '').toString()
       // 去除无用的 \n，减少 DOM 渲染，提高执行效率（不会是 pre 元素吧？）
@@ -803,6 +831,10 @@
     set: ohDescriptor.set
   })
   Object.defineProperty(Element.prototype, 'outerHTML', {
+    get () {
+      const html = ohDescriptor.get.call(this)
+      return decodeUrlInHtml(html)
+    },
     set (html) {
       html = (html || '').toString()
       const json = html2json(html)
