@@ -10,7 +10,7 @@ import fetch from 'node-fetch'
 import iconv from 'iconv-lite'
 import base32 from 'base32'
 
-import { fsUtils } from '@stardust-js/node'
+import { fsUtils } from '@stardust_js/node'
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false })
 
