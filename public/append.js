@@ -164,6 +164,9 @@
       node[urlAttr] = newUrl
     }
     replaceNodesUrls(node)
+    if (node.nodeName === 'SCRIPT' && !node.src && !node.textContent.includes('self.__context__')) {
+      node.textContent = `new Function(\`with (self.__context__) { ${node.textContent} }\`).bind(self.__context__)()`
+    }
     return node
   }
 
@@ -279,6 +282,23 @@
     if (path[0] === '/') return origin + path
     if (url.endsWith('/')) return url + path
     return url.split('/').slice(0, -1).join('/') + '/' + path
+  }
+
+  // Function 拦截
+  const _Function = window.Function
+  window.Function = class Function extends _Function {
+    constructor (...props) {
+      props[props.length - 1] = `with (__self__.__context__) { ${props[props.length - 1]} }`
+      return new _Function(...props).bind(__context__)
+    }
+  }
+
+  // eval 拦截
+  const _eval = window.eval
+  window.eval = function eval (code) {
+    const isDefineVars = /^\s*(var|let|const)/.test(code)
+    code = `new Function(\`with (self.__context__) { ${(isDefineVars ? '' : 'return ') + code} }\`).bind(self.__context__)()`
+    return _eval(code)
   }
 
   // ajax 拦截
@@ -408,7 +428,7 @@
     }
   }
   Element.__insertAdjacentElement__ = Element.prototype.insertAdjacentElement
-  Element.prototype.insertAdjacentElement = insertAdjacentHTML_wrap(Element.__insertAdjacentElement__)
+  Element.prototype.insertAdjacentElement = insertAdjacentElement_wrap(Element.__insertAdjacentElement__)
 
   // a 元素 click 拦截
   const aOnClick = HTMLAnchorElement.prototype.click
