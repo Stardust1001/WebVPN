@@ -379,7 +379,7 @@ class WebVPN {
       ...this.getRequestOptions(ctx)
     }
     if (method === 'POST') {
-      options.body = this.processRequestBody(ctx)
+      options.body = await this.calcRequestBody(ctx)
     }
     const result = await this.beforeRequest(ctx, options)
     if (result) {
@@ -394,13 +394,12 @@ class WebVPN {
     }
   }
 
-  processRequestBody (ctx) {
-    let body = ctx.request.body
-    try {
-      body = JSON.stringify(ctx.request.body)
-    } catch {
-      console.log(chalk.yellow(`POST 请求非 json 请求体解析错误`) + '\n')
-    }
+  async calcRequestBody (ctx) {
+    let body = ''
+    await new Promise(resolve => {
+      ctx.req.on('data', chunk => body += chunk)
+      ctx.req.on('end', resolve)
+    })
     return body
   }
 
