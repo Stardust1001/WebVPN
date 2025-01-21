@@ -286,12 +286,16 @@
 
   // Function 拦截
   const _Function = window.Function
-  window.Function = class Function extends _Function {
-    constructor (...props) {
-      props[props.length - 1] = `with (__self__.__context__) { ${props[props.length - 1]} }`
+  window.Function = new Proxy(_Function, {
+    construct (target, props) {
+      props[props.length - 1] = `with (__self__.__context__) { ${props[props.length - 1] || ''} }`
       return new _Function(...props).bind(__context__)
+    },
+    apply (target, thisArg, props) {
+      props[props.length - 1] = `with (__self__.__context__) { ${props[props.length - 1] || ''} }`
+      return _Function(...props).bind(__context__)
     }
-  }
+  })
 
   // eval 不能拦截，Function 作用于全局，可以拦截，eval 在代码运行作用域起作用，要访问局部变量，eval 方法读不到那些局部变量
   // eval 拦截
