@@ -293,13 +293,14 @@
     }
   }
 
+  // eval 不能拦截，Function 作用于全局，可以拦截，eval 在代码运行作用域起作用，要访问局部变量，eval 方法读不到那些局部变量
   // eval 拦截
-  const _eval = window.eval
-  window.eval = function eval (code) {
-    const isDefineVars = /^\s*(var|let|const)/.test(code)
-    code = `new Function(\`with (self.__context__) { ${(isDefineVars ? '' : 'return ') + code} }\`).bind(self.__context__)()`
-    return _eval(code)
-  }
+  // const _eval = window.eval
+  // window.eval = function eval (code) {
+  //   const isDefineVars = /^\s*(var|let|const)/.test(code)
+  //   code = `new Function(\`with (self.__context__) { ${(isDefineVars ? '' : 'return ') + code} }\`).bind(self.__context__)()`
+  //   return _eval(code)
+  // }
 
   // ajax 拦截
   const xhrOpen = XMLHttpRequest.prototype.open
