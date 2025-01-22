@@ -619,6 +619,11 @@ class WebVPN {
     if (ctx.meta.mime === 'json' && typeof res.data === 'string') {
       res.data = JSON.stringify(res.data)
     }
+    if (this.config.disableSourceMap) {
+      if (ctx.meta.mime === 'html' || ctx.meta.mime === 'js') {
+        res.data = res.data.replaceAll('sourceMappingURL', '')
+      }
+    }
   }
 
   getResponseType (ctx, url) {

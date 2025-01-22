@@ -67,6 +67,8 @@ const config = {
   disableJump: false,
   // 是否在页面跳转前询问用户，由用户决定是否允许网页跳转
   confirmJump: false,
+  // 是否禁用 source map
+  disableSourceMap: true,
   // 这个设置 0，可有效避免 Hostname/IP does not match certificate's altnames 错误
   NODE_TLS_REJECT_UNAUTHORIZED: 0
 }
