@@ -68,7 +68,7 @@ class WebVPN {
     this.jsWorkerContextCode = `
       // worker 里面创造 __context__ 环境
       if (!self.window) {
-        var href = self.webvpn && set.webvpn.target.href
+        var href = self.webvpn && self.webvpn.target.href
         if (!href) {
           href = location.href.replace(location.origin, '#origin#')
         }
