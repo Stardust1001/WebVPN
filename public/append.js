@@ -675,7 +675,7 @@
     const getAttribute = item[0].prototype.getAttribute
     item[0].prototype.getAttribute = function (attr, type) {
       let value = getAttribute.bind(this)(attr)
-      if (value && type !== 'custom' && item[2].includes(attr)) {
+      if (value && (value.startsWith('http') || value.startsWith('//')) && type !== 'custom' && item[2].includes(attr)) {
         console.log(
           '%cDOM 操作 拦截 getAttribute : ' + item[1] + ' - ' + item[2] + ' ' + value,
           'color: #606666;background-color: lime;padding: 5px 10px;'
