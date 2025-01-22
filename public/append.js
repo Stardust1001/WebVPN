@@ -557,8 +557,8 @@
         if (i) key = '__' + key + '__'
         Object.defineProperty(win.__location__, key, {
           get () {
-            if (key === 'href' || key === '__href__') {
-              return decodeUrl(win.location.href)
+            if (locationAttrs.includes(key.replaceAll('__', ''))) {
+              return new URL(decodeUrl(win.location.href))[key]
             }
             return webvpn.target[key] || location[key]
           },
