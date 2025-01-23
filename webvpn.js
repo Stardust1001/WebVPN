@@ -558,6 +558,13 @@ class WebVPN {
   }
 
   processJsScopeCode (ctx, code) {
+    if (code[0] === '{') {
+      try {
+        JSON.parse(code)
+        ctx.meta.mime = 'json'
+        return code
+      } catch {}
+    }
     return this.refactorJsScopeCode(ctx, code, true)
   }
 
