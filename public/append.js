@@ -772,7 +772,10 @@
           '%cDOM 操作 拦截 a ' + attr + ' getter',
           'color: #606666;background-color: lime;padding: 5px 10px;'
         )
-        const url = this.getAttribute('href') || decodeUrl(location.href)
+        let url = this.getAttribute('href') || decodeUrl(location.href)
+        if (!url.startsWith('http') && !url.startsWith('//')) {
+          url = urljoin(webvpn.target.href, url)
+        }
         if (attr === 'href') return url
         return new URL(url)[attr]
       }
