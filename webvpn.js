@@ -558,7 +558,7 @@ class WebVPN {
   }
 
   processJsScopeCode (ctx, code) {
-    if (code[0] === '{') {
+    if (code[0] === '{' || code[0] === '[') {
       try {
         JSON.parse(code)
         ctx.meta.mime = 'json'
