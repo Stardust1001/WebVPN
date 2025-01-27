@@ -50,7 +50,7 @@ class VPN extends WebVPN {
 
 const config = {
   // WebVPN 域名是否支持 https
-  httpsEnabled: false,
+  httpsEnabled: true,
   // WebVPN 服务端口
   port: 80,
   // WebVPN https 服务端口
