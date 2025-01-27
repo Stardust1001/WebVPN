@@ -219,7 +219,12 @@ class WebVPN {
     const app = new Koa()
     app.use(this.proxyRoute.bind(this))
     const host = config.host || '0.0.0.0'
-    app.listen(config.port, host)
+    http.createServer({}, app.callback()).listen(config.port)
+    const options = {
+      key: fs.readFileSync('ssl/server.key'),
+      cert: fs.readFileSync('ssl/server.pem')
+    }
+    https.createServer(options, app.callback()).listen(config.httpsPort)
   }
 
   async proxyRoute (ctx, next) {
