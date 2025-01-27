@@ -11,31 +11,34 @@
 
   const location = window.location
 
+  const defineWebvpnLocation = () => {
+    Object.defineProperties(webvpn, {
+      location: {
+        get () {
+          return location
+        }
+      },
+      url: {
+        get () {
+          let url = decodeUrl(location.href)
+          if (!url.startsWith(webvpn.protocol)) {
+            url = url.replace(webvpn.protocol === 'https:' ? 'http:' : 'https:', webvpn.protocol)
+          }
+          return url
+        }
+      },
+      target: {
+        get () {
+          return new URL(webvpn.url)
+        }
+      }
+    })
+  }
+  defineWebvpnLocation()
+
   const ajaxUrls = []
   const fetchUrls = []
   const domUrls = []
-
-  Object.defineProperties(webvpn, {
-    location: {
-      get () {
-        return location
-      }
-    },
-    url: {
-      get () {
-        let url = decodeUrl(location.href)
-        if (!url.startsWith(webvpn.protocol)) {
-          url = url.replace(webvpn.protocol === 'https:' ? 'http:' : 'https:', webvpn.protocol)
-        }
-        return url
-      }
-    },
-    target: {
-      get () {
-        return new URL(webvpn.url)
-      }
-    }
-  })
 
   const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -549,6 +552,7 @@
   }
 
   function redefineGlobals (win) {
+    if (!webvpn.target) defineWebvpnLocation()
     // window.__location__
     win.__location__ = {}
     locationAttrs.forEach(key => {
