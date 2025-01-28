@@ -70,7 +70,7 @@ class WebVPN {
       if (!self.window) {
         var href = self.webvpn && self.webvpn.target.href
         if (!href) {
-          href = location.href.replace(location.origin, '#origin#')
+          href = location['href'].replace(location['origin'], '#origin#')
         }
         var target = new URL(href)
         function copySource (source) {
@@ -107,10 +107,10 @@ class WebVPN {
             return true
           },
           get (target, prop) {
-            return window[prop]
+            return self[prop]
           },
           set (target, prop, value) {
-            window[prop] = value
+            self[prop] = value
             return value
           }
         })
@@ -118,7 +118,7 @@ class WebVPN {
     `
     this.jsScopePrefixCode = `
     (function () {
-      atob = window.atob.bind(window);
+      atob = self.atob.bind(self)
       with (self.__context_proxy__) {
     `
     this.jsScopeSuffixCode = `
@@ -577,9 +577,10 @@ class WebVPN {
   }
 
   refactorJsScopeCode (ctx, code, isJsFile = false) {
-    const origin = this.config.site.origin.replace('www', base32.encode(ctx.meta.target.host))
-    return this.jsScopePrefixCode.replace('#origin#', origin)
-            + (isJsFile ? this.jsWorkerContextCode : '')
+    const { protocol, host } = ctx.meta.target
+    const origin = this.config.site.origin.replace('www', base32.encode(host)).replace('http:', protocol)
+    return (isJsFile ? this.jsWorkerContextCode.replace('#origin#', origin) : '')
+            + this.jsScopePrefixCode
             + code
             + '\n}\n'
             + this.calcHoistIdentifiersCode(code)
