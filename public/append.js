@@ -554,6 +554,7 @@
   function redefineGlobals (win) {
     if (!webvpn.target) defineWebvpnLocation()
     // window.__location__
+    if (!Object.keys(win.location).length) return
     win.__location__ = {}
     locationAttrs.forEach(key => {
       win.location['__' + key + '__'] = webvpn.target[key]
@@ -641,6 +642,7 @@
         return value
       }
     })
+    return win
   }
 
   redefineGlobals(window)
@@ -941,7 +943,7 @@
     get () {
       const cw = cwDescriptor.get.apply(this, [])
       if (!cw) return cw
-      redefineGlobals(cw)
+      if (!redefineGlobals(cw)) return cw
       return Object.assign({}, cw, { ...cw.__context__ })
     }
   })
