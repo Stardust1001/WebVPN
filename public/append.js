@@ -465,6 +465,14 @@
     }
   })
 
+  // TODO TODO 目前发现部分网站自定义了 cookie descriptor，会出现错误
+  if (Object.getOwnPropertyDescriptor(Document.prototype, 'cookie')) {
+    Object.defineProperty(Document.prototype, 'cookie', { configurable: false })
+  }
+  if (Object.getOwnPropertyDescriptor(HTMLDocument.prototype, 'cookie')) {
+    Object.defineProperty(HTMLDocument.prototype, 'cookie', { configurable: false })
+  }
+
   // document.referrer
   const _referrer = decodeUrl(document.referrer.includes(webvpn.site) ? (location.origin + '/') : document.referrer)
   Object.defineProperty(document, 'referrer', {
