@@ -494,7 +494,7 @@ class WebVPN {
   replaceMatches (ctx, res, matches) {
     const { site, vpnDomain } = this.config
     const dict = {}
-    matches.filter(m => m.indexOf(vpnDomain) < 0).forEach(match => {
+    matches.filter(m => !m.includes('\n') && m.indexOf(vpnDomain) < 0).forEach(match => {
       let url = ''
       let prefix = ''
       let quote = ''
