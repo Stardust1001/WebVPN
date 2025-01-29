@@ -168,7 +168,13 @@
     }
     replaceNodesUrls(node)
     if (node.nodeName === 'SCRIPT' && !node.src && !node.textContent.includes('self.__context__')) {
-      node.textContent = `new Function(\`with (self.__context__) { ${node.textContent} }\`).bind(self.__context__)()`
+      if (node.textContent[0] === '{' || node.textContent[0] === '[') {
+        try {
+          JSON.parse(node.textContent)
+        } catch {
+          node.textContent = `new Function(\`with (self.__context__) { ${node.textContent} }\`).bind(self.__context__)()`
+        }
+      }
     }
     return node
   }

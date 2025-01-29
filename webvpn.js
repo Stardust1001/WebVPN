@@ -442,6 +442,7 @@ class WebVPN {
       }
       ctx.meta.done = true
       if (ctx.meta.mime === 'json') {
+        delete headers['content-encoding']
         data = await res.text()
         if (data === '') data = '{}'
         return {
