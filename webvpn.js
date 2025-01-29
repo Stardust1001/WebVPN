@@ -65,27 +65,41 @@ class WebVPN {
 
     this.checkCaches()
 
+    this.jsBase32Code = fs.readFileSync('./public/base32.js')
+
     this.jsWorkerContextCode = `
       // worker 里面创造 __context__ 环境
       if (!self.window) {
-        var href = self.webvpn && self.webvpn.target.href
-        if (!href) {
-          href = location['href'].replace(location['origin'], '#origin#')
+        ${this.jsBase32Code}
+        fetch = self.fetch.bind(self)
+        setTimeout = self.setTimeout.bind(self)
+        const _importScripts  = self.importScripts
+        self.importScripts = function (...props) {
+          props = props.map(transformUrl)
+          return _importScripts.apply(self, props)
         }
-        var target = new URL(href)
+        const target = new URL('#targetUrl#')
+        const site = new URL('#siteUrl#')
+        const vpnDomain = site.host.replace('www', '')
         function copySource (source) {
-          var copied = Object.assign({}, source)
-          for (var key in source) copied[key] = source[key]
+          const copied = Object.assign({}, source)
+          for (const key in source) copied[key] = source[key]
           return copied
         }
+        function transformUrl (url) {
+          const u = new URL(url)
+          if (u.hostname.includes(vpnDomain)) return url
+          const subdomain = base32.encode(u.host)
+          return url.replace(u.origin, site.origin.replace('www', subdomain))
+        }
         self.__location__ = Object.assign({}, copySource(self.location), copySource(target))
-        for (var con of ['globalThis', 'self']) {
+        for (const con of ['globalThis', 'self']) {
           self['__' + con + '__'] = new Proxy(self[con], {
             get (target, property, receiver) {
               if (['self', 'location'].includes(property)) {
                 return self['__' + property + '__']
               }
-              var value = target[property]
+              const value = target[property]
               return (typeof value === 'function' && !value.prototype) ? value.bind(target) : value
             },
             set (target, property, value) {
@@ -577,9 +591,11 @@ class WebVPN {
   }
 
   refactorJsScopeCode (ctx, code, isJsFile = false) {
-    const { protocol, host } = ctx.meta.target
-    const origin = this.config.site.origin.replace('www', base32.encode(host)).replace('http:', protocol)
-    return (isJsFile ? this.jsWorkerContextCode.replace('#origin#', origin) : '')
+    const { httpsEnabled, site } = this.config
+    const { scheme, target } = ctx.meta
+    const prefix = site.origin.slice(site.origin.indexOf('//'))
+    const siteUrl = (httpsEnabled ? scheme : 'http') + ':' + prefix
+    return (isJsFile ? this.jsWorkerContextCode.replace('#targetUrl#', target.href).replace('#siteUrl#', siteUrl) : '')
             + this.jsScopePrefixCode
             + code
             + '\n}\n'
@@ -591,7 +607,7 @@ class WebVPN {
     const matches = [...code.matchAll(/(function|class)\s+(\w+)\s*\(/g)]
     if (!matches.length) return ''
     const names = matches.map(m => m[2]).filter(k => !this.jsKeywords.includes(k))
-    return names.map(n => `try { window.${n} = ${n}; } catch {}`).join('\n')
+    return names.map(n => `try { self.${n} = ${n}; } catch {}`).join('\n')
   }
 
   appendScript (ctx, res) {
@@ -603,7 +619,7 @@ class WebVPN {
     const code = `
     <script>
       (function () {
-        window.webvpn = {
+        self.webvpn = {
           site: '${httpsEnabled ? scheme : 'http'}:${prefix}',
           protocol: '${scheme}:',
           hostname: '${target.hostname}',
