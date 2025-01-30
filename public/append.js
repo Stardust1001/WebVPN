@@ -455,6 +455,13 @@
     return aOnClick.apply(this, arguments)
   }
 
+  // document.URL
+  Object.defineProperty(document, 'URL', {
+    get () {
+      return webvpn.url
+    }
+  })
+
   // document.domain
   Object.defineProperty(document, 'domain', {
     get () {
@@ -465,6 +472,18 @@
     }
   })
 
+  Object.defineProperty(document, 'baseURI', {
+    get () {
+      return webvpn.url
+    }
+  })
+
+  Object.defineProperty(HTMLElement.prototype, 'baseURI', {
+    get () {
+      return webvpn.url
+    }
+  })
+
   // TODO TODO 目前发现部分网站自定义了 cookie descriptor，会出现错误
   if (Object.getOwnPropertyDescriptor(Document.prototype, 'cookie')) {
     Object.defineProperty(Document.prototype, 'cookie', { configurable: false })
@@ -472,6 +491,10 @@
   if (Object.getOwnPropertyDescriptor(HTMLDocument.prototype, 'cookie')) {
     Object.defineProperty(HTMLDocument.prototype, 'cookie', { configurable: false })
   }
+
+  // TODO TODO createTask 有问题？？？
+  const _createTask = console.createTask
+  delete console.createTask
 
   // document.referrer
   const _referrer = decodeUrl(document.referrer.includes(webvpn.site) ? (location.origin + '/') : document.referrer)
@@ -754,12 +777,6 @@
     return true
   }
 
-  Object.defineProperty(HTMLElement.prototype, 'baseURI', {
-    get () {
-      return webvpn.url
-    }
-  })
-
   nodeAttrSetters.forEach((item) => {
     let descriptor = Object.getOwnPropertyDescriptor(item[0].prototype, item[2])
     // audio video 的 src 描述符没了，转到了 media 的描述符上
@@ -794,7 +811,7 @@
         )
         let url = this.getAttribute('href') || decodeUrl(location.href)
         if (!url.startsWith('http') && !url.startsWith('//')) {
-          url = urljoin(webvpn.target.href, url)
+          url = urljoin(webvpn.url, url)
         }
         if (attr === 'href') return url
         return new URL(url)[attr]
