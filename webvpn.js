@@ -87,6 +87,10 @@ class WebVPN {
           return copied
         }
         function transformUrl (url) {
+          url = (url ? url.toString() : '').trim()
+          if (url.startsWith('//')) {
+            url = target.protocol + url
+          }
           const u = new URL(url)
           if (u.hostname.includes(vpnDomain)) return url
           const subdomain = base32.encode(u.host)
