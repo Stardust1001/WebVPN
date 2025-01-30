@@ -297,12 +297,12 @@
   const _Function = window.Function
   window.Function = new Proxy(_Function, {
     construct (target, props) {
-      props[props.length - 1] = props[props.length - 1].replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(__self__)')
+      props[props.length - 1] = props[props.length - 1].replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(this === self ? __self__ : this)')
       props[props.length - 1] = `with (__self__.__context__) { ${props[props.length - 1] || ''} }`
       return new _Function(...props).bind(__context__)
     },
     apply (target, thisArg, props) {
-      props[props.length - 1] = props[props.length - 1].replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(__self__)')
+      props[props.length - 1] = props[props.length - 1].replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(this === self ? __self__ : this)')
       props[props.length - 1] = `with (__self__.__context__) { ${props[props.length - 1] || ''} }`
       return _Function(...props).bind(__context__)
     }

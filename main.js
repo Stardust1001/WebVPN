@@ -34,7 +34,7 @@ class VPN extends WebVPN {
                 .replaceAll('nomodule', 'nomod')
                 .replaceAll(' integrity', ' no-integrity')
                 .replaceAll('use strict', '')
-                .replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(__self__)')
+                .replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(this === self ? __self__ : this)')
                 // 这个替换并不优雅，也不完整，有问题就取消
                 .replace(/location\.(hostname|host|origin|href|protocol|navigate|assign|replace|reload|toString)/g, 'location.__$1__')
     }
