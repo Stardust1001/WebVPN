@@ -924,6 +924,7 @@
         container.appendChild(child)
       }
       html = container.innerHTML
+      html = replaceEscaped(html, 1)
       ihDescriptor.set.apply(this, [html])
     }
   })
