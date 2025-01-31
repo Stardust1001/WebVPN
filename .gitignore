@@ -1,6 +1,4 @@
 node_modules/
-videos/
 cache/
 .DS_Store
 yarn.lock
-target/
