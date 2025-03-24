@@ -558,7 +558,7 @@
     url = transformUrl(url)
     return window.location.assign(url)
   }
-  window.location.__asign__ = window.location._assign
+  window.location.__assign__ = window.location._assign
 
   // location _replace 拦截
   window.location._replace = function (url) {
