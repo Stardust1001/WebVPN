@@ -293,6 +293,20 @@
     return url.split('/').slice(0, -1).join('/') + '/' + path
   }
 
+  // Object.assign 拦截
+  const _assign = Object.assign
+  Object.assign = function (target, ...sources) {
+    target = _assign.apply(Object, [target, ...sources])
+    if (sources.includes(__location__)) {
+      const props = Object.getOwnPropertyNames(__location__)
+      props.forEach(prop => {
+        const desc = Object.getOwnPropertyDescriptor(__location__, prop)
+        if (desc.get) target[prop] = desc.get()
+      })
+    }
+    return target
+  }
+
   // Function 拦截
   const _Function = window.Function
   window.Function = new Proxy(_Function, {
@@ -584,15 +598,6 @@
     return window.location.__href__
   }
   window.location.__toString__ = window.location._toString
-
-  function copySource (source) {
-    const copied = Object.assign({}, source)
-    for (const key in source) {
-      const value = source[key]
-      copied[key] = typeof value === 'function' ? value.bind(source) : value
-    }
-    return copied
-  }
 
   function redefineGlobals (win) {
     if (!webvpn.target) defineWebvpnLocation()
