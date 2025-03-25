@@ -335,6 +335,16 @@
   //   return _eval(code)
   // }
 
+  // EventSource 拦截
+  const _EventSource = window.EventSource
+  window.EventSource = new Proxy(_EventSource, {
+    construct (target, [url, configuration]) {
+      url = transformUrl(url)
+      console.log('%cEventSource 请求 拦截 : ' + url, 'color: white;background-color: orange;padding: 5px 10px;')
+      return new _EventSource(url, configuration)
+    }
+  })
+
   // ajax 拦截
   const xhrOpen = XMLHttpRequest.prototype.open
   XMLHttpRequest.prototype.open = function (method, url, async = true, user, password) {

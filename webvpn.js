@@ -23,6 +23,7 @@ class WebVPN {
       [/\.json/i, 'json'],
       [/\.js/i, 'js'],
       [/\.css/i, 'css'],
+      [/\.wasm/i, 'wasm'],
       [/\.(png|jpg|ico|svg|gif|webp|jpeg)/i, 'image'],
       [/\.(mp4|m3u8|ts|flv)[^a-zA-Z]/i, 'video'],
       [/\.(mp3|wav|ogg)/i, 'audio'],
@@ -59,7 +60,7 @@ class WebVPN {
       /(content-length|x-content-type-options|x-xss-protection|cross-origin-resource-policy|cross-origin-opener-policy|content-security-policy-report-only)/i,
     ]
 
-    this.noTransformMimes = ['font', 'json', 'image', 'video', 'audio', 'pdf-office']
+    this.noTransformMimes = ['wasm', 'font', 'json', 'image', 'video', 'audio', 'pdf-office']
     this.cacheMimes = ['js', 'css', 'font', 'image', 'video', 'audio', 'pdf-office']
     this.cacheDir = config.cacheDir || 'cache'
 
@@ -274,6 +275,10 @@ class WebVPN {
       }
     }
 
+    if (ctx.headers.accept === 'text/event-stream') {
+      return await this.respondPipe(ctx)
+    }
+
     if (this.noTransformMimes.includes(ctx.meta.mime)) {
       return await this.respondPipe(ctx)
     }
@@ -419,7 +424,7 @@ class WebVPN {
   }
 
   async calcRequestBody (ctx) {
-    const hasFile = ctx.headers['content-type'].includes('multipart/form-data; boundary')
+    const hasFile = ctx.headers['content-type']?.includes('multipart/form-data; boundary')
     let body = hasFile ? [] : ''
     await new Promise(resolve => {
       ctx.req.on('data', chunk => {
