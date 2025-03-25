@@ -20,6 +20,11 @@ If you are interested in this project, please join me to make it better and let 
 
 If it helps you, you can buy me a cup of milk tea. Thank you very much. I spent thousands of hours and a lot of energy on this. I open source it to facilitate everyone who needs it.
 
+<p>
+  <img width="200" src="https://raw.githubusercontent.com/Stardust1001/WebVPN/refs/heads/master/alipay.jpg">
+  <img width="200" src="https://raw.githubusercontent.com/Stardust1001/WebVPN/refs/heads/master/wxpay.jpg">
+</p>
+
 ### Contact
 Email: 2368354416@qq.com
 
