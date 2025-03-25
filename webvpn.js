@@ -5,7 +5,7 @@ import path from 'node:path'
 import cluster from 'node:cluster'
 import chalk from 'chalk'
 import Koa from 'koa'
-import fetch from 'node-fetch'
+import fetch, { File, FormData } from 'node-fetch'
 import iconv from 'iconv-lite'
 import base32 from 'base32'
 
@@ -419,11 +419,31 @@ class WebVPN {
   }
 
   async calcRequestBody (ctx) {
-    let body = ''
+    const hasFile = ctx.headers['content-type'].includes('multipart/form-data; boundary')
+    let body = hasFile ? [] : ''
     await new Promise(resolve => {
-      ctx.req.on('data', chunk => body += chunk)
+      ctx.req.on('data', chunk => {
+        if (hasFile) {
+          body.push(...chunk)
+        } else {
+          body += chunk
+        }
+      })
       ctx.req.on('end', resolve)
     })
+    if (hasFile) {
+      // TODO TODO TODO TODO TODO TODO
+      // 现在这只处理了单个文件，如果多个文件呢？也要调试处理
+      const text = Buffer.from(body.slice(0, 300), 'binary').toString()
+      const formData = new FormData()
+      const binary = new Uint8Array(body)
+      const name = text.match(/name="([^"]+)"/)[1]
+      const filename = text.match(/filename="([^"]+)"/)[1]
+      const type = text.match(/Content-Type: ([^\n]+)/)[1]
+      const file = new File([binary], filename, { type })
+      formData.append(name, file)
+      body = formData
+    }
     return body
   }
 
