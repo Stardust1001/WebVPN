@@ -73,7 +73,9 @@ const config = {
   // 是否禁用 source map
   disableSourceMap: true,
   // 这个设置 0，可有效避免 Hostname/IP does not match certificate's altnames 错误
-  NODE_TLS_REJECT_UNAUTHORIZED: 0
+  NODE_TLS_REJECT_UNAUTHORIZED: 0,
+  // 是否开启调试（当前是VConsole）
+  debug: false
 }
 
 // 实例化

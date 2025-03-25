@@ -641,7 +641,7 @@ class WebVPN {
   }
 
   appendScript (ctx, res) {
-    const { httpsEnabled, site, interceptLog } = this.config
+    const { httpsEnabled, site, interceptLog, debug } = this.config
     const { disableJump = this.config.disableJump, confirmJump = this.config.confirmJump } = ctx.meta
     const { base, scheme, target } = ctx.meta
     const { data } = res
@@ -667,6 +667,14 @@ class WebVPN {
     <script src="${prefix}/public/base32.js"></script>
     <script src="${prefix}/public/append.js"></script>
     <script src="${prefix}/public/plugins.js"></script>
+    ${
+      debug
+      ? `
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/vConsole/3.15.1/vconsole.min.js"></script>
+        <script>new VConsole()</script>
+      `
+      : ''
+    }
     <script>
       const ss = Array.from(document.querySelectorAll('script'));
       ss.forEach(script => script.remove());
