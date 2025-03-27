@@ -75,7 +75,9 @@ const config = {
   // 这个设置 0，可有效避免 Hostname/IP does not match certificate's altnames 错误
   NODE_TLS_REJECT_UNAUTHORIZED: 0,
   // 是否开启调试（当前是VConsole）
-  debug: false
+  debug: false,
+  // 是否启用插件
+  pluginsEanbled: true,
 }
 
 // 实例化

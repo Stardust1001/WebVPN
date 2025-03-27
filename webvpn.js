@@ -641,7 +641,7 @@ class WebVPN {
   }
 
   appendScript (ctx, res) {
-    const { httpsEnabled, site, interceptLog, debug } = this.config
+    const { httpsEnabled, site, interceptLog, debug, pluginsEanbled } = this.config
     const { disableJump = this.config.disableJump, confirmJump = this.config.confirmJump } = ctx.meta
     const { base, scheme, target } = ctx.meta
     const { data } = res
@@ -666,7 +666,12 @@ class WebVPN {
     <script src="${prefix}/public/html2json.js"></script>
     <script src="${prefix}/public/base32.js"></script>
     <script src="${prefix}/public/append.js"></script>
-    <script src="${prefix}/public/plugins.js"></script>
+    ${
+      pluginsEanbled
+      ?
+      `<script src="${prefix}/public/plugins.js"></script>`
+      : ''
+    }
     ${
       debug
       ? `
