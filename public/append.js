@@ -648,7 +648,18 @@
       win.__location__['__' + key + '__'] = win.location['_' + key]
     }
 
+  const globalCons = ['window', 'document', 'globalThis', 'parent', 'self', 'top']
+
     for (const con of globalCons) {
+      if (
+        con === 'globalThis'
+        || con === 'parent' && window === parent
+        || con === 'self'
+        || con === 'top' && window === top
+      ) {
+        win['__' + con + '__'] = win.__window__
+        continue
+      }
       win['__' + con + '__'] = new Proxy(win[con], {
         get (obj, property, receiver) {
           const w = (obj === parent || obj === top) ? obj : win
