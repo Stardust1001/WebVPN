@@ -20,10 +20,10 @@
       background-image: linear-gradient(to right bottom, lightblue, #9F97e1);
     }
     h2 {
-      padding-top: 20vh;
+      padding-top: 15vh;
       color: #4F4791;
     }
-    input, .button {
+    input:not([type="radio"]), .button {
       display: block;
       width: 80%;
       max-width: 500px;
@@ -46,6 +46,16 @@
     input:hover, input:focus {
       border-color: #409eff;
     }
+    label {
+      display: inline-block;
+      width: 40%;
+      max-width: 250px;
+      text-align: left;
+    }
+    label input {
+      position: relative;
+      top: 2px;
+    }
     .button {
       background-image: linear-gradient(to left, #4F4791, #011638);
       color: white;
@@ -59,6 +69,9 @@
 <h2>WebVPN</h2>
 
 <input type="text" id="input-url" autofocus placeholder="Enter the URL of the website you want to visit">
+<input type="text" id="share-id" placeholder="Share id, if you want to share sessions with others">
+<label><input type="radio" name="share-type" value="main" checked>main, session provider</label>
+<label><input type="radio" name="share-type" value="share">share, session consumer</label>
 <input type="text" id="output-url" placeholder="The above input will be automatically converted to the WebVPN service URL here">
 <div class="row button" id="goto">Goto</div>
 
@@ -66,10 +79,28 @@
 <script>
 
 const urlInput = document.querySelector('#input-url')
+const shareIdInput = document.querySelector('#share-id')
+const shareTypeMainInput = document.querySelector('input[name="share-type"][value="main"]')
+const shareTypeShareInput = document.querySelector('input[name="share-type"][value="share"]')
 const outputInput = document.querySelector('#output-url')
 const button = document.querySelector('#goto')
 
-urlInput.addEventListener('change', () => {
+urlInput.addEventListener('change', calcUrl)
+shareIdInput.addEventListener('change', calcUrl)
+shareTypeMainInput.addEventListener('change', calcUrl)
+shareTypeShareInput.addEventListener('change', calcUrl)
+
+outputInput.addEventListener('keyup', (e) => {
+  if (e.keyCode === 13) {
+    window.open(outputInput.value)
+  }
+})
+
+button.addEventListener('click', () => {
+  window.open(outputInput.value)
+})
+
+function calcUrl () {
   let url = urlInput.value.trim()
   if (!/\w+\.\w+/.test(url) && !/localhost/.test(url)) {
     return
@@ -86,18 +117,15 @@ urlInput.addEventListener('change', () => {
   } else {
     url = transformUrl(url)
   }
-  outputInput.value = url
-})
-
-outputInput.addEventListener('keyup', (e) => {
-  if (e.keyCode === 13) {
-    window.open(outputInput.value)
+  const shareId = shareIdInput.value?.trim()
+  if (shareId) {
+    const shareType = shareTypeMainInput.checked ? 'main' : 'share'
+    const u = new URL(url)
+    const hostPrefix = u.hostname.split('.')[0]
+    url = url.replace(hostPrefix, hostPrefix + '-' + shareType + '-' + shareId)
   }
-})
-
-button.addEventListener('click', () => {
-  window.open(outputInput.value)
-})
+  outputInput.value = url
+}
 
 function transformUrl (url) {
   const { host, origin } = new URL(url)
