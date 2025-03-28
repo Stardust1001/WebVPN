@@ -9,9 +9,11 @@ import fetch, { File, FormData } from 'node-fetch'
 import iconv from 'iconv-lite'
 import base32 from 'base32'
 
-import { fsUtils } from '@stardust_js/node'
+import { fsUtils, Storage } from '@stardust_js/node'
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false })
+
+const sharedSessions = new Storage({ filepath: './shared-sessions.json', autoLoad: true })
 
 class WebVPN {
   constructor (config) {
@@ -175,7 +177,19 @@ class WebVPN {
   async serveWww (ctx) {
     if (ctx.url === '/') {
       await this.respondFile(ctx, path.join('public', 'index.html'))
-    } else {
+    } else if (ctx.url === '/share-sessions') {
+      if (ctx.method === 'POST') {
+        const body = await this.calcRequestBody(ctx)
+        const shareId = ctx.headers['origin'].split('.')[0].split('-').pop()
+        sharedSessions.setItem(shareId + '-clientCache', body)
+      }
+      return ctx.res.writeHead(200, {
+        'access-control-allow-credentials': true,
+        'access-control-allow-origin': ctx.headers['origin'],
+        'access-control-allow-headers': '*',
+        'access-control-allow-methods': '*'
+      })
+    } {
       await this.checkPublic(ctx)
     }
   }
@@ -328,6 +342,7 @@ class WebVPN {
   }
 
   routeInit (ctx) {
+    const { isMainSession, shareId } = this.checkShareSession(ctx)
     const domain = base32.decode(ctx.subdomain)
     const isIp = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(domain)
     const scheme = this.config.httpsEnabled && ctx.headers['webvpn-scheme'] || isIp && 'http' || 'https'
@@ -335,6 +350,8 @@ class WebVPN {
     delete ctx.headers['webvpn-scheme']
 
     ctx.meta = {
+      shareId,
+      isMainSession,
       url,
       mime: this.getResponseType(ctx, url),
       scheme,
@@ -343,6 +360,38 @@ class WebVPN {
       origin: ctx.headers['origin'],
       referer: ctx.headers['referer']
     }
+  }
+
+  checkShareSession (ctx) {
+    let isMainSession, shareId
+    if (ctx.subdomain.includes('-')) {
+      const parts = ctx.subdomain.split('-')
+      ctx.subdomain = parts[0]
+      isMainSession = parts[1] === 'main'
+      shareId = parts[2]
+      const shareSuffix = parts.slice(1).join('-')
+      if (ctx.headers['host']) {
+        ctx.headers['host'] = ctx.headers['host'].replace(shareSuffix, '')
+      }
+      if (ctx.headers['origin']) {
+        ctx.headers['origin'] = ctx.headers['origin'].replace(shareSuffix, '')
+      }
+      if (ctx.headers['referer']) {
+        ctx.headers['referer'] = ctx.headers['referer'].replace(shareSuffix, '')
+      }
+      if (isMainSession) {
+        if (ctx.headers['cookie']) {
+          sharedSessions.setItem(shareId + '-cookie', ctx.headers['cookie'])
+        }
+        if (ctx.headers['authorization']) {
+          sharedSessions.setItem(shareId + '-authorization', ctx.headers['authorization'])
+        }
+      } else {
+        ctx.headers['cookie'] = sharedSessions.getItem(shareId + '-cookie')
+        ctx.headers['authorization'] = sharedSessions.getItem(shareId + '-authorization')
+      }
+    }
+    return { isMainSession, shareId }
   }
 
   async respondFile (ctx, filepath) {
@@ -670,6 +719,21 @@ class WebVPN {
         <script src="https://cdnjs.cloudflare.com/ajax/libs/vConsole/3.15.1/vconsole.min.js"></script>
         <script>new VConsole()</script>
       `
+      : ''
+    }
+    ${
+      ctx.meta.isMainSession
+      ?
+      `<script src="${prefix}/public/share-sessions.js"></script>`
+      : ''
+    }
+    ${
+      !ctx.meta.isMainSession && ctx.meta.shareId
+      ?
+      `<script>
+        const { localStorage: local } = ${sharedSessions.getItem(ctx.meta.shareId + '-clientCache') || '{}'}
+        for (let key in local) localStorage[key] = local[key]
+      </script>`
       : ''
     }
     <script>

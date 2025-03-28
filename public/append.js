@@ -141,7 +141,9 @@
       url = url.slice(url.indexOf('http'))
     }
     const u = new URL(url)
-    const host = window.base32.decode(u.host.split('.')[0])
+    let subdomain = u.host.split('.')[0]
+    if (subdomain.includes('-')) subdomain = subdomain.split('-')[0]
+    const host = window.base32.decode(subdomain)
     url = url.replace(u.origin, window.location.protocol + '//' + host)
     if (webvpn.hostname.includes(host) && webvpn.protocol === 'https:' && url.startsWith('http:')) {
       url = url.replace('http:', 'https:')
