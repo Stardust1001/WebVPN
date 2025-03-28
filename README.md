@@ -1,7 +1,10 @@
 # WebVPN
 
 ### Brief
-WebVPN, fully proxy all websites
+WebVPN, fully proxy all websites and support session sharing
+
+### Major Update!!!
+Session sharing is now supported!!! Multiple people can open the same website and use the same session based on a shared ID. One person can open a membership and multiple people can use it together!!!
 
 ### Install
 npm install
@@ -26,7 +29,10 @@ DNS pan-resolution is required, so please be sure to use an SSL wildcard certifi
 ### Contact
 Email: 2368354416@qq.com
 
-### Note
+### 重磅更新！！！
+现已支持会话共享！！！多个人可以根据共享id打开同一个网站，使用同一个会话。一个人开会员，多个人可以一同使用！！！
+
+### 简单介绍
 WebVPN可以“完全彻底”地转发和代理任何第三方网站，它不仅是Web上的VPN，还是高级内网穿透工具。还可以用来制作完美的钓鱼网站（因为它完美地转发了目标网站，同时还可以加入自己的代码。但我强烈建议你不要这么做，违法的事情不好。我只是想告诉你，这个WebVPN有多牛逼）。
 
 相信我，WebVPN名副其实，当你真正使用它时，你会发现它能做很多你从未想过的事情。虽然它还不够完美，但它应该具备的基本功能已经具备了。
