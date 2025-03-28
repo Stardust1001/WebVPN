@@ -387,8 +387,8 @@ class WebVPN {
           sharedSessions.setItem(shareId + '-authorization', ctx.headers['authorization'])
         }
       } else {
-        ctx.headers['cookie'] = sharedSessions.getItem(shareId + '-cookie')
-        ctx.headers['authorization'] = sharedSessions.getItem(shareId + '-authorization')
+        ctx.headers['cookie'] = sharedSessions.getItem(shareId + '-cookie') || ''
+        ctx.headers['authorization'] = sharedSessions.getItem(shareId + '-authorization') || ''
       }
     }
     return { isMainSession, shareId }
@@ -844,6 +844,9 @@ class WebVPN {
       headers['content-security-policy'].push('upgrade-insecure-requests')
     }
     headers['x-frame-options'] = ['allowall']
+    if (!ctx.meta.isMainSession && ctx.meta.shareId) {
+      headers['set-cookie'] = sharedSessions.getItem(ctx.meta.shareId + '-cookie')
+    }
     return headers
   }
 

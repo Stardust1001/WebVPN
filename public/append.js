@@ -127,7 +127,11 @@
       }
       return url
     }
-    const subdomain = window.base32.encode(u.host)
+    let subdomain = window.base32.encode(u.host)
+    const hostPrefix = location.hostname.split('.')[0]
+    if (hostPrefix.includes('-')) {
+      subdomain += '-' + hostPrefix.split('-').slice(-2).join('-')
+    }
     return url.replace(u.origin, site.origin.replace('www', subdomain))
   }
 
