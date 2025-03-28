@@ -437,16 +437,8 @@ class WebVPN {
       ctx.req.on('end', resolve)
     })
     if (hasFile) {
-      // TODO TODO TODO TODO TODO TODO
-      // 现在这只处理了单个文件，如果多个文件呢？也要调试处理
-      const text = Buffer.from(body.slice(0, 300), 'binary').toString()
       const formData = new FormData()
-      const binary = new Uint8Array(body)
-      const name = text.match(/name="([^"]+)"/)[1]
-      const filename = text.match(/filename="([^"]+)"/)[1]
-      const type = text.match(/Content-Type: ([^\n]+)/)[1]
-      const file = new File([binary], filename, { type })
-      formData.append(name, file)
+      formData.append(undefined, new File([new Uint8Array(body)], undefined, {}))
       body = formData
     }
     return body
