@@ -87,14 +87,14 @@
 <body>
 <h2>WebVPN</h2>
 
-<input type="text" id="input-url" autofocus placeholder="Enter the URL of the website you want to visit">
+<input type="text" id="input-url" tabindex="1" autofocus placeholder="Enter the URL of the website you want to visit">
 <div class="share">
   <input type="text" id="share-id" placeholder="Share id, unique. If you want to share sessions with others">
   <button id="generate" class="button">Generate</button>
 </div>
 <label><input type="radio" name="share-type" value="main" checked>main, session provider</label>
 <label><input type="radio" name="share-type" value="share">share, session consumer</label>
-<input type="text" id="output-url" placeholder="The above input will be automatically converted to the WebVPN service URL here">
+<input type="text" id="output-url" tabindex="2" placeholder="The above input will be automatically converted to the WebVPN service URL here">
 <div class="row button" id="goto">Goto</div>
 
 <script src="/public/base32.js"></script>
