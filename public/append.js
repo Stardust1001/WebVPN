@@ -317,18 +317,32 @@
   const _Function = window.Function
   window.Function = new Proxy(_Function, {
     construct (target, props) {
+      let isWithThis = false
       if (props.length) {
-        props[props.length - 1] = props[props.length - 1].replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(this === self ? __self__ : this)')
-        props[props.length - 1] = `with (__self__.__context__) { ${props[props.length - 1] || ''} }`
+        const code = props[props.length - 1]
+        isWithThis = code.includes('with(this === self ? __self__ : this)') || /[\s\{\}\;]?with\s*\(\s*this\s*\)/.test(code)
+        if (isWithThis) {
+          props[props.length - 1] = code.replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(this === self ? __self__ : this)')
+        } else {
+          props[props.length - 1] = `with (__self__.__context__) { ${code || ''} }`
+        }
       }
-      return new _Function(...props).bind(__context__)
+      const func = new _Function(...props)
+      return isWithThis ? func : func.bind(__context__)
     },
     apply (target, thisArg, props) {
+      let isWithThis = false
       if (props.length) {
-        props[props.length - 1] = props[props.length - 1].replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(this === self ? __self__ : this)')
-        props[props.length - 1] = `with (__self__.__context__) { ${props[props.length - 1] || ''} }`
+        const code = props[props.length - 1]
+        isWithThis = code.includes('with(this === self ? __self__ : this)') || /[\s\{\}\;]?with\s*\(\s*this\s*\)/.test(code)
+        if (isWithThis) {
+          props[props.length - 1] = code.replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(this === self ? __self__ : this)')
+        } else {
+          props[props.length - 1] = `with (__self__.__context__) { ${code || ''} }`
+        }
       }
-      return _Function(...props).bind(__context__)
+      const func = new _Function(...props)
+      return isWithThis ? func : func.bind(__context__)
     }
   })
 
