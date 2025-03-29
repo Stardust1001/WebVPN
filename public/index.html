@@ -26,7 +26,7 @@
     input:not([type="radio"]), .button {
       display: block;
       width: 80%;
-      max-width: 500px;
+      max-width: 520px;
       height: 36px;
       line-height: 36px;
       border-radius: 6px;
@@ -56,6 +56,24 @@
       position: relative;
       top: 2px;
     }
+    .share {
+      width: 80%;
+      max-width: 520px;
+      display: grid;
+      grid-template-columns: 1fr 100px;
+      grid-column-gap: 0;
+      margin: auto;
+    }
+    .share > * {
+      width: 100% !important;
+      border-radius: 6px 0 0 6px !important;
+    }
+    .share .button {
+      background-image: none;
+      border-radius: 0 !important;
+      color: #303333;
+      background-color: lightblue;
+    }
     .button {
       background-image: linear-gradient(to left, #4F4791, #011638);
       color: white;
@@ -69,7 +87,10 @@
 <h2>WebVPN</h2>
 
 <input type="text" id="input-url" autofocus placeholder="Enter the URL of the website you want to visit">
-<input type="text" id="share-id" placeholder="Share id, if you want to share sessions with others">
+<div class="share">
+  <input type="text" id="share-id" placeholder="Share id, unique. If you want to share sessions with others">
+  <button id="generate" class="button">Generate</button>
+</div>
 <label><input type="radio" name="share-type" value="main" checked>main, session provider</label>
 <label><input type="radio" name="share-type" value="share">share, session consumer</label>
 <input type="text" id="output-url" placeholder="The above input will be automatically converted to the WebVPN service URL here">
@@ -83,7 +104,8 @@ const shareIdInput = document.querySelector('#share-id')
 const shareTypeMainInput = document.querySelector('input[name="share-type"][value="main"]')
 const shareTypeShareInput = document.querySelector('input[name="share-type"][value="share"]')
 const outputInput = document.querySelector('#output-url')
-const button = document.querySelector('#goto')
+const generateButton = document.querySelector('#generate')
+const gotoButton = document.querySelector('#goto')
 
 urlInput.addEventListener('change', calcUrl)
 shareIdInput.addEventListener('change', calcUrl)
@@ -96,7 +118,11 @@ outputInput.addEventListener('keyup', (e) => {
   }
 })
 
-button.addEventListener('click', () => {
+generateButton.addEventListener('click', () => {
+  shareIdInput.value = Date.now().toString(16)
+})
+
+gotoButton.addEventListener('click', () => {
   window.open(outputInput.value)
 })
 
