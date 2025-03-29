@@ -9,6 +9,6 @@
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({ localStorage: { ...localStorage } })
-  }).then(res => res.json())
+  })
 
 })();
