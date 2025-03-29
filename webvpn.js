@@ -732,7 +732,8 @@ class WebVPN {
       !ctx.meta.isMainSession && ctx.meta.shareId
       ?
       `<script>
-        const { localStorage: local } = ${sharedSessions.getItem(ctx.meta.shareId + '-clientCache') || '{}'}
+        const { cookie, localStorage: local } = ${sharedSessions.getItem(ctx.meta.shareId + '-clientCache') || '{}'}
+        document.cookie += cookie
         for (let key in local) localStorage[key] = local[key]
       </script>`
       : ''
@@ -846,7 +847,8 @@ class WebVPN {
     }
     headers['x-frame-options'] = ['allowall']
     if (!ctx.meta.isMainSession && ctx.meta.shareId) {
-      headers['set-cookie'] = sharedSessions.getItem(ctx.meta.shareId + '-cookie')
+      const cookie = sharedSessions.getItem(ctx.meta.shareId + '-cookie')
+      if (cookie) headers['set-cookie'] = cookie
     }
     return headers
   }

