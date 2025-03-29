@@ -1180,7 +1180,7 @@
       for (const key in logs) {
         if (typeof logs[key] === 'function') continue 
         for (const sub in logs[key]) {
-          allLogs = allLogs.concat(logs[key][sub])
+          allLogs.push(...logs[key][sub])
         }
       }
       return allLogs
