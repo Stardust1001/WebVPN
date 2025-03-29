@@ -177,15 +177,14 @@ class WebVPN {
   async serveWww (ctx) {
     if (ctx.url === '/') {
       await this.respondFile(ctx, path.join('public', 'index.html'))
-    } else if (ctx.url === '/share-sessions') {
+    } else if (ctx.url.startsWith('/share-sessions')) {
       if (ctx.method === 'POST') {
         const body = await this.calcRequestBody(ctx)
-        const shareId = ctx.headers['origin'].split('.')[0].split('-').pop()
-        sharedSessions.setItem(shareId + '-clientCache', body)
+        sharedSessions.setItem(ctx.query.shareId + '-clientCache', body)
       }
       return ctx.res.writeHead(200, {
         'access-control-allow-credentials': true,
-        'access-control-allow-origin': ctx.headers['origin'],
+        'access-control-allow-origin': ctx.headers['origin'] || '*',
         'access-control-allow-headers': '*',
         'access-control-allow-methods': '*'
       })
@@ -683,7 +682,7 @@ class WebVPN {
 
   appendScript (ctx, res) {
     const { httpsEnabled, site, interceptLog, debug, pluginsEanbled } = this.config
-    const { disableJump = this.config.disableJump, confirmJump = this.config.confirmJump } = ctx.meta
+    const { disableJump = this.config.disableJump, confirmJump = this.config.confirmJump, isMainSession, shareId } = ctx.meta
     const { base, scheme, target } = ctx.meta
     const { data } = res
     const prefix = site.origin.slice(site.origin.indexOf('//'))
@@ -697,7 +696,9 @@ class WebVPN {
           base: '${base}',
           interceptLog: ${interceptLog},
           disableJump: ${disableJump},
-          confirmJump: ${confirmJump}
+          confirmJump: ${confirmJump},
+          isMainSession: ${isMainSession},
+          shareId: '${shareId}'
         };
 
         ${ctx.meta.appendCode || ''}
