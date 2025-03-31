@@ -312,6 +312,18 @@ class WebVPN {
       return
     }
 
+    if (ctx.meta.mime === 'html') {
+      const firstChar = res.data[0]
+      const lastChar = res.data[res.data.length - 1]
+      if (
+        firstChar === '[' && lastChar === ']'
+        || firstChar === '{' && lastChar === '}'
+      ) {
+        ctx.meta.mime = 'json'
+        ctx.meta.done = true
+      }
+    }
+
     if (!ctx.meta.done && (await this.afterRequest(ctx, res))) {
       return
     }
