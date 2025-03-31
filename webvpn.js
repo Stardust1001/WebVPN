@@ -398,8 +398,10 @@ class WebVPN {
           sharedSessions.setItem(shareId + '-authorization', ctx.headers['authorization'])
         }
       } else {
-        ctx.headers['cookie'] = sharedSessions.getItem(shareId + '-cookie') || ''
-        ctx.headers['authorization'] = sharedSessions.getItem(shareId + '-authorization') || ''
+        const cookie = sharedSessions.getItem(shareId + '-cookie')
+        const authorization = sharedSessions.getItem(shareId + '-authorization')
+        if (cookie) ctx.headers['cookie'] = cookie
+        if (authorization) ctx.headers['authorization'] = authorization
       }
     }
     return { isMainSession, shareId }
