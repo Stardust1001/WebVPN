@@ -752,6 +752,7 @@ class WebVPN {
       `<script>
         const { cookie, localStorage: local } = ${sharedSessions.getItem(ctx.meta.shareId + '-clientCache') || '{}'}
         document.cookie += cookie
+        localStorage.clear()
         for (let key in local) localStorage[key] = local[key]
       </script>`
       : ''
