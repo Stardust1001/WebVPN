@@ -381,15 +381,11 @@ class WebVPN {
       ctx.subdomain = parts[0]
       isMainSession = parts[1] === 'main'
       shareId = parts[2]
-      const shareSuffix = parts.slice(1).join('-')
-      if (ctx.headers['host']) {
-        ctx.headers['host'] = ctx.headers['host'].replace(shareSuffix, '')
-      }
-      if (ctx.headers['origin']) {
-        ctx.headers['origin'] = ctx.headers['origin'].replace(shareSuffix, '')
-      }
-      if (ctx.headers['referer']) {
-        ctx.headers['referer'] = ctx.headers['referer'].replace(shareSuffix, '')
+      const shareSuffix = '-' + parts.slice(1).join('-')
+      for (let key of ['host', 'origin', 'referer']) {
+        if (ctx.headers[key]) {
+          ctx.headers[key] = ctx.headers[key].replace(shareSuffix, '')
+        }
       }
       if (isMainSession) {
         if (ctx.headers['cookie']) {
@@ -403,6 +399,14 @@ class WebVPN {
         const authorization = sharedSessions.getItem(shareId + '-authorization')
         if (cookie) ctx.headers['cookie'] = cookie
         if (authorization) ctx.headers['authorization'] = authorization
+      }
+    }
+    for (let key of ['origin', 'referer']) {
+      if (ctx.headers[key]?.includes('-')) {
+        const subdomain = new URL(ctx.headers[key]).hostname.split('.')[0]
+        if (subdomain.includes('-')) {
+          ctx.headers[key] = ctx.headers[key].replace('-' + subdomain.split('-').slice(1).join('-'), '')
+        }
       }
     }
     return { isMainSession, shareId }

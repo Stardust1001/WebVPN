@@ -1,4 +1,5 @@
 (async function () {
+  if (top !== window) return
 
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
