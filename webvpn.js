@@ -3,6 +3,7 @@ import https from 'node:https'
 import http from 'node:http'
 import path from 'node:path'
 import cluster from 'node:cluster'
+import { ZSTDDecompress } from 'simple-zstd'
 import chalk from 'chalk'
 import Koa from 'koa'
 import fetch, { File, FormData } from 'node-fetch'
@@ -907,8 +908,19 @@ class WebVPN {
     if (ctx.meta.mime !== 'html' && ctx.meta.mime !== 'js') {
       return res.text()
     }
-    const buffer = Buffer.from(await res.arrayBuffer())
-    const text = iconv.decode(buffer, 'utf-8')
+    let text
+    if (res.headers.get('content-encoding') === 'zstd') {
+      res.headers.delete('content-encoding')
+      text = await new Promise(resolve => {
+        let body = ''
+        const stream = res.body.pipe(ZSTDDecompress())
+        stream.on('data', chunk => body += chunk)
+        stream.on('end', () => resolve(body))
+      })
+    } else {
+      const buffer = Buffer.from(await res.arrayBuffer())
+      text = iconv.decode(buffer, 'utf-8')
+    }
     let contentType = headers['content-type']?.[0] || ''
     let charset = contentType.split('charset=')[1]
     if (!charset) {
