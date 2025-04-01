@@ -121,7 +121,7 @@ outputInput.addEventListener('keyup', (e) => {
 })
 
 generateButton.addEventListener('click', () => {
-  shareIdInput.value = Date.now().toString(16)
+  shareIdInput.value = Date.now().toString(16).slice(-4)
   calcUrl()
 })
 
