@@ -1,6 +1,6 @@
 {
   "name": "WebVPN",
-  "version": "0.6.0",
+  "version": "0.8.0",
   "description": "WebVPN, proxy third-party website",
   "main": "index.js",
   "type": "module",
