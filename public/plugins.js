@@ -94,17 +94,17 @@
     let box = document.querySelector('#-pd-')
     if (!box) {
       addStyle(`
-      #-pd- { position: fixed; z-index: 999999; font-size: 14px; box-sizing: border-box; left: 10px; top: 10px; width: 50px; height: 30px; padding: 10px; background-color: white; box-shadow: 0 0 5px 5px rgba(60, 150, 150, 0.5); color: #303333; overflow: hidden; border-radius: 4px; }
-      #-pd- .flex-center { display: flex; align-items: center; justify-content: center; }
-      #-pd- .mask { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 1000000; background-color: white; text-align: center; font-size: 13px; }
-      #-pd-:hover { width: 360px; height: auto; max-height: 50vh; overflow-y: scroll; }
-      #-pd-:hover .mask { display: none; }
-      #-pd- .item { border-bottom: 1px solid #a0aaaa; padding-bottom: 5px; margin-bottom: 7px; display: none; }
-      #-pd-:hover .item { display: flex; }
-      #-pd- .item:last-child { border-bottom: 0; padding-bottom: 0; margin-bottom: 0; }
-      #-pd- .title { flex: 1; }
-      #-pd- .link { flex: 5; color: orange; cursor: pointer; display: inline-block; width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      #-pd- .link:hover { color: orangered; text-decoration: underline; }
+        #-pd- { position: fixed; z-index: 999999; font-size: 14px; box-sizing: border-box; left: 10px; top: 10px; width: 50px; height: 30px; padding: 10px; background-color: white; box-shadow: 0 0 5px 5px rgba(60, 150, 150, 0.5); color: #303333; overflow: hidden; border-radius: 4px; }
+        #-pd- .flex-center { display: flex; align-items: center; justify-content: center; }
+        #-pd- .mask { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 1000000; background-color: white; text-align: center; font-size: 13px; }
+        #-pd-:hover { width: 360px; height: auto; max-height: 50vh; overflow-y: scroll; }
+        #-pd-:hover .mask { display: none; }
+        #-pd- .item { border-bottom: 1px solid #a0aaaa; padding-bottom: 5px; margin-bottom: 7px; display: none; }
+        #-pd-:hover .item { display: flex; }
+        #-pd- .item:last-child { border-bottom: 0; padding-bottom: 0; margin-bottom: 0; }
+        #-pd- .title { flex: 1; }
+        #-pd- .link { flex: 5; color: orange; cursor: pointer; display: inline-block; width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        #-pd- .link:hover { color: orangered; text-decoration: underline; }
       `)
       box = document.createElement('div')
       box.id = '-pd-'
