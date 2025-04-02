@@ -913,7 +913,7 @@ class WebVPN {
     if (ctx.meta.mime !== 'html' && ctx.meta.mime !== 'js') {
       return res.text()
     }
-    let text
+    let text, buffer
     if (res.headers.get('content-encoding') === 'zstd') {
       res.headers.delete('content-encoding')
       text = await new Promise(resolve => {
@@ -923,11 +923,11 @@ class WebVPN {
         stream.on('end', () => resolve(body))
       })
     } else {
-      const buffer = Buffer.from(await res.arrayBuffer())
+      buffer = Buffer.from(await res.arrayBuffer())
       text = iconv.decode(buffer, 'utf-8')
     }
     let contentType = headers['content-type']?.[0] || ''
-    let charset = contentType.split('charset=')[1]
+    let charset = contentType.split('charset=')[1]?.toLowerCase()
     if (!charset) {
       let match = text.match(/<meta charset=[\"\'][^"'\/>]+/)
       if (!match) {
@@ -937,18 +937,17 @@ class WebVPN {
         return text
       }
       charset = match[0].split('charset=')[1].replaceAll('"', '').toLowerCase()
-      if (charset === 'utf-8') {
-        return text
-      }
       contentType = 'text/html; charset=' + charset
-    } else {
-      if (charset.toLowerCase() === 'utf-8') {
-        return text
-      }
+    }
+    if (charset === 'utf-8' || charset === 'utf8') {
+      return text
     }
     headers['content-type'] = [contentType.replace(charset, 'utf-8')]
-    const data = iconv.decode(Buffer.from(buffer), charset)
-    return data.replace(/<meta charset="\w+">/, '<meta charset="utf-8">')
+    if (buffer) {
+      text = iconv.decode(buffer, charset)
+      text = text.replace(/<meta charset="\w+">/, '<meta charset="utf-8">')
+    }
+    return text
   }
 
   isJsonpResponse (data, ctx) {
