@@ -120,11 +120,15 @@
     item.classList.add('item', 'flex-center')
     const isVideo = type === 'video'
     item.innerHTML = `<span class="title">${isVideo ? '视频' : '音频'}-${name}</span>`
-    const link = document.createElement('span')
+    const link = document.createElement('a')
     link.classList.add('link')
+    link.href = url
     link.textContent = url
     link.title = url
-    link.onclick = () => download(url, blob, isVideo ? `视频-${name}.mp4` : `音频-${name}.mp3`)
+    link.onclick = e => {
+      e.preventDefault()
+      download(url, blob, isVideo ? `视频-${name}.mp4` : `音频-${name}.mp3`)
+    }
     item.appendChild(link)
     box.appendChild(item)
   }
