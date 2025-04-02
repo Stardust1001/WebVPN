@@ -700,8 +700,8 @@ class WebVPN {
 
   appendScript (ctx, res) {
     const { httpsEnabled, site, interceptLog, debug, pluginsEanbled } = this.config
-    const { disableJump = this.config.disableJump, confirmJump = this.config.confirmJump, isMainSession, shareId } = ctx.meta
-    const { base, scheme, target } = ctx.meta
+    const { disableJump = this.config.disableJump, confirmJump = this.config.confirmJump } = ctx.meta
+    const { base, scheme, target, isMainSession, shareId, appendScriptCode } = ctx.meta
     const { data } = res
     const prefix = site.origin.slice(site.origin.indexOf('//'))
     const code = `
@@ -741,16 +741,16 @@ class WebVPN {
       : ''
     }
     ${
-      ctx.meta.isMainSession
+      isMainSession
       ?
       `<script src="${prefix}/public/share-sessions.js"></script>`
       : ''
     }
     ${
-      !ctx.meta.isMainSession && ctx.meta.shareId
+      !isMainSession && shareId
       ?
       `<script>
-        const { cookie, localStorage: local } = ${sharedSessions.getItem(ctx.meta.shareId + '-clientCache') || '{}'}
+        const { cookie, localStorage: local } = ${sharedSessions.getItem(shareId + '-clientCache') || '{}'}
         document.cookie += cookie
         localStorage.clear()
         for (let key in local) localStorage[key] = local[key]
@@ -761,7 +761,7 @@ class WebVPN {
       const ss = Array.from(document.querySelectorAll('script'));
       ss.forEach(script => script.remove());
     </script>
-    ${ctx.meta.appendScriptCode || ''}
+    ${appendScriptCode || ''}
     `
     const hasDoctype = /^\s*?\<\!DOCTYPE html\>/i.test(res.data)
     return (hasDoctype ? '<!DOCTYPE html>\n' : '') + code + data
