@@ -987,7 +987,19 @@ class WebVPN {
 
   afterRequest (ctx, res) { }
 
-  beforeResponse (ctx, res) { }
+  beforeResponse (ctx, res) {
+    // 禁用 module 和严格模式，以支持 with 语句
+    if (typeof res.data === 'string') {
+      res.data = res.data.replaceAll('type="module"', 'type="mod"')
+                .replaceAll('type=module', 'type=mod')
+                .replaceAll('nomodule', 'nomod')
+                .replaceAll(' integrity', ' no-integrity')
+                .replaceAll('use strict', '')
+                .replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(this === self ? __self__ : this)')
+                // 这个替换并不优雅，也不完整，有问题就取消
+                .replace(/location\.(hostname|host|origin|href|protocol|navigate|assign|replace|reload|toString)/g, 'location.__$1__')
+    }
+  }
 }
 
 export default WebVPN
