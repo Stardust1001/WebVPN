@@ -716,7 +716,8 @@ class WebVPN {
           disableJump: ${disableJump},
           confirmJump: ${confirmJump},
           isMainSession: ${isMainSession},
-          shareId: '${shareId}'
+          shareId: '${shareId}',
+          hooks: {}
         };
 
         ${ctx.meta.appendCode || ''}

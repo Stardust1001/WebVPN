@@ -132,7 +132,12 @@
     if (hostPrefix.includes('-')) {
       subdomain += '-' + hostPrefix.split('-').slice(-2).join('-')
     }
-    return url.replace(u.origin, site.origin.replace('www', subdomain))
+    const siteOrigin = site.origin.replace('www', subdomain)
+    url = url.replace(u.origin, siteOrigin)
+    if (webvpn.hooks.transformUrl) {
+      url = webvpn.hooks.transformUrl(url, u.origin, siteOrigin)
+    }
+    return url
   }
 
   const decodeUrl = (url) => {
@@ -151,6 +156,9 @@
     url = url.replace(u.origin, window.location.protocol + '//' + host)
     if (webvpn.hostname.includes(host) && webvpn.protocol === 'https:' && url.startsWith('http:')) {
       url = url.replace('http:', 'https:')
+    }
+    if (webvpn.hooks.decodeUrl) {
+      url = webvpn.hooks.decodeUrl(url)
     }
     return url
   }
