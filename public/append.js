@@ -668,8 +668,6 @@
       win.__location__['__' + key + '__'] = win.location['_' + key]
     }
 
-  const globalCons = ['window', 'document', 'globalThis', 'parent', 'self', 'top']
-
     for (const con of globalCons) {
       if (
         con === 'globalThis'
