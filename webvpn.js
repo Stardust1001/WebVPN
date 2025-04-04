@@ -854,6 +854,7 @@ class WebVPN {
     }
     if (headers['set-cookie']) {
       headers['set-cookie'] = headers['set-cookie'].map(e => {
+        e = e.replace(' Secure;', '')
         if (!/domain=/i.test(e)) return e
         return e.split('; ').map(p => {
           if (!/domain=/i.test(p)) return p
