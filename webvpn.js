@@ -189,7 +189,7 @@ class WebVPN {
         'access-control-allow-headers': '*',
         'access-control-allow-methods': '*'
       })
-    } {
+    } else {
       await this.checkPublic(ctx)
     }
   }
