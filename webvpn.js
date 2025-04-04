@@ -14,7 +14,12 @@ import { fsUtils, Storage } from '@stardust_js/node'
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false })
 
-const sharedSessions = new Storage({ filepath: './shared-sessions.json', autoLoad: true })
+const sharedSessions = new Storage({ filepath: './shared-sessions.json', autoLoad: true, autoSave: false })
+setInterval(async () => {
+  const cache = { ...sharedSessions.cache }
+  await sharedSessions.load()
+  await sharedSessions.save({ ...sharedSessions.cache, ...cache })
+}, 10e3)
 
 class WebVPN {
   constructor (config) {
