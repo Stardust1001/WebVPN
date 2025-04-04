@@ -701,7 +701,7 @@ class WebVPN {
   appendScript (ctx, res) {
     const { httpsEnabled, site, interceptLog, debug, pluginsEanbled } = this.config
     const { disableJump = this.config.disableJump, confirmJump = this.config.confirmJump } = ctx.meta
-    const { base, scheme, target, isMainSession, shareId, appendScriptCode } = ctx.meta
+    const { base, scheme, target, isMainSession, shareId, appendCode, initInterceptionCode, appendScriptCode } = ctx.meta
     const { data } = res
     const prefix = site.origin.slice(site.origin.indexOf('//'))
     const code = `
@@ -716,15 +716,16 @@ class WebVPN {
           disableJump: ${disableJump},
           confirmJump: ${confirmJump},
           isMainSession: ${isMainSession},
-          shareId: '${shareId}'
+          shareId: '${shareId || ''}'
         };
 
-        ${ctx.meta.appendCode || ''}
+        ${appendCode || ''}
       })();
     </script>
     <script src="${prefix}/public/htmlparser.js"></script>
     <script src="${prefix}/public/html2json.js"></script>
     <script src="${prefix}/public/base32.js"></script>
+    <script>${initInterceptionCode || ''}</script>
     <script src="${prefix}/public/append.js"></script>
     ${
       pluginsEanbled
