@@ -1059,6 +1059,9 @@
         if (linkTags.includes(json.tag) && urlAttrs.includes(key)) {
           attr[key] = transformUrl(attr[key])
         }
+        if (attr[key].includes('"')) {
+          attr[key] = attr[key].replaceAll('\'', '\\\'').replaceAll('"', '\'')
+        }
         node.setAttribute(key, attr[key], 'custom')
       }
     } else if (json.node === 'text') {
