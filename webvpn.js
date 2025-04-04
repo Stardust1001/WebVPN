@@ -634,9 +634,11 @@ class WebVPN {
   }
 
   transformUrl (ctx, url) {
+    const { httpsEnabled, site } = this.config
     const u = new URL(url)
     const subdomain = base32.encode(u.host)
-    return url.replace(u.origin, (u.protocol + '//' + this.config.site.host).replace('www', subdomain))
+    const protocol = httpsEnabled ? u.protocol : 'http:'
+    return url.replace(u.origin, (protocol + '//' + site.host).replace('www', subdomain))
   }
 
   processHtml (ctx, res) {
