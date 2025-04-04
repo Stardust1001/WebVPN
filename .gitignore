@@ -3,3 +3,4 @@ cache/
 .DS_Store
 yarn.lock
 shared-sessions.json
+reports.json
