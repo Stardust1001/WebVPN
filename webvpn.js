@@ -380,7 +380,7 @@ class WebVPN {
   }
 
   checkShareSession (ctx) {
-    let isMainSession, shareId
+    let isMainSession = false, shareId = ''
     if (ctx.subdomain.includes('-')) {
       const parts = ctx.subdomain.split('-')
       ctx.subdomain = parts[0]
@@ -723,7 +723,7 @@ class WebVPN {
           disableJump: ${disableJump},
           confirmJump: ${confirmJump},
           isMainSession: ${isMainSession},
-          shareId: '${shareId || ''}'
+          shareId: '${shareId}'
         };
 
         ${appendCode || ''}
