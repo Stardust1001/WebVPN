@@ -174,6 +174,9 @@
       node[urlAttr] = newUrl
     }
     replaceNodesUrls(node)
+    if (node.nodeName === 'SCRIPT') {
+      node.removeAttribute('integrity')
+    }
     if (node.nodeName === 'SCRIPT' && !node.src && !node.textContent.includes('self.__context__')) {
       if (node.textContent[0] === '{' || node.textContent[0] === '[') {
         try {
