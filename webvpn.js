@@ -64,8 +64,14 @@ class WebVPN {
       /upgrade-insecure-requests/i
     ]
     this.ignoreResponseHeaderRegexps = [
+      /content-length/i,
+      /x-content-type-options/i,
       /report-to/i,
-      /(content-length|x-content-type-options|x-xss-protection|cross-origin-resource-policy|cross-origin-opener-policy|content-security-policy-report-only)/i,
+      /x-xss-protection/i,
+      /cross-origin-resource-policy/i,
+      /cross-origin-opener-policy/i,
+      /cross-origin-embedder-policy/i,
+      /content-security-policy-report-only/i,
     ]
 
     this.noTransformMimes = ['wasm', 'font', 'json', 'image', 'video', 'audio', 'pdf-office']
