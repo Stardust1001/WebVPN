@@ -1,5 +1,3 @@
-// import HttpProxyAgent from 'http-proxy-agent'
-
 import WebVPN from './webvpn.js'
 import config from './config.js'
 
@@ -7,19 +5,9 @@ import config from './config.js'
 // 有些网站需要特殊处理，那么可以覆盖父类的某个方法，加上自定义的实现，来自定义处理
 
 class VPN extends WebVPN {
-  // 初始化 WebVPN
-  constructor (config) {
-    super(config)
-  }
-
   // 发送请求之前
   async beforeRequest (ctx, options) {
-    // options.agent = new HttpProxyAgent({
-    //   protocol: 'http:',
-    //   host: '',
-    //   port: '',
-    //   rejectUnauthorized: false
-    // })
+
   }
 
   // 获取请求之后

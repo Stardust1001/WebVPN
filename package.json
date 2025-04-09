@@ -19,7 +19,6 @@
     "@stardust_js/node": "latest",
     "base32": "^0.0.7",
     "chalk": "^5.0.1",
-    "http-proxy-agent": "^5.0.0",
     "iconv-lite": "^0.6.3",
     "koa": "^2.13.4",
     "node-fetch": "^3.1.0",
