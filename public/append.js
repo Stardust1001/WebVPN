@@ -121,7 +121,7 @@
       url = url.slice(url.indexOf('http'))
     }
     const u = new URL(url)
-    if (u.hostname.includes(vpnDomain)) {
+    if (u.host.includes(vpnDomain)) {
       if (url.startsWith('http') && webvpn.protocol === 'http:') {
         return url.replace('https://', 'http://')
       }
