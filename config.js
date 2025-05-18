@@ -29,4 +29,9 @@ export default {
   debug: false,
   // 是否启用插件
   pluginsEanbled: true,
+  // 无法使用泛解析情况下，可使用单个二级域名代理指定网站
+  subdomains: {
+    'baidu': 'www.baidu.com',
+    'im': 'im.qq.com'
+  }
 }

@@ -158,6 +158,20 @@ class WebVPN {
     }).call(self.__context__.self)
     `
 
+    this.replaceSubdomainsCode = ''
+    if (config.subdomains && Object.keys(config.subdomains).length) {
+      this.replaceSubdomainsCode = `
+        const { encode, decode } = base32
+        base32.subdomains = ${JSON.stringify(config.subdomains)}
+        base32.domainDict = {}
+        Object.entries(base32.subdomains).forEach(([sub, name]) => base32.domainDict[name] = sub)
+
+        base32.encode = text => base32.domainDict[text] || encode(text)
+        base32.decode = text => base32.subdomains[text] || decode(text)
+      `
+      eval(this.replaceSubdomainsCode)
+    }
+
     this.public = []
     this.initPublic()
   }
@@ -738,6 +752,7 @@ class WebVPN {
     <script src="${prefix}/public/htmlparser.js"></script>
     <script src="${prefix}/public/html2json.js"></script>
     <script src="${prefix}/public/base32.js"></script>
+    <script>${this.replaceSubdomainsCode || ''}</script>
     <script>${initInterceptionCode || ''}</script>
     <script src="${prefix}/public/append.js"></script>
     ${
