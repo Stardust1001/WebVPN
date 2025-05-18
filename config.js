@@ -30,6 +30,7 @@ export default {
   // 是否启用插件
   pluginsEanbled: true,
   // 无法使用泛解析情况下，可使用单个二级域名代理指定网站
+  // 但请注意，有些网站会引用第三方网站的资源，那么第三方网站你也要代理
   subdomains: {
     'baidu': 'www.baidu.com',
     'im': 'im.qq.com'
