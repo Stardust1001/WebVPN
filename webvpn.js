@@ -10,7 +10,7 @@ import fetch, { File, FormData } from 'node-fetch'
 import iconv from 'iconv-lite'
 import base32 from 'base32'
 
-import { fsUtils, Storage } from '@stardust_js/node'
+import { fsUtils, Storage } from '@wp1001/node'
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false })
 

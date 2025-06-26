@@ -16,7 +16,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@stardust_js/node": "latest",
+    "@wp1001/node": "latest",
     "base32": "^0.0.7",
     "chalk": "^5.0.1",
     "iconv-lite": "^0.6.3",
