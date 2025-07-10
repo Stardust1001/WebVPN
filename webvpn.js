@@ -499,7 +499,7 @@ class WebVPN {
       redirect: 'manual',
       ...this.getRequestOptions(ctx)
     }
-    if (method === 'POST' || method === 'PUT') {
+    if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
       options.body = await this.calcRequestBody(ctx)
     }
     const result = await this.beforeRequest(ctx, options)
