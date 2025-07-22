@@ -190,8 +190,7 @@
   }
 
   const transformHtml = (html, root) => {
-    const json = html2json(html)
-    const childs = json2dom(json, root)
+    const childs = html2dom(html, root)
     const doc = document.createDocumentFragment()
     for (const child of childs) {
       doc.appendChild(child)
@@ -967,8 +966,7 @@
     set (html) {
       html = (html || '').toString()
       // 去除无用的 \n，减少 DOM 渲染，提高执行效率（不会是 pre 元素吧？）
-      const json = html2json(html)
-      const childs = json2dom(json, this)
+      const childs = html2dom(html, this)
       console.log(
         '%cDOM 操作 拦截 innerHTML : ' + (html.length > 100 ? (html.slice(0, 100) + '...') : html),
         'color: #606666;background-color: lightblue;padding: 5px 10px;'
@@ -995,8 +993,7 @@
     },
     set (html) {
       html = (html || '').toString()
-      const json = html2json(html)
-      const childs = json2dom(json, this)
+      const childs = html2dom(html, this)
       console.log(
         '%cDOM 操作 拦截 outerHTML : ' + (html.length > 100 ? (html.slice(0, 100) + '...') : html),
         'color: #606666;background-color: lightblue;padding: 5px 10px;'
@@ -1041,52 +1038,10 @@
     }
   })
 
-  const json2dom = (json, root) => {
-    const isSvg = root && root instanceof SVGElement || json.tag === 'svg'
-    let node
-
-    if (json.node === 'element' || json.node === 'root') {
-      if (isSvg) {
-        node = document.createElementNS(SVG_NS, json.tag)
-      } else {
-        node = document.createElement(json.tag || 'div')
-      }
-      const attr = json.attr || {}
-      for (const key in attr) {
-        if (Array.isArray(attr[key])) {
-          attr[key] = attr[key].join(' ')
-        }
-        if (hasEscaped(attr[key], 2)) {
-          attr[key] = replaceEscaped(attr[key], 2)
-        }
-        if (linkTags.includes(json.tag) && urlAttrs.includes(key)) {
-          attr[key] = transformUrl(attr[key])
-        }
-        if (attr[key].includes('"')) {
-          attr[key] = attr[key].replaceAll('\'', '\\\'').replaceAll('"', '\'')
-        }
-        node.setAttribute(key, attr[key], 'custom')
-      }
-    } else if (json.node === 'text') {
-      for (let i = 1; i < 4; i++) {
-        if (hasEscaped(json.text, i)) {
-          json.text = replaceEscaped(json.text, i)
-        }
-      }
-      node = document.createTextNode(json.text)
-    }
-
-    if (json.child) {
-      for (const ele of json.child) {
-        if (ele.node === 'comment') continue
-        const dom = json2dom(ele, node)
-        dom._type_ = 'custom'
-        node.appendChild(dom)
-      }
-    }
-
-    if (json.node !== 'root') return node
-    return Array.from(node.childNodes)
+  const parser = new DOMParser()
+  const html2dom = (html, root) => {
+    const doc = parser.parseFromString(html, 'text/html')
+    return Array.from(doc.body.childNodes)
   }
 
   const hasEscaped = (text, index) => {

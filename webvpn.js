@@ -749,8 +749,6 @@ class WebVPN {
         ${appendCode || ''}
       })();
     </script>
-    <script src="${prefix}/public/htmlparser.js"></script>
-    <script src="${prefix}/public/html2json.js"></script>
     <script src="${prefix}/public/base32.js"></script>
     <script>${this.replaceSubdomainsCode || ''}</script>
     <script>${initInterceptionCode || ''}</script>

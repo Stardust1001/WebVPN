@@ -12,8 +12,7 @@
 
 ## prepend append before after 是属于 DOM4 的标准
 
-## html 转DOM树，可以先 htmlparser 解析，然后用一个小插件 html2json 把 html 代码转为表示 dom 树的 json
-## 可以再根据 json 添加DOM树到文档上 html2json json2dom
+## html 转DOM树, DOMParser
 
 ## html5 有新的 template 元素，想要操作其内容，需通过其 .content 属性
 
