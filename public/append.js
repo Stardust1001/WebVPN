@@ -40,8 +40,6 @@
   const fetchUrls = []
   const domUrls = []
 
-  const SVG_NS = 'http://www.w3.org/2000/svg'
-
   const interceptLog = webvpn.interceptLog
   const disableJump = webvpn.disableJump
   const confirmJump = webvpn.confirmJump
