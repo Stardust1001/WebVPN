@@ -386,7 +386,13 @@
     if (isInputUrl) {
       input = newUrl
     } else {
-      input.url = newUrl
+      const init = {}
+      for (let key in input) {
+        const value = input[key]
+        if (key === 'url' || typeof value === 'function') continue
+        init[key] = value
+      }
+      input = new Request(newUrl, init)
     }
     return fetch(input, init)
   }
