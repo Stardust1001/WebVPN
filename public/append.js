@@ -687,7 +687,11 @@
           }
           const value = obj[property]
           // 如果 value 是 function，不一定是真的函数，也可能是 Promise 这种，Promise 有 prototype
-          return (typeof value === 'function' && !value.prototype) ? value.bind(obj) : value
+          if (typeof value === 'function' && !value.prototype) {
+            if (property === 'fetch') return window.fetch
+            return value.bind(obj)
+          }
+          return value
         },
         set (obj, property, value) {
           if (property === 'window') return false
