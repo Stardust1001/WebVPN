@@ -719,7 +719,7 @@ class WebVPN {
   }
 
   calcHoistIdentifiersCode (code) {
-    const matches = [...code.matchAll(/(function|class)\s+(\w+)\s*\(/g)]
+    const matches = [...code.matchAll(/(function|class)\s+([\$\_\w]+)\s*\(/g)]
     if (!matches.length) return ''
     const names = matches.map(m => m[2]).filter(k => !this.jsKeywords.includes(k))
     return names.map(n => `try { self.${n} = ${n}; } catch {}`).join('\n')
