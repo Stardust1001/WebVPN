@@ -300,6 +300,28 @@
     return url.split('/').slice(0, -1).join('/') + '/' + path
   }
 
+  const getNodeName = (node) => {
+    return (node.nodeName || node.tagName || '').toLowerCase()
+  }
+
+  const domLog = (node, funcName) => {
+    const link = getNodeUrl(node)[0]
+    if (link) {
+      console.log(
+        '%cDOM 操作 拦截 ' + funcName + ' : ' + node.nodeName.toLowerCase() + ' - ' + link,
+        'color: #606666;background-color: yellow;padding: 5px 10px;'
+      )
+      domUrls.push(link)
+    }
+  }
+
+  const srcLog = (tag, urlAttr, url) => {
+    console.log(
+      '%cDOM 操作 拦截 ' + tag + ' ' + urlAttr + ' : ' + url,
+      'color: #606666;background-color: lime;padding: 5px 10px;'
+    )
+  }
+
   // Object.assign 拦截
   const _assign = Object.assign
   Object.assign = function (target, ...sources) {
@@ -1077,28 +1099,6 @@
     if (index === 3) {
       return text.replaceAll(/&#x\w+;/g, (part) => String.fromCharCode(parseInt(part.slice(3, -1), 16)))
     }
-  }
-
-  const getNodeName = (node) => {
-    return (node.nodeName || node.tagName || '').toLowerCase()
-  }
-
-  const domLog = (node, funcName) => {
-    const link = getNodeUrl(node)[0]
-    if (link) {
-      console.log(
-        '%cDOM 操作 拦截 ' + funcName + ' : ' + node.nodeName.toLowerCase() + ' - ' + link,
-        'color: #606666;background-color: yellow;padding: 5px 10px;'
-      )
-      domUrls.push(link)
-    }
-  }
-
-  const srcLog = (tag, urlAttr, url) => {
-    console.log(
-      '%cDOM 操作 拦截 ' + tag + ' ' + urlAttr + ' : ' + url,
-      'color: #606666;background-color: lime;padding: 5px 10px;'
-    )
   }
 
   window.addEventListener('load', replaceNodesUrls)
