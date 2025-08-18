@@ -48,7 +48,8 @@ class WebVPN {
       'json': 'application/json',
       'video': 'video/mp4, application/vnd.apple.mpegurl',
       'audio': 'audio/webm, audio/mpeg',
-      'stream': 'application/octet-stream, application/protobuffer'
+      'stream': 'application/octet-stream, application/protobuffer',
+      'event-stream': 'text/event-stream'
     }
     this.jsKeywords = [
       'break', 'case', 'catch', 'continue', 'default', 'delete', 'do', 'else', 'finaly', 'for',
@@ -60,7 +61,7 @@ class WebVPN {
       'synchronized', 'throws', 'transient', 'volatile'
     ]
     this.ignoreRequestHeaderRegexps = [
-      /^x-/i,
+      /^x-(forwarded|requested|csrf|content|frame)/i,
       /upgrade-insecure-requests/i
     ]
     this.ignoreResponseHeaderRegexps = [
@@ -74,7 +75,7 @@ class WebVPN {
       /content-security-policy-report-only/i,
     ]
 
-    this.noTransformMimes = ['wasm', 'font', 'json', 'image', 'video', 'audio', 'pdf-office']
+    this.noTransformMimes = ['wasm', 'font', 'json', 'image', 'video', 'audio', 'pdf-office', 'event-stream']
     this.cacheMimes = ['js', 'css', 'font', 'image', 'video', 'audio', 'pdf-office']
     this.cacheDir = config.cacheDir || 'cache'
 
