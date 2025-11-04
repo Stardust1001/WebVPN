@@ -6,6 +6,7 @@ import cluster from 'node:cluster'
 import { ZSTDDecompress } from 'simple-zstd'
 import chalk from 'chalk'
 import Koa from 'koa'
+import WebSocket, { WebSocketServer } from 'ws'
 import fetch, { File, FormData } from 'node-fetch'
 import iconv from 'iconv-lite'
 import base32 from 'base32'
@@ -278,7 +279,31 @@ class WebVPN {
     const app = new Koa()
     app.use(this.proxyRoute.bind(this))
 
-    http.createServer({}, app.callback()).listen(config.port)
+    const server = http.createServer({}, app.callback())
+
+    this.wsServer = new WebSocketServer({ server })
+    this.wsServer.onConnection = async (client, request) => {
+      let { host, origin } = request.headers
+      if (host) host = this.convertHost(host)
+      const protocol = origin && !origin.startsWith('https') ? 'http' : 'https'
+      const url = protocol + '://' + host + (request.url || '')
+
+      const wsClient = new WebSocket(url)
+      await new Promise(resolve => {
+        wsClient.on('open', resolve)
+      })
+      wsClient.on('message', message => {
+        message = message.toString()
+        client.send(message)
+      })
+
+      client.on('message', message => {
+        message = message.toString()
+        wsClient.send(message)
+      })
+    }
+
+    server.listen(config.port)
 
     if (config.httpsEnabled) {
       const options = {
@@ -290,6 +315,11 @@ class WebVPN {
   }
 
   async proxyRoute (ctx, next) {
+    if (ctx.headers.upgrade === 'websocket') {
+      this.wsServer.handleUpgrade(ctx.request, ctx.socket, ctx.headers, client => {
+        this.wsServer.onConnection(client, ctx.request)
+      })
+    }
     const scheme = ctx.headers['webvpn-scheme'] || 'https'
     const subdomain = ctx.headers.host.replace(this.config.vpnDomain, '')
     if (subdomain === 'www') {

@@ -419,6 +419,21 @@
     return fetch(input, init)
   }
 
+  // WebSocket 拦截
+  const _WebSocket = window.WebSocket
+  window.WebSocket = new Proxy(_WebSocket, {
+    construct (target, props) {
+      console.log('%cWebSocket 拦截 : ' + props[0], 'color: white;background-color: orange;padding: 5px 10px;')
+      props[0] = transformUrl(props[0])
+      return new _WebSocket(...props)
+    },
+    apply (target, thisArg, props) {
+      console.log('%cWebSocket 拦截 : ' + props[0], 'color: white;background-color: orange;padding: 5px 10px;')
+      props[0] = transformUrl(props[0])
+      return new _WebSocket(...props)
+    }
+  })
+
   // dom 操作拦截
 
   const getInnerHTML = Element.prototype.getInnerHTML
