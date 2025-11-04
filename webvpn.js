@@ -305,7 +305,7 @@ class WebVPN {
         wsClient.send(message)
       })
       client.on('close', () => {
-        this.wsClient.close()
+        wsClient.close()
       })
     }
 
