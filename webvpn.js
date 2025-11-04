@@ -296,10 +296,16 @@ class WebVPN {
         message = message.toString()
         client.send(message)
       })
+      wsClient.on('close', () => {
+        client.close()
+      })
 
       client.on('message', message => {
         message = message.toString()
         wsClient.send(message)
+      })
+      client.on('close', () => {
+        this.wsClient.close()
       })
     }
 
