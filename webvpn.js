@@ -384,6 +384,9 @@ class WebVPN {
       ) {
         ctx.meta.mime = 'json'
         ctx.meta.done = true
+      } else if (!/<[a-zA-Z]+/.test(res.data)) {
+        ctx.meta.mime = 'text'
+        ctx.meta.done = true
       }
     }
 
