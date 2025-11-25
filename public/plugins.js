@@ -34,16 +34,8 @@
   Object.assign(webvpn, {
     sleep,
     addStyle,
-    addScript,
-    blobs: {}
+    addScript
   })
-
-  const cou = URL.createObjectURL
-  URL.createObjectURL = object => {
-    const url = cou.call(this, object)
-    webvpn.blobs[url] = object
-    return url
-  }
 
   const appendBuffer = SourceBuffer.prototype.appendBuffer
   SourceBuffer.prototype.appendBuffer = buf => {

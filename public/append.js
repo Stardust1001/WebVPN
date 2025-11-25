@@ -39,6 +39,7 @@
   const ajaxUrls = []
   const fetchUrls = []
   const domUrls = []
+  const blobs = {}
 
   const interceptLog = webvpn.interceptLog
   const disableJump = webvpn.disableJump
@@ -835,6 +836,15 @@
       'color: #606666;background-color: lime;padding: 5px 10px;'
     )
     url = transformUrl(url)
+    if (url.startsWith('blob:') && blobs[url]) {
+      const blob = blobs[url]
+      if (typeof blob.part[0] === 'string') {
+        const targetUrl = 'blob:' + (/\/\//.test(url) ? decodeUrl(url) : url)
+        const code = webvpn.workerWrapperCode.replace('#targetUrl#', targetUrl).replace('#CODE#', blob.part[0])
+        const _blob = new window._Blob_([code], blob.options)
+        url = URL._createObjectURL_(_blob)
+      }
+    }
     return new _Worker(url, options)
   }
 
@@ -1149,6 +1159,21 @@
     return createTreeWalker.apply(document, [node, ...props])
   }
 
+  window._Blob_ = window.Blob
+  window.Blob = function (part, options) {
+    const blob = new window._Blob_(part, options)
+    blob.part = part
+    blob.options = options
+    return blob
+  }
+
+  URL._createObjectURL_ = URL.createObjectURL
+  URL.createObjectURL = object => {
+    const url = URL._createObjectURL_.call(this, object)
+    blobs[url] = object
+    return url
+  }
+
   const logger = console.log
   console.log = function () {
     const isCustom = arguments[0] === 'custom'
@@ -1208,7 +1233,8 @@
     log: logger,
     ajaxUrls,
     fetchUrls,
-    domUrls
+    domUrls,
+    blobs
   })
 
 })()

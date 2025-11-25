@@ -98,11 +98,6 @@ class WebVPN {
         const target = new URL('#targetUrl#')
         const site = new URL('#siteUrl#')
         const vpnDomain = site.host.replace('www', '')
-        function copySource (source) {
-          const copied = Object.assign({}, source)
-          for (const key in source) copied[key] = source[key]
-          return copied
-        }
         function transformUrl (url) {
           url = (url ? url.toString() : '').trim()
           if (url.startsWith('//')) {
@@ -113,18 +108,40 @@ class WebVPN {
           const subdomain = base32.encode(u.host)
           return url.replace(u.origin, site.origin.replace('www', subdomain))
         }
-        self.__location__ = Object.assign({}, copySource(self.location), copySource(target))
-        for (const con of ['globalThis', 'self']) {
+
+        self.webvpn = { target, site, transformUrl }
+        const globalCons = ['self', 'globalThis']
+        const locationAttrs = ['hash', 'host', 'hostname', 'href', 'origin', 'pathname', 'port', 'protocol', 'search']
+
+        self.__location__ = {}
+        locationAttrs.forEach(key => {
+          self.location['__' + key + '__'] = webvpn.target[key]
+          for (let i = 0; i < 2; i++) {
+            if (i) key = '__' + key + '__'
+            Object.defineProperty(self.__location__, key, {
+              get () {
+                key = key.replaceAll('__', '')
+                return webvpn.target[key] || location[key]
+              }
+            })
+          }
+        })
+
+        for (const con of globalCons) {
+          if (con === 'globalThis') {
+            self['__' + con + '__'] = self.__self__
+            continue
+          }
           self['__' + con + '__'] = new Proxy(self[con], {
             get (target, property, receiver) {
-              if (['self', 'location'].includes(property)) {
+              if (globalCons.includes(property) || property === 'location') {
                 return self['__' + property + '__']
               }
               const value = target[property]
               return (typeof value === 'function' && !value.prototype) ? value.bind(target) : value
             },
             set (target, property, value) {
-              if (['self', 'location'].includes(property)) {
+              if (['globalThis', 'self', 'location'].includes(property)) {
                 return false
               }
               target[property] = value
@@ -133,16 +150,16 @@ class WebVPN {
           })
         }
         self.__context__ = {
-          self: __self__,
-          globalThis: __globalThis__,
-          location: __location__
+          self: self.__self__,
+          globalThis: self.__globalThis__,
+          location: self.__location__
         }
         self.__context_proxy__ = new Proxy(self.__context__, {
           has (target, prop) {
             return true
           },
           get (target, prop) {
-            return self[prop]
+            return prop in target ? target[prop] : self[prop]
           },
           set (target, prop, value) {
             self[prop] = value
@@ -771,11 +788,19 @@ class WebVPN {
     const { base, scheme, target, isMainSession, shareId, appendCode, initInterceptionCode, appendScriptCode } = ctx.meta
     const { data } = res
     const prefix = site.origin.slice(site.origin.indexOf('//'))
+    const siteUrl = (httpsEnabled ? scheme : 'http') + ':' + prefix
+    const workerWrapperCode = `
+    ${this.jsWorkerContextCode.replace('#siteUrl#', siteUrl)}
+    ${this.jsScopePrefixCode}
+      #CODE#
+    }
+    ${this.jsScopeSuffixCode}
+    `
     const code = `
     <script>
       (function () {
         self.webvpn = {
-          site: '${httpsEnabled ? scheme : 'http'}:${prefix}',
+          site: '${siteUrl}',
           protocol: '${scheme}:',
           hostname: '${target.hostname}',
           base: '${base}',
@@ -783,7 +808,8 @@ class WebVPN {
           disableJump: ${disableJump},
           confirmJump: ${confirmJump},
           isMainSession: ${isMainSession},
-          shareId: '${shareId}'
+          shareId: '${shareId}',
+          workerWrapperCode: \`${workerWrapperCode}\`
         };
 
         ${appendCode || ''}
