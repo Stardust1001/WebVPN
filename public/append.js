@@ -1,15 +1,33 @@
 (function () {
-
   if (window.webvpn.transformUrl) return
 
   const logTypes = ['AJAX', 'fetch', 'History']
+  const ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:']
+  const globalCons = ['window', 'document', 'globalThis', 'parent', 'self', 'top']
+  const locationAttrs = ['hash', 'host', 'hostname', 'href', 'origin', 'pathname', 'port', 'protocol', 'search']
 
-  const siteUrl = webvpn.site
-  const site = new URL(siteUrl)
+  const siteU = new URL(webvpn.siteUrl)
+  const sourceU = new URL(webvpn.sourceUrl)
+  const pageU = new URL(webvpn.pageUrl)
   const base = webvpn.base
-  const vpnDomain = site.host.replace('www', '')
+  const vpnDomain = siteU.host.replace('www', '')
 
-  const location = window.location
+  /* <html> 之前的 <script> 代码，获取不到 location.href 等网址信息，通过 webvpn.sourceUrl 来提供 */
+  const location = new Proxy(window.location, {
+    get (obj, property, receiver) {
+      if (property.includes('__')) {
+        const prop = property.replaceAll('__', '')
+        if (locationAttrs.includes(prop)) {
+          return sourceU[prop]
+        }
+      } else {
+        if (locationAttrs.includes(property) && !obj[property]) {
+          return pageU[property]
+        }
+      }
+      return obj[property]
+    }
+  })
 
   const defineWebvpnLocation = () => {
     Object.defineProperties(webvpn, {
@@ -18,7 +36,7 @@
           return location
         }
       },
-      url: {
+      currentHref: {
         get () {
           let url = decodeUrl(location.href)
           if (!url.startsWith(webvpn.protocol)) {
@@ -29,7 +47,7 @@
       },
       target: {
         get () {
-          return new URL(webvpn.url)
+          return new URL(webvpn.currentHref)
         }
       }
     })
@@ -70,10 +88,6 @@
     nodeNameAttrsMap[item[1]] = nodeNameAttrsMap[item[1]] || []
     nodeNameAttrsMap[item[1]].push(item[2])
   })
-
-  const ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:']
-  const globalCons = ['window', 'document', 'globalThis', 'parent', 'self', 'top']
-  const locationAttrs = ['hash', 'host', 'hostname', 'href', 'origin', 'pathname', 'port', 'protocol', 'search']
 
   const escaped = {}
   Array.from([
@@ -131,7 +145,7 @@
     if (hostPrefix.includes('-')) {
       subdomain += '-' + hostPrefix.split('-').slice(-2).join('-')
     }
-    const siteOrigin = site.origin.replace('www', subdomain)
+    const siteOrigin = siteU.origin.replace('www', subdomain)
     return url.replace(u.origin, siteOrigin)
   }
 
@@ -145,10 +159,11 @@
       url = url.slice(url.indexOf('http'))
     }
     const u = new URL(url)
+    if (!u.hostname.includes(vpnDomain)) return url
     let subdomain = u.host.split('.')[0]
     if (subdomain.includes('-')) subdomain = subdomain.split('-')[0]
     const host = window.base32.decode(subdomain)
-    url = url.replace(u.origin, window.location.protocol + '//' + host)
+    url = url.replace(u.origin, location.protocol + '//' + host)
     if (webvpn.hostname.includes(host) && webvpn.protocol === 'https:' && url.startsWith('http:')) {
       url = url.replace('http:', 'https:')
     }
@@ -200,7 +215,7 @@
   }
 
   const decodeUrlInHtml = (html) => {
-    // TODO 先不管 srcset data codebase 之类的
+    /* TODO 先不管 srcset data codebase 之类的 */
     const urls = new Set()
     Array.from(html.matchAll(/(href|src|poster|action)="([^"]*)"/g)).forEach(match => {
       if (match[2].includes(vpnDomain)) urls.add(match[2])
@@ -323,7 +338,7 @@
     )
   }
 
-  // Object.assign 拦截
+  /* Object.assign 拦截 */
   const _assign = Object.assign
   Object.assign = function (target, ...sources) {
     target = _assign.apply(Object, [target, ...sources])
@@ -337,7 +352,7 @@
     return target
   }
 
-  // Function 拦截
+  /* Function 拦截 */
   const _Function = window.Function
   window.Function = new Proxy(_Function, {
     construct (target, props) {
@@ -370,16 +385,18 @@
     }
   })
 
-  // eval 不能拦截，Function 作用于全局，可以拦截，eval 在代码运行作用域起作用，要访问局部变量，eval 方法读不到那些局部变量
-  // eval 拦截
-  // const _eval = window.eval
-  // window.eval = function eval (code) {
-  //   const isDefineVars = /^\s*(var|let|const)/.test(code)
-  //   code = `new Function(\`with (self.__context__) { ${(isDefineVars ? '' : 'return ') + code} }\`).bind(self.__context__)()`
-  //   return _eval(code)
-  // }
+  /*
+    eval 不能拦截，Function 作用于全局，可以拦截，eval 在代码运行作用域起作用，要访问局部变量，eval 方法读不到那些局部变量
+    eval 拦截
+    const _eval = window.eval
+    window.eval = function eval (code) {
+      const isDefineVars = /^\s*(var|let|const)/.test(code)
+      code = `new Function(\`with (self.__context__) { ${(isDefineVars ? '' : 'return ') + code} }\`).bind(self.__context__)()`
+      return _eval(code)
+    }
+  */
 
-  // EventSource 拦截
+  /* EventSource 拦截 */
   const _EventSource = window.EventSource
   window.EventSource = new Proxy(_EventSource, {
     construct (target, [url, configuration]) {
@@ -389,7 +406,7 @@
     }
   })
 
-  // ajax 拦截
+  /* ajax 拦截 */
   const xhrOpen = XMLHttpRequest.prototype.open
   XMLHttpRequest.prototype.open = function (method, url, async = true, user, password) {
     const newUrl = transformUrl(url)
@@ -398,7 +415,7 @@
     return xhrOpen.bind(this)(method, newUrl, async, user, password)
   }
 
-  // fetch 拦截
+  /* fetch 拦截 */
   const fetch = window.fetch
   window.fetch = function (input, init) {
     if (input instanceof URL) input = input.href
@@ -421,7 +438,7 @@
     return fetch(input, init)
   }
 
-  // WebSocket 拦截
+  /* WebSocket 拦截 */
   const _WebSocket = window.WebSocket
   window.WebSocket = new Proxy(_WebSocket, {
     construct (target, props) {
@@ -436,7 +453,7 @@
     }
   })
 
-  // dom 操作拦截
+  /* dom 操作拦截 */
 
   const getInnerHTML = Element.prototype.getInnerHTML
   Element.prototype.getInnerHTML = function () {
@@ -444,7 +461,7 @@
     return this.innerHTML
   }
 
-  // appendChild 拦截
+  /* appendChild 拦截 */
   function appendChild_wrap (func) {
     return function (node) {
       if (!(node instanceof Node)) return
@@ -458,7 +475,7 @@
   Node.__appendChild__ = Node.prototype.appendChild
   Node.prototype.appendChild = appendChild_wrap(Node.__appendChild__)
 
-  // insertBefore 拦截
+  /* insertBefore 拦截 */
   function insertBefore_wrap (func) {
     return function (node, sibling) {
       domLog(node, 'insertBefore')
@@ -469,7 +486,7 @@
   Node.__insertBefore__ = Node.prototype.insertBefore
   Node.prototype.insertBefore = insertBefore_wrap(Node.__insertBefore__)
 
-  // replaceChild 拦截
+  /* replaceChild 拦截 */
   function replaceChild_wrap (func) {
     return function (node, oldNode) {
       domLog(node, 'replaceChild')
@@ -499,7 +516,7 @@
     DocumentFragment.prototype[name] = nodesMethod_wrap(origin, name)
   })
 
-  // setAttribute 拦截
+  /* setAttribute 拦截 */
   const setAttribute = Element.prototype.setAttribute
   Element.prototype.setAttribute = function (attr, value, type) {
     if (type !== 'custom' && urlAttrs.includes(attr)) {
@@ -512,7 +529,7 @@
     return setAttribute.bind(this)(attr, value)
   }
 
-  // insertAdjacentHTML 拦截
+  /* insertAdjacentHTML 拦截 */
   function insertAdjacentHTML_wrap (func) {
     return function (position, html) {
       console.log(
@@ -526,7 +543,7 @@
   Element.__insertAdjacentHTML__ = Element.prototype.insertAdjacentHTML
   Element.prototype.insertAdjacentHTML = insertAdjacentHTML_wrap(Element.__insertAdjacentHTML__)
 
-  // insertAdjacentElement 拦截
+  /* insertAdjacentElement 拦截 */
   function insertAdjacentElement_wrap (func) {
     return function (position, node) {
       console.log(
@@ -540,7 +557,7 @@
   Element.__insertAdjacentElement__ = Element.prototype.insertAdjacentElement
   Element.prototype.insertAdjacentElement = insertAdjacentElement_wrap(Element.__insertAdjacentElement__)
 
-  // a 元素 click 拦截
+  /* a 元素 click 拦截 */
   const aOnClick = HTMLAnchorElement.prototype.click
   HTMLAnchorElement.prototype.click = function () {
     console.log(
@@ -551,14 +568,14 @@
     return aOnClick.apply(this, arguments)
   }
 
-  // document.URL
+  /* document.URL */
   Object.defineProperty(document, 'URL', {
     get () {
-      return webvpn.url
+      return webvpn.currentHref
     }
   })
 
-  // document.domain
+  /* document.domain */
   Object.defineProperty(document, 'domain', {
     get () {
       return webvpn.target.hostname
@@ -570,17 +587,17 @@
 
   Object.defineProperty(document, 'baseURI', {
     get () {
-      return webvpn.url
+      return webvpn.currentHref
     }
   })
 
   Object.defineProperty(HTMLElement.prototype, 'baseURI', {
     get () {
-      return webvpn.url
+      return webvpn.currentHref
     }
   })
 
-  // TODO TODO 目前发现部分网站自定义了 cookie descriptor，会出现错误
+  /* TODO TODO 目前发现部分网站自定义了 cookie descriptor，会出现错误 */
   if (Object.getOwnPropertyDescriptor(Document.prototype, 'cookie')) {
     Object.defineProperty(Document.prototype, 'cookie', { configurable: false })
   }
@@ -588,19 +605,19 @@
     Object.defineProperty(HTMLDocument.prototype, 'cookie', { configurable: false })
   }
 
-  // TODO TODO createTask 有问题？？？
+  /* TODO TODO createTask 有问题？？？ */
   const _createTask = console.createTask
   delete console.createTask
 
-  // document.referrer
-  const _referrer = decodeUrl(document.referrer.includes(webvpn.site) ? (location.origin + '/') : document.referrer)
+  /* document.referrer */
+  const _referrer = decodeUrl(document.referrer.includes(webvpn.siteUrl) ? (location.origin + '/') : document.referrer)
   Object.defineProperty(document, 'referrer', {
     get () {
       return _referrer
     }
   })
 
-  // open 拦截
+  /* open 拦截 */
   const open = window.open
   window.open = function (url, name, specs, replace) {
     console.log(
@@ -612,7 +629,7 @@
     return open.bind(window)(url, name, specs, replace)
   }
 
-  // go 拦截
+  /* go 拦截 */
   const go = History.prototype.go
   History.prototype.go = function (value) {
     if ((value + '') !== (parseInt(value) + '')) {
@@ -626,7 +643,7 @@
     return go.apply(this, [value])
   }
 
-  // _navigate 拦截
+  /* _navigate 拦截 */
   window.location._navigate = function (url) {
     console.log(
       '%c_navigate 拦截 : ' + url,
@@ -638,7 +655,7 @@
   }
   window.location.__navigate__ = window.location._navigate
 
-  // location _assign 拦截
+  /* location _assign 拦截 */
   window.location._assign = function (url) {
     console.log(
       '%clocation 操作 拦截 _assign : ' + url,
@@ -650,7 +667,7 @@
   }
   window.location.__assign__ = window.location._assign
 
-  // location _replace 拦截
+  /* location _replace 拦截 */
   window.location._replace = function (url) {
     console.log(
       '%clocation 操作 拦截 _replace : ' + url,
@@ -662,14 +679,14 @@
   }
   window.location.__replace__ = window.location._replace
 
-  // location reload
+  /* location reload */
   window.location._reload = function () {
     if (!canJump(location.href)) return false
     return window.location.reload()
   }
   window.location.__reload__ = window.location._reload
 
-  // location toString
+  /* location toString */
   window.location._toString = function () {
     return window.location.__href__
   }
@@ -677,7 +694,7 @@
 
   function redefineGlobals (win) {
     if (!webvpn.target) defineWebvpnLocation()
-    // window.__location__
+    /* window.__location__ */
     if (!Object.keys(win.location).length) return
     win.__location__ = {}
     locationAttrs.forEach(key => {
@@ -731,7 +748,7 @@
             return w['__' + property + '__']
           }
           const value = obj[property]
-          // 如果 value 是 function，不一定是真的函数，也可能是 Promise 这种，Promise 有 prototype
+          /* 如果 value 是 function，不一定是真的函数，也可能是 Promise 这种，Promise 有 prototype */
           if (typeof value === 'function' && !value.prototype) {
             if (property === 'fetch') return window.fetch
             return value.bind(obj)
@@ -797,14 +814,14 @@
     }
   }, 500)
 
-  // 因为用 __document__ 替换了 document, __document__ 的时候类型跟 document 不一致
+  /* 因为用 __document__ 替换了 document, __document__ 的时候类型跟 document 不一致 */
   const observe = MutationObserver.prototype.observe
   MutationObserver.prototype.observe = function (obj, options) {
     if (obj == window.__document__) obj = document
     return observe.bind(this)(obj, options)
   }
 
-  // getAttribute 拦截
+  /* getAttribute 拦截 */
   const nasUnion = []
   for (const item of nodeAttrSetters) {
     const ele = nasUnion.find(ele => ele[0] === item[0])
@@ -829,7 +846,7 @@
     }
   })
 
-  // Worker 创建拦截
+  /* Worker 创建拦截 */
   const _Worker = window.Worker
   window.Worker = function (url, options) {
     console.log(
@@ -849,7 +866,7 @@
     return new _Worker(url, options)
   }
 
-  // ServiceWorkerContainer register 拦截
+  /* ServiceWorkerContainer register 拦截 */
   if (window.ServiceWorkerContainer) {
     const register = window.ServiceWorkerContainer.prototype.register
     window.ServiceWorkerContainer.prototype.register = function (url, options) {
@@ -862,7 +879,7 @@
     }
   }
 
-  // pushState replaceState 拦截
+  /* pushState replaceState 拦截 */
   Array.from(['pushState', 'replaceState']).forEach((name) => {
     const origin = History.prototype[name]
     History.prototype[name] = function (state, title, url) {
@@ -888,7 +905,7 @@
 
   nodeAttrSetters.forEach((item) => {
     let descriptor = Object.getOwnPropertyDescriptor(item[0].prototype, item[2])
-    // audio video 的 src 描述符没了，转到了 media 的描述符上
+    /* audio video 的 src 描述符没了，转到了 media 的描述符上 */
     if (!descriptor && ['audio', 'video'].includes(item[1]) && item[2] === 'src') {
       descriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src')
     }
@@ -909,7 +926,7 @@
     })
   })
 
-  // a 元素的 host 等 URL 属性 拦截, href 在上面的 get 函数里拦截了
+  /* a 元素的 host 等 URL 属性 拦截, href 在上面的 get 函数里拦截了 */
   const aUrlAttrs = ['href', 'host', 'hostname', 'origin', 'port', 'protocol']
   aUrlAttrs.forEach((attr) => {
     Object.defineProperty(HTMLAnchorElement.prototype, attr, {
@@ -920,7 +937,7 @@
         )
         let url = this.getAttribute('href') || decodeUrl(location.href)
         if (!url.startsWith('http') && !url.startsWith('//')) {
-          url = urljoin(webvpn.url, url)
+          url = urljoin(webvpn.currentHref, url)
         }
         if (attr === 'href') return url
         return new URL(url)[attr]
@@ -928,7 +945,7 @@
     })
   })
 
-  // style.backgroundImage 拦截
+  /* style.backgroundImage 拦截 */
   const sDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'style')
   Object.defineProperty(HTMLElement.prototype, 'style', {
     get () {
@@ -960,7 +977,7 @@
     }
   })
 
-  // 附注：这里只是拦截 CSS 操作，不知道所属哪个节点，如果想知道，可以放在上面，通过 style.cssText 拦截
+  /* 附注：这里只是拦截 CSS 操作，不知道所属哪个节点，如果想知道，可以放在上面，通过 style.cssText 拦截 */
   const ctDescriptor = Object.getOwnPropertyDescriptor(CSSStyleDeclaration.prototype, 'cssText')
   Object.defineProperty(CSSStyleDeclaration.prototype, 'cssText', {
     set (value) {
@@ -978,7 +995,7 @@
     }
   })
 
-  // document.write 拦截
+  /* document.write 拦截 */
   const write = document.write
   document.write = function () {
     const htmls = []
@@ -992,7 +1009,7 @@
     return write.apply(document, htmls)
   }
 
-  // document.writeln 拦截
+  /* document.writeln 拦截 */
   const writeln = document.writeln
   document.writeln = function () {
     const htmls = []
@@ -1006,10 +1023,11 @@
     return writeln.apply(document, htmls)
   }
 
-  // 注意，已经没有真正的 innerHTML 方法了，原生的 innerHTML 不存在了
-  // 现在的仅是通过创建节点，设置节点子节点、文本内容，没有设置 html 内容的功能
-
-  // innerHTML 拦截
+  /*
+    注意，已经没有真正的 innerHTML 方法了，原生的 innerHTML 不存在了
+    现在的仅是通过创建节点，设置节点子节点、文本内容，没有设置 html 内容的功能
+    innerHTML 拦截
+  */
   const ihDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML')
   Object.defineProperty(Element.prototype, '__innerHTML__', {
     set: ihDescriptor.set
@@ -1021,7 +1039,7 @@
     },
     set (html) {
       html = (html || '').toString()
-      // 去除无用的 \n，减少 DOM 渲染，提高执行效率（不会是 pre 元素吧？）
+      /* 去除无用的 \n，减少 DOM 渲染，提高执行效率（不会是 pre 元素吧？） */
       const childs = html2dom(html, this)
       console.log(
         '%cDOM 操作 拦截 innerHTML : ' + (html.length > 100 ? (html.slice(0, 100) + '...') : html),
@@ -1037,7 +1055,7 @@
     }
   })
 
-  // outerHTML 拦截
+  /* outerHTML 拦截 */
   const ohDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'outerHTML')
   Object.defineProperty(Element.prototype, '__outerHTML__', {
     set: ohDescriptor.set
@@ -1136,7 +1154,7 @@
   setTimeout(replaceNodesUrls, 2000)
   setInterval(replaceNodesUrls, 3000)
 
-  // 事件绑定的 this 对象拦截替换
+  /* 事件绑定的 this 对象拦截替换 */
   const wael = window.addEventListener
   window.addEventListener = function () {
     if (arguments[0] === __window__) arguments[0] = window

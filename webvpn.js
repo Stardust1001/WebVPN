@@ -83,11 +83,12 @@ class WebVPN {
     this.checkCaches()
 
     this.jsBase32Code = fs.readFileSync('./public/base32.js')
+    this.jsAppendCode = fs.readFileSync('./public/append.js')
 
     this.jsWorkerContextCode = `
       // worker 里面创造 __context__ 环境
       if (!self.window) {
-        ${this.jsBase32Code}
+        "#jsBase32Code#"
         setTimeout = self.setTimeout.bind(self)
         const _importScripts  = self.importScripts
         self.importScripts = function (...props) {
@@ -809,36 +810,37 @@ class WebVPN {
     const { data } = res
     const prefix = site.origin.slice(site.origin.indexOf('//'))
     const siteUrl = (httpsEnabled ? scheme : 'http') + ':' + prefix
-    const workerWrapperCode = `
-    ${this.jsWorkerContextCode.replace('#siteUrl#', siteUrl)}
-    ${this.jsScopePrefixCode}
-      #CODE#
-    }
-    ${this.jsScopeSuffixCode}
-    `
+    const pageUrl = this.transformUrl(ctx, target.href)
     const code = `
     <script>
-      (function () {
-        self.webvpn = {
-          site: '${siteUrl}',
-          protocol: '${scheme}:',
-          hostname: '${target.hostname}',
-          base: '${base}',
-          interceptLog: ${interceptLog},
-          disableJump: ${disableJump},
-          confirmJump: ${confirmJump},
-          isMainSession: ${isMainSession},
-          shareId: '${shareId}',
-          workerWrapperCode: \`${workerWrapperCode}\`
-        };
-
-        ${appendCode || ''}
-      })();
+      self.webvpn = {
+        siteUrl: '${siteUrl}',
+        protocol: '${scheme}:',
+        sourceUrl: '${target.href}',
+        pageUrl: '${pageUrl}',
+        hostname: '${target.hostname}',
+        base: '${base}',
+        interceptLog: ${interceptLog},
+        disableJump: ${disableJump},
+        confirmJump: ${confirmJump},
+        isMainSession: ${isMainSession},
+        shareId: '${shareId}',
+      };
+      ${appendCode || ''}
+      webvpn.base32_code =${JSON.stringify(this.jsBase32Code.toString())}
+      eval(webvpn.base32_code)
+      ${this.replaceSubdomainsCode || ''}
+      ${initInterceptionCode || ''}
+      webvpn.append_code = ${JSON.stringify(this.jsAppendCode.toString())}
+      eval(webvpn.append_code)
+      self.webvpn.workerWrapperCode = \`
+        ${this.jsWorkerContextCode.replace('#siteUrl#', siteUrl)}
+        ${this.jsScopePrefixCode}
+          #CODE#
+        }
+        ${this.jsScopeSuffixCode}
+      \`.replace('"#jsBase32Code#"', self.base32_code)
     </script>
-    <script src="${prefix}/public/base32.js"></script>
-    <script>${this.replaceSubdomainsCode || ''}</script>
-    <script>${initInterceptionCode || ''}</script>
-    <script src="${prefix}/public/append.js"></script>
     ${
       pluginsEanbled
       ?
