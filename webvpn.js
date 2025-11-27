@@ -88,7 +88,6 @@ class WebVPN {
       // worker 里面创造 __context__ 环境
       if (!self.window) {
         ${this.jsBase32Code}
-        fetch = self.fetch.bind(self)
         setTimeout = self.setTimeout.bind(self)
         const _importScripts  = self.importScripts
         self.importScripts = function (...props) {
@@ -167,6 +166,26 @@ class WebVPN {
             return value
           }
         })
+
+        const fetch = self.fetch
+        self.fetch = function (input, init) {
+          if (input instanceof URL) input = input.href
+          const isInputUrl = typeof input === 'string'
+          const url = isInputUrl ? input : input.url
+          const newUrl = transformUrl(url)
+          if (isInputUrl) {
+            input = newUrl
+          } else {
+            const init = {}
+            for (let key in input) {
+              const value = input[key]
+              if (key === 'url' || typeof value === 'function') continue
+              init[key] = value
+            }
+            input = new Request(newUrl, init)
+          }
+          return fetch.apply(self, [input, init])
+        }
       }
     `
     this.jsScopePrefixCode = `

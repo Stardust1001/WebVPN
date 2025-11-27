@@ -401,6 +401,7 @@
   // fetch 拦截
   const fetch = window.fetch
   window.fetch = function (input, init) {
+    if (input instanceof URL) input = input.href
     const isInputUrl = typeof input === 'string'
     const url = isInputUrl ? input : input.url
     const newUrl = transformUrl(url)
