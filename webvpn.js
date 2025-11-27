@@ -842,7 +842,7 @@ class WebVPN {
           #CODE#
         }
         ${this.jsScopeSuffixCode}
-      \`.replace('"#jsBase32Code#"', self.base32_code)
+      \`.replace('"#jsBase32Code#"', webvpn.base32_code)
     </script>
     ${
       pluginsEanbled
