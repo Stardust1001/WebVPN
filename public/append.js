@@ -1112,6 +1112,12 @@
           _js_injected__: false
         }
         cw.__win__ = Object.assign({}, cw, { ...cw.__context__ })
+        Object.keys(cw.__win__).forEach(k => {
+          const value = cw.__win__[k]
+          if (typeof value === 'function') {
+            cw.__win__[k] = value.bind(cw)
+          }
+        })
       }
       return cw.__win__
     }
