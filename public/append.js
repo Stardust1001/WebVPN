@@ -1101,7 +1101,19 @@
       const cw = cwDescriptor.get.apply(this, [])
       if (!cw) return cw
       if (!redefineGlobals(cw)) return cw
-      return Object.assign({}, cw, { ...cw.__context__ })
+      if (!cw.__win__) {
+        cw.webvpn = {
+          siteUrl: webvpn.siteUrl,
+          protocol: webvpn.protocol,
+          sourceUrl: webvpn.sourceUrl,
+          pageUrl: webvpn.pageUrl,
+          hostname: webvpn.hostname,
+          base: webvpn.base,
+          _js_injected__: false
+        }
+        cw.__win__ = Object.assign({}, cw, { ...cw.__context__ })
+      }
+      return cw.__win__
     }
   })
 
@@ -1109,7 +1121,14 @@
   Object.defineProperty(HTMLIFrameElement.prototype, 'contentDocument', {
     get () {
       try {
-        return this.contentWindow.__document__
+        const doc = this.contentWindow.__document__
+        const win = this.contentWindow.window
+        if (!win.webvpn._js_injected__) {
+          win.eval(webvpn.base32_code)
+          win.eval(webvpn.append_code)
+          win.webvpn._js_injected__ = true
+        }
+        return doc
       } catch {
         return null
       }
