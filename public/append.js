@@ -81,7 +81,7 @@
     [HTMLEmbedElement, 'embed', 'src'],
     [HTMLObjectElement, 'object', 'data'],
     [HTMLObjectElement, 'object', 'archive'],
-    [HTMLObjectElement, 'object', 'codebase'],
+    [HTMLObjectElement, 'object', 'codeBase'],
   ]
   const nodeNameAttrsMap = {}
   nodeAttrSetters.forEach((item) => {
