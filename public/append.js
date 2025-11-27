@@ -1090,7 +1090,11 @@
   const cdDescriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentDocument')
   Object.defineProperty(HTMLIFrameElement.prototype, 'contentDocument', {
     get () {
-      return this.contentWindow.__document__
+      try {
+        return this.contentWindow.__document__
+      } catch {
+        return null
+      }
     }
   })
 

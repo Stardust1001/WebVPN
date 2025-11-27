@@ -24,6 +24,15 @@ class VPN extends WebVPN {
   shouldReplaceUrls (ctx, res) {
     return true
   }
+
+  // wasm 响应头 content-type，目前手动设置为 application/wasm
+  initResponseHeaders (ctx, res) {
+    const headers = super.initResponseHeaders(ctx, res)
+    if (ctx.url.endsWith('.wasm')) {
+      headers['content-type'] = ['application/wasm']
+    }
+    return headers
+  }
 }
 
 // 实例化
