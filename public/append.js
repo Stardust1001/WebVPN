@@ -741,8 +741,9 @@
         set (obj, property, value) {
           if (property === 'window') return false
           if (property === 'location') {
+            const url = transformUrl(value)
             if (obj === parent || obj === top) {
-              obj.__location__.href = value
+              obj.location = url
               return true
             }
             console.log(
@@ -750,8 +751,7 @@
               'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
             )
             if (!canJump(value)) return true
-            value = transformUrl(value)
-            win.location.href = value
+            win.location.href = url
           }
           obj[property] = value
           return true
