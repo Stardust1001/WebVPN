@@ -719,7 +719,7 @@
               value = transformUrl(value)
               win.location.href = value
             } else {
-              location[key] = value
+              win.location[key] = value
             }
             return true
           }
