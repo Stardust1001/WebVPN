@@ -36,9 +36,9 @@ class WebVPN {
       [/\.(png|jpg|ico|svg|gif|webp|jpeg)/i, 'image'],
       [/\.(mp4|m3u8|ts|flv)[^a-zA-Z]/i, 'video'],
       [/\.(mp3|wav|ogg)/i, 'audio'],
+      [/\.(pdf|csv|tsv|doc|docx|xls|xlsx|ppt|pptx)/i, 'pdf-office'],
       [/\.(html|php|do|asp|htm|shtml)/i, 'html'],
-      [/\.(ttf|eot|woff|woff2)/i, 'font'],
-      [/\.(pdf|csv|tsv|doc|docx|xls|xlsx|ppt|pptx)/i, 'pdf-office']
+      [/\.(ttf|eot|woff|woff2)/i, 'font']
     ]
     this.mimeDict = {
       'html': 'text/html',
