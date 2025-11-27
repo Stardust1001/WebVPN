@@ -126,6 +126,7 @@ class WebVPN {
             })
           }
         })
+        self.__location__.toString = () => self.__location__.href
 
         for (const con of globalCons) {
           if (con === 'globalThis') {
