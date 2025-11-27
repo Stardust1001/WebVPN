@@ -15,9 +15,14 @@ class VPN extends WebVPN {
 
   }
 
+  // 自定义处理响应内容
+  customResponse (ctx, res) {
+    super.customResponse(ctx, res)
+  }
+
   // 返回响应之前
-  async beforeResponse (ctx, res) {
-    super.beforeResponse(ctx, res)
+  beforeResponse (ctx, res) {
+
   }
 
   // 是否要替换这个 res 响应里的链接

@@ -436,6 +436,7 @@ class WebVPN {
 
     if (!ctx.meta.done && res.data && this.shouldReplaceUrls(ctx, res)) {
       this.replaceUrls(ctx, res)
+      this.customResponse(ctx, res)
       if (ctx.meta.mime === 'html') {
         res.data = this.processHtml(ctx, res)
         res.data = this.processHtmlScopeCodes(ctx, res.data)
@@ -449,7 +450,7 @@ class WebVPN {
       this.processOthers(ctx, res)
     }
 
-    if (!ctx.meta.done && (await this.beforeResponse(ctx, res))) {
+    if (!ctx.meta.done && this.beforeResponse(ctx, res)) {
       return
     }
 
@@ -1104,7 +1105,7 @@ class WebVPN {
 
   afterRequest (ctx, res) { }
 
-  beforeResponse (ctx, res) {
+  customResponse (ctx, res) {
     // 禁用 module 和严格模式，以支持 with 语句
     if (typeof res.data === 'string') {
       res.data = res.data.replaceAll('type="module"', 'type="mod"')
@@ -1117,6 +1118,8 @@ class WebVPN {
                 .replace(/location\.(hostname|host|origin|href|protocol|navigate|assign|replace|reload|toString)/g, 'location.__$1__')
     }
   }
+
+  beforeResponse (ctx, res) { }
 }
 
 export default WebVPN
