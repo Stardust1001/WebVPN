@@ -941,7 +941,7 @@ class WebVPN {
           || e.includes('unsafe-')
           || e.includes('require-trusted-types-for')
         ) return ''
-        if (e.indexOf('frame-ancestors') < 0) return e
+        if (e.indexOf('frame-ancestors') < 0 || e === `frame-ancestors 'none';`) return e
         const protocol = (this.config.httpsEnabled ? ctx.meta.scheme : 'http') + '://'
         return e.replace(
           'frame-ancestors',
