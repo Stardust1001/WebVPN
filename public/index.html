@@ -98,7 +98,6 @@
 <input type="text" id="output-url" tabindex="2" placeholder="The above input will be automatically converted to the WebVPN service URL here">
 <div class="row button" id="goto">Goto</div>
 
-<script src="/public/base32.js"></script>
 <script>
 
 const urlInput = document.querySelector('#input-url')
@@ -129,6 +128,10 @@ gotoButton.addEventListener('click', () => {
   window.open(outputInput.value)
 })
 
+const vpnDomain = location.host.replace('www', '')
+const encodeHost = text => text
+const decodeHost = text => text.replace(vpnDomain, '')
+
 function calcUrl () {
   let url = urlInput.value.trim()
   if (!/\w+\.\w+/.test(url) && !/localhost/.test(url)) {
@@ -158,7 +161,7 @@ function calcUrl () {
 
 function transformUrl (url) {
   const { host, origin } = new URL(url)
-  const subdomain = base32.encode(host).replaceAll('=', '')
+  const subdomain = encodeHost(host).replaceAll('=', '')
   return location.origin.replace('www', subdomain) + url.slice(origin.length)
 }
 
@@ -166,7 +169,7 @@ function decodeUrl (url) {
   const { host, pathname, search } = new URL(url)
   const subdomain = host.split('.')[0]
   const isIp = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(subdomain)
-  return (isIp ? 'http://' : 'https://') + base32.decode(subdomain) + pathname + search
+  return (isIp ? 'http://' : 'https://') + decodeHost(subdomain) + pathname + search
 }
 
 </script>

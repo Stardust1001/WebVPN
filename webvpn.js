@@ -9,7 +9,6 @@ import Koa from 'koa'
 import WebSocket, { WebSocketServer } from 'ws'
 import fetch, { File, FormData } from 'node-fetch'
 import iconv from 'iconv-lite'
-import base32 from 'base32'
 
 import { fsUtils, Storage } from '@wp1001/node'
 
@@ -82,7 +81,6 @@ class WebVPN {
 
     this.checkCaches()
 
-    this.jsBase32Code = fs.readFileSync('./public/base32.js')
     this.jsAppendCode = fs.readFileSync('./public/append.js')
 
     this.jsWorkerContextCode = `
@@ -105,7 +103,7 @@ class WebVPN {
           }
           const u = new URL(url)
           if (u.hostname.includes(vpnDomain)) return url
-          const subdomain = base32.encode(u.host)
+          const subdomain = encodeHost(u.host)
           return url.replace(u.origin, site.origin.replace('www', subdomain))
         }
 
@@ -203,13 +201,12 @@ class WebVPN {
     this.replaceSubdomainsCode = ''
     if (config.subdomains && Object.keys(config.subdomains).length) {
       this.replaceSubdomainsCode = `
-        const { encode, decode } = base32
-        base32.subdomains = ${JSON.stringify(config.subdomains)}
-        base32.domainDict = {}
-        Object.entries(base32.subdomains).forEach(([sub, name]) => base32.domainDict[name] = sub)
-
-        base32.encode = text => base32.domainDict[text] || encode(text)
-        base32.decode = text => base32.subdomains[text] || decode(text)
+        const vpnDomain = '${config.vpnDomain}'
+        const subdomains = ${JSON.stringify(config.subdomains)}
+        const domainDict = {}
+        Object.entries(subdomains).forEach(([sub, name]) => domainDict[name] = sub)
+        globalThis.encodeHost = text => domainDict[text] || text
+        globalThis.decodeHost = text => subdomains[text] || text.replace(vpnDomain, '')
       `
       eval(this.replaceSubdomainsCode)
     }
@@ -461,12 +458,11 @@ class WebVPN {
 
   routeInit (ctx) {
     const { isMainSession, shareId } = this.checkShareSession(ctx)
-    const domain = base32.decode(ctx.subdomain)
+    const domain = decodeHost(ctx.subdomain)
     const isIp = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(domain)
     const scheme = this.config.httpsEnabled && ctx.headers['webvpn-scheme'] || isIp && 'http' || 'https'
     const url = scheme + '://' + domain + ctx.url
     delete ctx.headers['webvpn-scheme']
-
     ctx.meta = {
       shareId,
       isMainSession,
@@ -482,7 +478,7 @@ class WebVPN {
 
   checkShareSession (ctx) {
     let isMainSession = false, shareId = ''
-    if (ctx.subdomain.includes('-')) {
+    if (!ctx.subdomain.includes('.') && ctx.subdomain.includes('-')) {
       const parts = ctx.subdomain.split('-')
       ctx.subdomain = parts[0]
       isMainSession = parts[1] === 'main'
@@ -737,7 +733,7 @@ class WebVPN {
   transformUrl (ctx, url) {
     const { httpsEnabled, site } = this.config
     const u = new URL(url)
-    const subdomain = base32.encode(u.host)
+    const subdomain = encodeHost(u.host)
     const protocol = httpsEnabled ? u.protocol : 'http:'
     return url.replace(u.origin, (protocol + '//' + site.host).replace('www', subdomain))
   }
@@ -830,8 +826,6 @@ class WebVPN {
         shareId: '${shareId}',
       };
       ${appendCode || ''}
-      webvpn.base32_code =${JSON.stringify(this.jsBase32Code.toString())}
-      eval(webvpn.base32_code)
       ${this.replaceSubdomainsCode || ''}
       ${initInterceptionCode || ''}
       webvpn.append_code = ${JSON.stringify(this.jsAppendCode.toString())}
@@ -842,7 +836,7 @@ class WebVPN {
           #CODE#
         }
         ${this.jsScopeSuffixCode}
-      \`.replace('"#jsBase32Code#"', webvpn.base32_code)
+      \`
     </script>
     ${
       pluginsEanbled
@@ -935,7 +929,7 @@ class WebVPN {
       headers['access-control-allow-origin'] = headers['access-control-allow-origin'].map(e => {
         if (e === '*') return e
         const host = e.indexOf('http') >= 0 ? new URL(e).host : e
-        return e.replace(host, base32.encode(host) + this.config.vpnDomain)
+        return e.replace(host, encodeHost(host) + this.config.vpnDomain)
       })
     }
     headers['content-type'] = [headers['content-type']?.[0] || 'text/html']
@@ -1025,7 +1019,7 @@ class WebVPN {
   }
 
   convertHost (host) {
-    return base32.decode(host.split('.')[0])
+    return decodeHost(host.replace(this.config.vpnDomain, ''))
   }
 
   async convertCharsetData (ctx, headers, res) {

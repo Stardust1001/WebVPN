@@ -140,9 +140,9 @@
       }
       return url
     }
-    let subdomain = window.base32.encode(u.host)
-    const hostPrefix = location.hostname.split('.')[0]
-    if (hostPrefix.includes('-')) {
+    let subdomain = encodeHost(u.host)
+    const hostPrefix = location.hostname.replace(vpnDomain, '')
+    if (!hostPrefix.includes('.') && hostPrefix.includes('-')) {
       subdomain += '-' + hostPrefix.split('-').slice(-2).join('-')
     }
     const siteOrigin = siteU.origin.replace('www', subdomain)
@@ -160,9 +160,11 @@
     }
     const u = new URL(url)
     if (!u.hostname.includes(vpnDomain)) return url
-    let subdomain = u.host.split('.')[0]
-    if (subdomain.includes('-')) subdomain = subdomain.split('-')[0]
-    const host = window.base32.decode(subdomain)
+    let subdomain = u.host.replace(vpnDomain, '')
+    if (!subdomain.includes('.') && subdomain.includes('-')) {
+      subdomain = subdomain.split('-')[0]
+    }
+    const host = decodeHost(subdomain)
     url = url.replace(u.origin, location.protocol + '//' + host)
     if (webvpn.hostname.includes(host) && webvpn.protocol === 'https:' && url.startsWith('http:')) {
       url = url.replace('http:', 'https:')
@@ -1130,7 +1132,6 @@
         const doc = this.contentWindow.__document__
         const win = this.contentWindow.window
         if (!win.webvpn._js_injected__) {
-          win.eval(webvpn.base32_code)
           win.eval(webvpn.append_code)
           win.webvpn._js_injected__ = true
         }
