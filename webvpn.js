@@ -88,8 +88,8 @@ class WebVPN {
       const subdomains = ${JSON.stringify(config.subdomains)}
       const domainDict = {}
       Object.entries(subdomains).forEach(([sub, name]) => domainDict[name] = sub)
-      globalThis.encodeHost = text => domainDict[text] || text
-      globalThis.decodeHost = text => subdomains[text] || text.replace(vpnDomain, '')
+      globalThis.encodeHost = text => domainDict[text] || text.replace(':', '_._')
+      globalThis.decodeHost = text => subdomains[text] || text.replace(vpnDomain, '').replace('_._', ':')
     `
     eval(this.convertDomainsCode)
 

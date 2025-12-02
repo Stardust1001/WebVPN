@@ -129,8 +129,8 @@ gotoButton.addEventListener('click', () => {
 })
 
 const vpnDomain = location.host.replace('www', '')
-const encodeHost = text => text
-const decodeHost = text => text.replace(vpnDomain, '')
+const encodeHost = text => text.replace(':', '_._')
+const decodeHost = text => text.replace(vpnDomain, '').replace('_._', ':')
 
 function calcUrl () {
   let url = urlInput.value.trim()
