@@ -83,10 +83,20 @@ class WebVPN {
 
     this.jsAppendCode = fs.readFileSync('./public/append.js')
 
+    this.convertDomainsCode = `
+      const vpnDomain = '${config.vpnDomain}'
+      const subdomains = ${JSON.stringify(config.subdomains)}
+      const domainDict = {}
+      Object.entries(subdomains).forEach(([sub, name]) => domainDict[name] = sub)
+      globalThis.encodeHost = text => domainDict[text] || text
+      globalThis.decodeHost = text => subdomains[text] || text.replace(vpnDomain, '')
+    `
+    eval(this.convertDomainsCode)
+
     this.jsWorkerContextCode = `
       // worker 里面创造 __context__ 环境
       if (!self.window) {
-        "#jsBase32Code#"
+        ${this.convertDomainsCode}
         setTimeout = self.setTimeout.bind(self)
         const _importScripts  = self.importScripts
         self.importScripts = function (...props) {
@@ -95,7 +105,6 @@ class WebVPN {
         }
         const target = new URL('#targetUrl#')
         const site = new URL('#siteUrl#')
-        const vpnDomain = site.host.replace('www', '')
         function transformUrl (url) {
           url = (url ? url.toString() : '').trim()
           if (url.startsWith('//')) {
@@ -197,19 +206,6 @@ class WebVPN {
     this.jsScopeSuffixCode = `
     }).call(self.__context__.self)
     `
-
-    this.replaceSubdomainsCode = ''
-    if (config.subdomains && Object.keys(config.subdomains).length) {
-      this.replaceSubdomainsCode = `
-        const vpnDomain = '${config.vpnDomain}'
-        const subdomains = ${JSON.stringify(config.subdomains)}
-        const domainDict = {}
-        Object.entries(subdomains).forEach(([sub, name]) => domainDict[name] = sub)
-        globalThis.encodeHost = text => domainDict[text] || text
-        globalThis.decodeHost = text => subdomains[text] || text.replace(vpnDomain, '')
-      `
-      eval(this.replaceSubdomainsCode)
-    }
 
     this.public = []
     this.initPublic()
@@ -826,7 +822,7 @@ class WebVPN {
         shareId: '${shareId}',
       };
       ${appendCode || ''}
-      ${this.replaceSubdomainsCode || ''}
+      ${this.convertDomainsCode || ''}
       ${initInterceptionCode || ''}
       webvpn.append_code = ${JSON.stringify(this.jsAppendCode.toString())}
       eval(webvpn.append_code)
