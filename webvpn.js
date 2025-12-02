@@ -81,7 +81,7 @@ class WebVPN {
 
     this.checkCaches()
 
-    this.jsAppendCode = fs.readFileSync('./public/append.js')
+    this.jsInterceptCode = fs.readFileSync('./public/intercept.js')
 
     this.convertDomainsCode = `
       const vpnDomain = '${config.vpnDomain}'
@@ -824,7 +824,7 @@ class WebVPN {
       ${appendCode || ''}
       ${this.convertDomainsCode || ''}
       ${initInterceptionCode || ''}
-      webvpn.append_code = ${JSON.stringify(this.jsAppendCode.toString())}
+      webvpn.append_code = ${JSON.stringify(this.jsInterceptCode.toString())}
       eval(webvpn.append_code)
       self.webvpn.workerWrapperCode = \`
         ${this.jsWorkerContextCode.replace('#siteUrl#', siteUrl)}
