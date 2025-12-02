@@ -359,13 +359,13 @@ class WebVPN {
         this.wsServer.onConnection(client, ctx.request)
       })
     }
-    const scheme = ctx.headers['webvpn-scheme'] || 'https'
+    ctx.scheme = new URL(ctx.request.href).protocol.slice(0, -1)
     const subdomain = ctx.headers.host.replace(this.config.vpnDomain, '')
     if (subdomain === 'www') {
       return await this.serveWww(ctx)
     } else if (subdomain === this.config.vpnDomain.slice(1)) {
       ctx.res.writeHead(302, {
-        location: (this.config.httpsEnabled ? scheme : 'http') + '://' + this.config.site.host
+        location: ctx.scheme + '://' + this.config.site.host
       })
       return
     }
@@ -455,16 +455,13 @@ class WebVPN {
   routeInit (ctx) {
     const { isMainSession, shareId } = this.checkShareSession(ctx)
     const domain = decodeHost(ctx.subdomain)
-    const isIp = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(domain)
-    const scheme = this.config.httpsEnabled && ctx.headers['webvpn-scheme'] || isIp && 'http' || 'https'
-    const url = scheme + '://' + domain + ctx.url
-    delete ctx.headers['webvpn-scheme']
+    const url = ctx.scheme + '://' + domain + ctx.url
     ctx.meta = {
       shareId,
       isMainSession,
       url,
       mime: this.getResponseType(ctx, url),
-      scheme,
+      scheme: ctx.scheme,
       target:  new URL(url),
       host: ctx.headers['host'],
       origin: ctx.headers['origin'],

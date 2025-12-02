@@ -137,7 +137,6 @@ function calcUrl () {
   if (!/\w+\.\w+/.test(url) && !/localhost/.test(url)) {
     return
   }
-  url = url.replace('localhost', '127.0.0.1')
   if (url.indexOf('http') < 0) {
     if (url.split('.').length === 1) {
       url = 'www.' + url + '.com'
@@ -160,9 +159,9 @@ function calcUrl () {
 }
 
 function transformUrl (url) {
-  const { host, origin } = new URL(url)
+  const { host, origin, protocol } = new URL(url)
   const subdomain = encodeHost(host).replaceAll('=', '')
-  return location.origin.replace('www', subdomain) + url.slice(origin.length)
+  return location.origin.replace(location.protocol, protocol).replace('www', subdomain) + url.slice(origin.length)
 }
 
 function decodeUrl (url) {
