@@ -436,7 +436,9 @@ class WebVPN {
       if (ctx.meta.mime === 'html') {
         res.data = this.processHtml(ctx, res)
         res.data = this.processHtmlScopeCodes(ctx, res.data)
-        res.data = this.appendScript(ctx, res)
+        if (!ctx.meta.isXHR) {
+          res.data = this.appendScript(ctx, res)
+        }
       } else if (ctx.meta.mime === 'js') {
         res.data = this.processJsScopeCode(ctx, res.data)
       }
@@ -463,6 +465,7 @@ class WebVPN {
       shareId,
       isMainSession,
       url,
+      isXHR: ctx.request.headers['x-requested-with'] === 'XMLHttpRequest',
       mime: this.getResponseType(ctx, url),
       scheme: ctx.scheme,
       target:  new URL(url),
