@@ -46,7 +46,9 @@ DNS泛解析是需要的，所以请务必使用SSL通配符证书。对于本�
 
 ### 单域名代理
 如果你不擅长 dnsmasq 等工具，并且只想要代理某几个域名，可以实现！！！
+
 在 config.js 配置文件里，修改 subdomains 即可，比如：
+```js
 {
   subdomains: {
     'baidu': 'www.baidu.com', // webvpn 服务，二级域名 baidu 指向 www.baidu.com
@@ -54,11 +56,12 @@ DNS泛解析是需要的，所以请务必使用SSL通配符证书。对于本�
     'weixin': 'weixin.qq.com' // 二级域名 weixin 指向 weixin.qq.com
   }
 }
-
+```
 ### Thank you
 <p>
   <img width="200" src="https://raw.githubusercontent.com/Stardust1001/WebVPN/refs/heads/master/alipay.jpg">
   <img width="200" src="https://raw.githubusercontent.com/Stardust1001/WebVPN/refs/heads/master/wxpay.jpg">
 </p>
+
 
 
