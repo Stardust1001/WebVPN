@@ -44,9 +44,21 @@ WebVPN可以“完全彻底”地转发和代理任何第三方网站，它不�
 WebVPN 服务运行到一个主域名上，它会把每个目标网址的域名编码后作为 WebVPN 网站的二级域名。目标网址的后缀，则直接放到 WebVPN 网址的后缀。
 DNS泛解析是需要的，所以请务必使用SSL通配符证书。对于本机部署来说，自己修改本地DNS就行，可以使用dnsmasq等工具。
 
+### 单域名代理
+如果你不擅长 dnsmasq 等工具，并且只想要代理某几个域名，可以实现！！！
+在 config.js 配置文件里，修改 subdomains 即可，比如：
+{
+  subdomains: {
+    'baidu': 'www.baidu.com', // webvpn 服务，二级域名 baidu 指向 www.baidu.com
+    'im': 'im.qq.com', // 二级域名 im 指向 im.qq.com
+    'weixin': 'weixin.qq.com' // 二级域名 weixin 指向 weixin.qq.com
+  }
+}
+
 ### Thank you
 <p>
   <img width="200" src="https://raw.githubusercontent.com/Stardust1001/WebVPN/refs/heads/master/alipay.jpg">
   <img width="200" src="https://raw.githubusercontent.com/Stardust1001/WebVPN/refs/heads/master/wxpay.jpg">
 </p>
+
 
