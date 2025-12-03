@@ -188,6 +188,7 @@ class WebVPN {
             for (let key in input) {
               const value = input[key]
               if (key === 'url' || typeof value === 'function') continue
+              if (key === 'mode' && value === 'navigate') continue
               init[key] = value
             }
             input = new Request(newUrl, init)

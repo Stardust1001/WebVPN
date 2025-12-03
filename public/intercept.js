@@ -1113,11 +1113,16 @@
           base: webvpn.base,
           _js_injected__: false
         }
-        cw.__win__ = Object.assign({}, cw, { ...cw.__context__ })
-        Object.keys(cw.__win__).forEach(k => {
-          const value = cw.__win__[k]
-          if (typeof value === 'function') {
-            cw.__win__[k] = value.bind(cw)
+        cw.__win__ = new Proxy(cw, {
+          get (obj, property, receiver) {
+            let value = cw.__context__[property]
+            if (!value) {
+              value = cw[property]
+              if (typeof value === 'function') {
+                return (...props) => value.apply(cw, props)
+              }
+            }
+            return value
           }
         })
       }
