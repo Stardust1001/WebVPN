@@ -200,7 +200,9 @@ class WebVPN {
     (function () {
       atob = self.atob.bind(self)
       addEventListener = self.addEventListener.bind(self)
-      postMessage = self.postMessage.bind(self)
+      if (self.postMessage) {
+        postMessage = self.postMessage.bind(self)
+      }
       with (self.__context_proxy__) {
     `
     this.jsScopeSuffixCode = `
