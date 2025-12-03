@@ -860,7 +860,7 @@
       const blob = blobs[url]
       if (typeof blob.part[0] === 'string') {
         const targetUrl = 'blob:' + (/\/\//.test(url) ? decodeUrl(url) : url)
-        const code = webvpn.workerWrapperCode.replace('#targetUrl#', targetUrl).replace('#CODE#', blob.part[0])
+        const code = webvpn.worker_wrapper_code.replace('#targetUrl#', targetUrl).replace('#CODE#', blob.part[0])
         const _blob = new window._Blob_([code], blob.options)
         url = URL._createObjectURL_(_blob)
       }
@@ -1137,7 +1137,7 @@
         const doc = this.contentWindow.__document__
         const win = this.contentWindow.window
         if (!win.webvpn._js_injected__) {
-          win.eval(webvpn.append_code)
+          win.eval(webvpn.intercept_code)
           win.webvpn._js_injected__ = true
         }
         return doc

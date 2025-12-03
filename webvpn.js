@@ -801,7 +801,7 @@ class WebVPN {
   appendScript (ctx, res) {
     const { httpsEnabled, site, interceptLog, debug, pluginsEanbled } = this.config
     const { disableJump = this.config.disableJump, confirmJump = this.config.confirmJump } = ctx.meta
-    const { base, scheme, target, isMainSession, shareId, appendCode, initInterceptionCode, appendScriptCode } = ctx.meta
+    const { base, scheme, target, isMainSession, shareId, customCode } = ctx.meta
     const { data } = res
     const prefix = site.origin.slice(site.origin.indexOf('//'))
     const siteUrl = (httpsEnabled ? scheme : 'http') + ':' + prefix
@@ -821,12 +821,11 @@ class WebVPN {
         isMainSession: ${isMainSession},
         shareId: '${shareId}',
       };
-      ${appendCode || ''}
       ${this.convertDomainsCode || ''}
-      ${initInterceptionCode || ''}
-      webvpn.append_code = ${JSON.stringify(this.jsInterceptCode.toString())}
-      eval(webvpn.append_code)
-      self.webvpn.workerWrapperCode = \`
+      ${customCode || ''}
+      webvpn.intercept_code = ${JSON.stringify(this.jsInterceptCode.toString())}
+      eval(webvpn.intercept_code)
+      webvpn.worker_wrapper_code = \`
         ${this.jsWorkerContextCode.replace('#siteUrl#', siteUrl)}
         ${this.jsScopePrefixCode}
           #CODE#
@@ -869,7 +868,6 @@ class WebVPN {
       const ss = Array.from(document.querySelectorAll('script'));
       ss.forEach(script => script.remove());
     </script>
-    ${appendScriptCode || ''}
     `
     const hasDoctype = /^\s*?\<\!DOCTYPE html\>/i.test(res.data)
     return (hasDoctype ? '<!DOCTYPE html>\n' : '') + code + data
