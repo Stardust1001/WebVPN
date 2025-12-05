@@ -98,6 +98,7 @@ class WebVPN {
       if (!self.window) {
         ${this.convertDomainsCode}
         setTimeout = self.setTimeout.bind(self)
+        clearTimeout = self.clearTimeout.bind(self)
         const _importScripts  = self.importScripts
         self.importScripts = function (...props) {
           props = props.map(transformUrl)
