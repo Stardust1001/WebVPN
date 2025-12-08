@@ -388,10 +388,6 @@ class WebVPN {
       }
     }
 
-    if (ctx.headers.accept === 'text/event-stream') {
-      return await this.respondPipe(ctx)
-    }
-
     if (this.noTransformMimes.includes(ctx.meta.mime)) {
       return await this.respondPipe(ctx)
     }
