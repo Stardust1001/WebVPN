@@ -799,7 +799,7 @@ class WebVPN {
   }
 
   appendScript (ctx, res) {
-    const { httpsEnabled, site, interceptLog, debug, pluginsEanbled } = this.config
+    const { httpsEnabled, site, interceptLog, enablePlugins, debug, disableDevtools } = this.config
     const { disableJump = this.config.disableJump, confirmJump = this.config.confirmJump } = ctx.meta
     const { base, scheme, target, isMainSession, shareId, customCode } = ctx.meta
     const { data } = res
@@ -834,17 +834,23 @@ class WebVPN {
       \`
     </script>
     ${
-      pluginsEanbled
+      enablePlugins
       ?
       `<script src="${prefix}/public/plugins.js"></script>`
       : ''
     }
     ${
-      debug
+      debug && !disableDevtools
       ? `
         <script src="https://cdnjs.cloudflare.com/ajax/libs/vConsole/3.15.1/vconsole.min.js"></script>
         <script>new VConsole()</script>
       `
+      : ''
+    }
+    ${
+      disableDevtools
+      ?
+      `<script src="${prefix}/public/disable-devtools.js"></script>`
       : ''
     }
     ${

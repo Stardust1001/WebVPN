@@ -25,10 +25,12 @@ export default {
   disableSourceMap: true,
   // 这个设置 0，可有效避免 Hostname/IP does not match certificate's altnames 错误
   NODE_TLS_REJECT_UNAUTHORIZED: 0,
+  // 是否启用插件
+  enablePlugins: true,
   // 是否开启调试（当前是VConsole）
   debug: false,
-  // 是否启用插件
-  pluginsEanbled: true,
+  // 是否禁用 devtools
+  disableDevtools: true,
   // 无法使用泛解析情况下，可使用单个二级域名代理指定网站
   // 但请注意，有些网站会引用第三方网站的资源，那么第三方网站你也要代理
   subdomains: {
