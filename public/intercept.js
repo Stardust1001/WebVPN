@@ -135,9 +135,9 @@
     }
     const u = new URL(url)
     if (u.host.includes(vpnDomain)) {
-      if (url.startsWith('http') && webvpn.protocol === 'http:') {
-        return url.replace('https://', 'http://')
-      }
+      // if (url.startsWith('http') && webvpn.protocol === 'http:') {
+        // return url.replace('https://', 'http://')
+      // }
       return url
     }
     let subdomain = encodeHost(u.host)
@@ -165,7 +165,7 @@
       subdomain = subdomain.split('-')[0]
     }
     const host = decodeHost(subdomain)
-    url = url.replace(u.origin, location.protocol + '//' + host)
+    url = url.replace(u.host, host)
     if (webvpn.hostname.includes(host) && webvpn.protocol === 'https:' && url.startsWith('http:')) {
       url = url.replace('http:', 'https:')
     }
