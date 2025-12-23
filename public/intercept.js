@@ -145,8 +145,8 @@
     if (!hostPrefix.includes('.') && hostPrefix.includes('-')) {
       subdomain += '-' + hostPrefix.split('-').slice(-2).join('-')
     }
-    const siteOrigin = siteU.origin.replace('www', subdomain)
-    return url.replace(u.origin, siteOrigin)
+    const siteHost = siteU.host.replace('www', subdomain)
+    return url.replace(u.host, siteHost)
   }
 
   const decodeUrl = (url) => {
