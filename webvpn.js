@@ -48,6 +48,7 @@ class WebVPN {
       'json': 'application/json',
       'video': 'video/mp4, application/vnd.apple.mpegurl',
       'audio': 'audio/webm, audio/mpeg',
+      'pdf-office': 'application/pdf',
       'stream': 'application/octet-stream, application/protobuffer',
       'event-stream': 'text/event-stream'
     }
