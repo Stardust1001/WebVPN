@@ -1042,19 +1042,15 @@
     },
     set (html) {
       html = (html || '').toString()
-      /* 去除无用的 \n，减少 DOM 渲染，提高执行效率（不会是 pre 元素吧？） */
       const childs = html2dom(html, this)
       console.log(
         '%cDOM 操作 拦截 innerHTML : ' + (html.length > 100 ? (html.slice(0, 100) + '...') : html),
         'color: #606666;background-color: lightblue;padding: 5px 10px;'
       )
-      const container = document.createElement('div')
-      for (const child of childs) {
-        container.appendChild(child)
-      }
-      html = container.innerHTML
-      html = replaceEscaped(html, 1)
-      ihDescriptor.set.apply(this, [html])
+      this.childNodes.forEach(child => child.remove())
+      childs.forEach(child => {
+        Node.__appendChild__.call(this, child)
+      })
     }
   })
 
@@ -1158,27 +1154,6 @@
     if (index === 1) return /&\w+/.test(text)
     if (index === 2) return /&#\d+;/.test(text)
     if (index === 3) return /&#x\w+;/.test(text)
-  }
-
-  const replaceEscaped = (text, index) => {
-    if (index === 1) {
-      for (const key in escaped) {
-        if (text.indexOf(key) >= 0) {
-          text = text.replaceAll(key, escaped[key])
-        }
-        const prefix = key.slice(0, -1)
-        if (text.indexOf(prefix) >= 0) {
-          text = text.replaceAll(prefix, escaped[key])
-        }
-      }
-      return text
-    }
-    if (index === 2) {
-      return text.replaceAll(/&#\d+;/g, (part) => String.fromCharCode(part.slice(2, -1) * 1))
-    }
-    if (index === 3) {
-      return text.replaceAll(/&#x\w+;/g, (part) => String.fromCharCode(parseInt(part.slice(3, -1), 16)))
-    }
   }
 
   window.addEventListener('load', replaceNodesUrls)
