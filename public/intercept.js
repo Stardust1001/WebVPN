@@ -918,7 +918,7 @@
           '%cDOM 操作 拦截 ' + item[1] + ' ' + item[2] + ' getter : ' + value,
           'color: #606666;background-color: lime;padding: 5px 10px;'
         )
-        if (!value || value.startsWith('blob:')) return value
+        if (!value || value.startsWith('blob:') || value.startsWith('javascript:')) return value
         return decodeUrl(value)
       },
       set (url) {
@@ -938,6 +938,7 @@
           'color: #606666;background-color: lime;padding: 5px 10px;'
         )
         let url = this.getAttribute('href') || decodeUrl(location.href)
+        if (url.startsWith('blob:') || url.startsWith('javascript:')) return url
         if (!url.startsWith('http') && !url.startsWith('//')) {
           url = urljoin(webvpn.currentHref, url)
         }
