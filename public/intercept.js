@@ -896,7 +896,7 @@
   })
 
   const canJump = (url) => {
-    if (transformUrl(url).split(/(\?#)/)[0] === location.href.split(/(\?#)/)[0]) return false
+    // if (transformUrl(url).split(/(\?#)/)[0] === location.href.split(/(\?#)/)[0]) return false
     if (disableJump) return false
     if (confirmJump) {
       const ok = confirm('允许跳转到 ' + url + ' 吗？')
