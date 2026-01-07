@@ -76,7 +76,7 @@ class WebVPN {
       /content-security-policy-report-only/i,
     ]
 
-    this.noTransformMimes = ['wasm', 'font', 'json', 'image', 'video', 'audio', 'pdf-office', 'event-stream']
+    this.noTransformMimes = ['wasm', 'font', 'json', 'image', 'video', 'audio', 'pdf-office', 'stream', 'event-stream']
     this.cacheMimes = ['js', 'css', 'font', 'image', 'video', 'audio', 'pdf-office']
     this.cacheDir = config.cacheDir || 'cache'
 
