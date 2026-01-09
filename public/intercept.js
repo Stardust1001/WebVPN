@@ -159,7 +159,7 @@
       url = url.slice(url.indexOf('http'))
     }
     const u = new URL(url)
-    if (!u.hostname.includes(vpnDomain)) return url
+    if (!u.host.includes(vpnDomain)) return url
     let subdomain = u.host.replace(vpnDomain, '')
     if (!subdomain.includes('.') && subdomain.includes('-')) {
       subdomain = subdomain.split('-')[0]
