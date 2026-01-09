@@ -99,7 +99,9 @@ class WebVPN {
       if (!self.window) {
         ${this.convertDomainsCode}
         setTimeout = self.setTimeout.bind(self)
+        setInterval = self.setInterval.bind(self)
         clearTimeout = self.clearTimeout.bind(self)
+        clearInterval = self.clearInterval.bind(self)
         const _importScripts  = self.importScripts
         self.importScripts = function (...props) {
           props = props.map(transformUrl)
@@ -111,6 +113,8 @@ class WebVPN {
           url = (url ? url.toString() : '').trim()
           if (url.startsWith('//')) {
             url = target.protocol + url
+          } else if (url.startsWith('/')) {
+            url = new URL(url, target.href).href
           }
           const u = new URL(url)
           if (u.hostname.includes(vpnDomain)) return url
