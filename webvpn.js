@@ -16,7 +16,7 @@ import { fsUtils } from '@wp1001/node'
 const httpsAgent = new https.Agent({ rejectUnauthorized: false })
 
 const sharedSessions = {
-  cache: new Memcached('localhost', { retries: 10,retry: 10000, remove: true }),
+  cache: new Memcached('localhost', { retries: 10, retry: 10000, remove: true }),
   async getItem (key) {
     return new Promise(resolve => {
       sharedSessions.cache.get(key, (err, data) => {
