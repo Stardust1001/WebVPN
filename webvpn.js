@@ -6,20 +6,30 @@ import cluster from 'node:cluster'
 import { ZSTDDecompress } from 'simple-zstd'
 import chalk from 'chalk'
 import Koa from 'koa'
+import Memcached from 'memcached'
 import WebSocket, { WebSocketServer } from 'ws'
 import fetch, { File, FormData } from 'node-fetch'
 import iconv from 'iconv-lite'
 
-import { fsUtils, Storage } from '@wp1001/node'
+import { fsUtils } from '@wp1001/node'
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false })
 
-const sharedSessions = new Storage({ filepath: './shared-sessions.json', autoLoad: true, autoSave: false })
-setInterval(async () => {
-  const cache = { ...sharedSessions.cache }
-  await sharedSessions.load()
-  await sharedSessions.save({ ...sharedSessions.cache, ...cache })
-}, 10e3)
+const sharedSessions = {
+  cache: new Memcached('localhost', { retries: 10,retry: 10000, remove: true }),
+  async getItem (key) {
+    return new Promise(resolve => {
+      sharedSessions.cache.get(key, (err, data) => {
+        resolve(err ? null : data)
+      })
+    })
+  },
+  async setItem (key, value) {
+    return new Promise(resolve => {
+      sharedSessions.cache.set(key, value, 1e6, resolve)
+    })
+  }
+}
 
 class WebVPN {
   constructor (config) {
@@ -250,7 +260,7 @@ class WebVPN {
     } else if (ctx.url.startsWith('/share-sessions')) {
       if (ctx.method === 'POST') {
         const body = await this.calcRequestBody(ctx)
-        sharedSessions.setItem(ctx.query.shareId + '-clientCache', body)
+        await sharedSessions.setItem(ctx.query.shareId + '-clientCache', body)
       }
       return ctx.res.writeHead(200, {
         'access-control-allow-credentials': true,
@@ -385,7 +395,7 @@ class WebVPN {
       return
     }
 
-    this.routeInit(ctx)
+    await this.routeInit(ctx)
 
     if (this.config.cache && ctx.meta.cache !== false) {
       if (await this.getCache(ctx)) {
@@ -439,7 +449,7 @@ class WebVPN {
         res.data = this.processHtml(ctx, res)
         res.data = this.processHtmlScopeCodes(ctx, res.data)
         if (!ctx.meta.isXHR) {
-          res.data = this.appendScript(ctx, res)
+          res.data = await this.appendScript(ctx, res)
         }
       } else if (ctx.meta.mime === 'js') {
         res.data = this.processJsScopeCode(ctx, res.data)
@@ -459,8 +469,8 @@ class WebVPN {
     ctx.body = res.data
   }
 
-  routeInit (ctx) {
-    const { isMainSession, shareId } = this.checkShareSession(ctx)
+  async routeInit (ctx) {
+    const { isMainSession, shareId } = await this.checkShareSession(ctx)
     const domain = decodeHost(ctx.subdomain)
     const url = ctx.scheme + '://' + domain + ctx.url
     ctx.meta = {
@@ -477,7 +487,7 @@ class WebVPN {
     }
   }
 
-  checkShareSession (ctx) {
+  async checkShareSession (ctx) {
     let isMainSession = false, shareId = ''
     if (!ctx.subdomain.includes('.') && ctx.subdomain.includes('-')) {
       const parts = ctx.subdomain.split('-')
@@ -492,14 +502,14 @@ class WebVPN {
       }
       if (isMainSession) {
         if (ctx.headers['cookie']) {
-          sharedSessions.setItem(shareId + '-cookie', ctx.headers['cookie'])
+          await sharedSessions.setItem(shareId + '-cookie', ctx.headers['cookie'])
         }
         if (ctx.headers['authorization']) {
-          sharedSessions.setItem(shareId + '-authorization', ctx.headers['authorization'])
+          await sharedSessions.setItem(shareId + '-authorization', ctx.headers['authorization'])
         }
       } else {
-        const cookie = sharedSessions.getItem(shareId + '-cookie')
-        const authorization = sharedSessions.getItem(shareId + '-authorization')
+        const cookie = await sharedSessions.getItem(shareId + '-cookie')
+        const authorization = await sharedSessions.getItem(shareId + '-authorization')
         if (cookie) ctx.headers['cookie'] = cookie
         if (authorization) ctx.headers['authorization'] = authorization
       }
@@ -550,8 +560,8 @@ class WebVPN {
     }
     await new Promise(resolve => {
       const lib = isHttps ? https : http
-      const req = lib.request(options, res => {
-        const headers = this.initResponseHeaders(ctx, res)
+      const req = lib.request(options, async res => {
+        const headers = await this.initResponseHeaders(ctx, res)
         this.deleteIgnoreHeaders(this.ignoreResponseHeaderRegexps, headers)
         ctx.res.writeHead(res.statusCode, headers)
         res.pipe(ctx.res)
@@ -616,7 +626,7 @@ class WebVPN {
 
   async fetchRequest (ctx, options) {
     const res = await fetch(ctx.meta.url, options)
-    const headers = this.initResponseHeaders(ctx, res)
+    const headers = await this.initResponseHeaders(ctx, res)
 
     if (headers.location) {
       ctx.res.writeHead(res.status, headers)
@@ -803,7 +813,7 @@ class WebVPN {
     return names.map(n => `try { self.${n} = ${n}; } catch {}`).join('\n')
   }
 
-  appendScript (ctx, res) {
+  async appendScript (ctx, res) {
     const { httpsEnabled, site, interceptLog, enablePlugins, debug, disableDevtools } = this.config
     const { disableJump = this.config.disableJump, confirmJump = this.config.confirmJump } = ctx.meta
     const { base, scheme, target, isMainSession, shareId, customCode } = ctx.meta
@@ -868,7 +878,7 @@ class WebVPN {
       !isMainSession && shareId
       ?
       `<script>
-        const { cookie, localStorage: local } = ${sharedSessions.getItem(shareId + '-clientCache') || '{}'}
+        const { cookie, localStorage: local } = ${await sharedSessions.getItem(shareId + '-clientCache') || '{}'}
         document.cookie += cookie
         localStorage.clear()
         for (let key in local) localStorage[key] = local[key]
@@ -917,7 +927,7 @@ class WebVPN {
     return config
   }
 
-  initResponseHeaders (ctx, res) {
+  async initResponseHeaders (ctx, res) {
     let headers = {}
     if (typeof res.headers.raw === 'function') {
       const raw = res.headers.raw()
@@ -984,7 +994,7 @@ class WebVPN {
     }
     headers['x-frame-options'] = ['allowall']
     if (!ctx.meta.isMainSession && ctx.meta.shareId) {
-      const cookie = sharedSessions.getItem(ctx.meta.shareId + '-cookie')
+      const cookie = await sharedSessions.getItem(ctx.meta.shareId + '-cookie')
       if (cookie) headers['set-cookie'] = cookie
     }
     return headers
