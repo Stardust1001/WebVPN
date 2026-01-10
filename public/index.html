@@ -99,6 +99,7 @@
 <div class="row button" id="goto">Goto</div>
 
 <script>
+'inject_code'
 
 const urlInput = document.querySelector('#input-url')
 const shareIdInput = document.querySelector('#share-id')
@@ -127,10 +128,6 @@ generateButton.addEventListener('click', () => {
 gotoButton.addEventListener('click', () => {
   window.open(outputInput.value)
 })
-
-const vpnDomain = location.host.replace('www', '')
-const encodeHost = text => text.replace(':', '_._')
-const decodeHost = text => text.replace(vpnDomain, '').replace('_._', ':')
 
 function calcUrl () {
   let url = urlInput.value.trim()

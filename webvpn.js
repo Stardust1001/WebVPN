@@ -98,9 +98,22 @@ class WebVPN {
       const vpnDomain = '${config.vpnDomain}'
       const subdomains = ${JSON.stringify(config.subdomains)}
       const domainDict = {}
+      const domainMode = '${config.domainMode}'
       Object.entries(subdomains).forEach(([sub, name]) => domainDict[name] = sub)
-      globalThis.encodeHost = text => domainDict[text] || text.replace(':', '_._')
-      globalThis.decodeHost = text => subdomains[text] || text.replace(vpnDomain, '').replace('_._', ':')
+      const _encode_host_original_ = text => {
+        return domainDict[text] || text.replace(':', '_._')
+      }
+      const _decode_host_original_ = text => {
+        return subdomains[text] || text.replace(vpnDomain, '').replace('_._', ':')
+      }
+      const _encode_host_underline_ = text => {
+        return domainDict[text] || text.replaceAll('.', '__').replace(':', '_-_')
+      }
+      const _decode_host_underline_ = text => {
+        return subdomains[text] || text.replace(vpnDomain, '').replace('_-_', ':').replaceAll('__', '.')
+      }
+      globalThis.encodeHost = domainMode === 'underline' ? _encode_host_underline_ : _encode_host_original_
+      globalThis.decodeHost = domainMode === 'underline' ? _decode_host_underline_ : _decode_host_original_
     `
     eval(this.convertDomainsCode)
 
@@ -256,7 +269,13 @@ class WebVPN {
 
   async serveWww (ctx) {
     if (ctx.url === '/') {
-      await this.respondFile(ctx, path.join('public', 'index.html'))
+      ctx.res.writeHead(200, { 'Content-Type': 'text/html' })
+      let text = await fsUtils.read(path.join('public', 'index.html'))
+      text = text.replace(
+        `'inject_code'`,
+        'const config = ' + JSON.stringify(this.config, null, 2) + '\n' + this.convertDomainsCode
+      )
+      ctx.body = text
     } else if (ctx.url.startsWith('/share-sessions')) {
       if (ctx.method === 'POST') {
         const body = await this.calcRequestBody(ctx)
