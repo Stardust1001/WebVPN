@@ -1006,7 +1006,7 @@ class WebVPN {
         if (!/domain=/i.test(e)) return e
         return e.split('; ').map(p => {
           if (!/domain=/i.test(p)) return p
-          return 'domain=' + this.config.vpnDomain
+          return 'domain=' + this.config.vpnDomain.split(':')[0]
         }).join('; ')
       })
     }
