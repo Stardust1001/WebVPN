@@ -141,7 +141,7 @@
       return url
     }
     let subdomain = encodeHost(u.host)
-    const hostPrefix = location.hostname.replace(vpnDomain, '')
+    const hostPrefix = location.host.replace(vpnDomain, '')
     if (!hostPrefix.includes('.') && hostPrefix.includes('-')) {
       subdomain += '-' + hostPrefix.split('-').slice(-2).join('-')
     }
