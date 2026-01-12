@@ -107,10 +107,18 @@ class WebVPN {
         return subdomains[text] || text.replace(vpnDomain, '').replace('_._', ':')
       }
       const _encode_host_underline_ = text => {
-        return domainDict[text] || text.replaceAll('.', '__').replaceAll('-', '_0_').replace(':', '_1_')
+        let value = domainDict[text]
+        if (!value) {
+          value = text.replaceAll('.', '__').replaceAll('-', '_h_').replace(':', '_c_')
+        }
+        return value
       }
       const _decode_host_underline_ = text => {
-        return subdomains[text] || text.replace(vpnDomain, '').replace('_1_', ':').replaceAll('_0_', '-').replaceAll('__', '.')
+        let value = subdomains[text]
+        if (!value) {
+          value = text.replace('_c_', ':').replaceAll('_h_', '-').replaceAll('__', '.')
+        }
+        return value
       }
       globalThis.encodeHost = domainMode === 'underline' ? _encode_host_underline_ : _encode_host_original_
       globalThis.decodeHost = domainMode === 'underline' ? _decode_host_underline_ : _decode_host_original_
