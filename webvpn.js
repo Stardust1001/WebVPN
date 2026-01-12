@@ -148,7 +148,7 @@ class WebVPN {
             url = new URL(url, target.href).href
           }
           const u = new URL(url)
-          if (u.hostname.includes(vpnDomain)) return url
+          if (u.host.includes(vpnDomain)) return url
           const subdomain = encodeHost(u.host)
           return url.replace(u.origin, site.origin.replace('www', subdomain))
         }
