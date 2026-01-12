@@ -543,7 +543,7 @@ class WebVPN {
     }
     for (let key of ['origin', 'referer']) {
       if (ctx.headers[key]?.includes('-')) {
-        const subdomain = new URL(ctx.headers[key]).hostname.split('.')[0]
+        const subdomain = new URL(ctx.headers[key]).host.split('.')[0]
         if (subdomain.includes('-')) {
           ctx.headers[key] = ctx.headers[key].replace('-' + subdomain.split('-').slice(1).join('-'), '')
         }
