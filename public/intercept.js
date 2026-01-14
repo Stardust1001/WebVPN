@@ -10,7 +10,7 @@
   const sourceU = new URL(webvpn.sourceUrl)
   const pageU = new URL(webvpn.pageUrl)
   const base = webvpn.base
-  const vpnDomain = siteU.host.replace('www', '')
+  const { httpVpnDomain, httpsVpnDomain } = webvpn
 
   /* <html> 之前的 <script> 代码，获取不到 location.href 等网址信息，通过 webvpn.sourceUrl 来提供 */
   const location = new Proxy(window.location, {
@@ -134,6 +134,7 @@
       url = url.slice(url.indexOf('http'))
     }
     const u = new URL(url)
+    const vpnDomain = u.protocol === 'https:' ? httpsVpnDomain : httpVpnDomain
     if (u.host.includes(vpnDomain)) {
       // if (url.startsWith('http') && webvpn.protocol === 'http:') {
         // return url.replace('https://', 'http://')
@@ -145,8 +146,7 @@
     if (!hostPrefix.includes('.') && hostPrefix.includes('-')) {
       subdomain += '-' + hostPrefix.split('-').slice(-2).join('-')
     }
-    const siteHost = siteU.host.replace('www', subdomain)
-    return url.replace(u.host, siteHost)
+    return url.replace(u.host, subdomain + vpnDomain)
   }
 
   const decodeUrl = (url) => {
@@ -159,6 +159,7 @@
       url = url.slice(url.indexOf('http'))
     }
     const u = new URL(url)
+    const vpnDomain = u.protocol === 'https:' ? httpsVpnDomain : httpVpnDomain
     if (!u.host.includes(vpnDomain)) return url
     let subdomain = u.host.replace(vpnDomain, '')
     if (!subdomain.includes('.') && subdomain.includes('-')) {
@@ -220,7 +221,7 @@
     /* TODO 先不管 srcset data codebase 之类的 */
     const urls = new Set()
     Array.from(html.matchAll(/(href|src|poster|action)="([^"]*)"/g)).forEach(match => {
-      if (match[2].includes(vpnDomain)) urls.add(match[2])
+      if (match[2].includes(httpVpnDomain) || match[2].includes(httpsVpnDomain)) urls.add(match[2])
     })
     if (urls.size) {
       Array.from(urls).sort((a, b) => b.length - a.length).forEach(url => {
@@ -308,6 +309,7 @@
     for (const prefix of ignoredPrefixes) {
       if (url.indexOf(prefix) >= 0) return false
     }
+    const vpnDomain = url.startsWith('https://') ? httpsVpnDomain : httpVpnDomain
     return url.indexOf(vpnDomain) < 0
   }
 
@@ -1227,7 +1229,7 @@
   }
 
   const logs = webvpn.logs = {
-    all  () {
+    all () {
       const allLogs = []
       for (const key in logs) {
         if (typeof logs[key] === 'function') continue 
@@ -1238,8 +1240,7 @@
       return allLogs
     },
     query (keyword) {
-      const allLogs = this.all()
-      return allLogs.filter(log => typeof log === 'string' && log.indexOf(keyword) >= 0)
+      return this.all().filter(log => typeof log === 'string' && log.indexOf(keyword) >= 0)
     }
   }
 

@@ -34,7 +34,10 @@ const sharedSessions = {
 class WebVPN {
   constructor (config) {
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = config.NODE_TLS_REJECT_UNAUTHORIZED || 0
-    config.vpnDomain = config.site.host.replace('www', '')
+    const { port, httpsPort, site } = config
+    config.httpVpnDomain = site.hostname.replace('www', '') + (port === 80 ? '' : `:${port}`)
+    config.httpsVpnDomain = site.hostname.replace('www', '') + (httpsPort === 443 ? '' : `:${httpsPort}`)
+
     this.config = config
     this.mimes = ['json', 'js', 'css', 'html', 'image', 'video', 'audio']
     this.mimeRegs = [
@@ -95,7 +98,9 @@ class WebVPN {
     this.jsInterceptCode = fs.readFileSync('./public/intercept.js')
 
     this.convertDomainsCode = `
-      const vpnDomain = '${config.vpnDomain}'
+      const httpVpnDomain = '${config.httpVpnDomain}'
+      const httpsVpnDomain = '${config.httpsVpnDomain}'
+      const vpnDomain = (globalThis.location?.protocol || 'https:') === 'http:' ? httpVpnDomain : httpsVpnDomain
       const subdomains = ${JSON.stringify(config.subdomains)}
       const domainDict = {}
       const domainMode = '${config.domainMode}'
@@ -400,20 +405,24 @@ class WebVPN {
   }
 
   async proxyRoute (ctx, next) {
+    const { httpVpnDomain, httpsVpnDomain, site } = this.config
     if (ctx.headers.upgrade === 'websocket') {
       this.wsServer.handleUpgrade(ctx.request, ctx.socket, ctx.headers, client => {
         this.wsServer.onConnection(client, ctx.request)
       })
     }
     ctx.scheme = new URL(ctx.request.href).protocol.slice(0, -1)
-    const subdomain = ctx.headers.host.replace(this.config.vpnDomain, '')
+    const vpnDomain = ctx.scheme === 'http' ? httpVpnDomain : httpsVpnDomain
+    let subdomain = ctx.headers.host.replace(vpnDomain, '')
     if (subdomain === 'www') {
       return await this.serveWww(ctx)
-    } else if (subdomain === this.config.vpnDomain.slice(1)) {
-      ctx.res.writeHead(302, {
-        location: ctx.scheme + '://' + this.config.site.host
-      })
-      return
+    } else {
+      if (subdomain === vpnDomain.slice(1)) {
+        ctx.res.writeHead(302, {
+          location: ctx.scheme + '://' + site.host
+        })
+        return
+      }
     }
     ctx.subdomain = subdomain
 
@@ -735,9 +744,9 @@ class WebVPN {
   }
 
   replaceMatches (ctx, res, matches) {
-    const { site, vpnDomain } = this.config
+    const { site, httpVpnDomain, httpsVpnDomain } = this.config
     const dict = {}
-    matches.filter(m => !m.includes('\n') && m.indexOf(vpnDomain) < 0).forEach(match => {
+    matches.filter(m => !m.includes('\n') && m.indexOf(httpVpnDomain) < 0 && m.indexOf(httpsVpnDomain) < 0).forEach(match => {
       let url = ''
       let prefix = ''
       let quote = ''
@@ -769,11 +778,18 @@ class WebVPN {
   }
 
   transformUrl (ctx, url) {
-    const { httpsEnabled, site } = this.config
+    const { httpsEnabled, port, httpsPort, site } = this.config
     const u = new URL(url)
     const subdomain = encodeHost(u.host)
     const protocol = httpsEnabled ? u.protocol : 'http:'
-    return url.replace(u.origin, (protocol + '//' + site.host).replace('www', subdomain))
+    let origin = protocol + '//' + site.hostname
+    if (protocol === 'https:' && httpsPort !== 443) {
+      origin += ':' + httpsPort
+    } else if (protocol === 'http:' && port !== 80) {
+      origin += ':' + port
+    }
+    origin = origin.replace('www', subdomain)
+    return url.replace(u.origin, origin)
   }
 
   processHtml (ctx, res) {
@@ -841,11 +857,19 @@ class WebVPN {
   }
 
   async appendScript (ctx, res) {
-    const { httpsEnabled, site, interceptLog, enablePlugins, debug, disableDevtools } = this.config
+    const {
+      httpsEnabled, port, httpsPort, site, httpVpnDomain, httpsVpnDomain,
+      interceptLog, enablePlugins, debug, disableDevtools
+    } = this.config
     const { disableJump = this.config.disableJump, confirmJump = this.config.confirmJump } = ctx.meta
     const { base, scheme, target, isMainSession, shareId, customCode } = ctx.meta
     const { data } = res
-    const prefix = site.origin.slice(site.origin.indexOf('//'))
+    let prefix = '//' + site.hostname
+    if (scheme === 'https' && httpsPort !== 443) {
+      prefix += ':' + httpsPort
+    } else if (scheme === 'http' && port !== 80) {
+      prefix += ':' + port
+    }
     const siteUrl = (httpsEnabled ? scheme : 'http') + ':' + prefix
     const pageUrl = this.transformUrl(ctx, target.href)
     const code = `
@@ -856,6 +880,8 @@ class WebVPN {
         sourceUrl: '${target.href}',
         pageUrl: '${pageUrl}',
         hostname: '${target.hostname}',
+        httpVpnDomain: '${httpVpnDomain}',
+        httpsVpnDomain: '${httpsVpnDomain}',
         base: '${base}',
         interceptLog: ${interceptLog},
         disableJump: ${disableJump},
@@ -955,6 +981,7 @@ class WebVPN {
   }
 
   async initResponseHeaders (ctx, res) {
+    const { httpsEnabled, httpVpnDomain, httpsVpnDomain, site } = this.config
     let headers = {}
     if (typeof res.headers.raw === 'function') {
       const raw = res.headers.raw()
@@ -971,7 +998,8 @@ class WebVPN {
       headers['access-control-allow-origin'] = headers['access-control-allow-origin'].map(e => {
         if (e === '*') return e
         const host = e.indexOf('http') >= 0 ? new URL(e).host : e
-        return e.replace(host, encodeHost(host) + this.config.vpnDomain)
+        const vpnDomain = e.indexOf('https') >= 0 ? httpsVpnDomain : httpVpnDomain
+        return e.replace(host, encodeHost(host) + vpnDomain)
       })
     }
     headers['content-type'] = [headers['content-type']?.[0] || 'text/html']
@@ -983,10 +1011,10 @@ class WebVPN {
           || e.includes('require-trusted-types-for')
         ) return ''
         if (e.indexOf('frame-ancestors') < 0 || e === `frame-ancestors 'none';`) return e
-        const protocol = (this.config.httpsEnabled ? ctx.meta.scheme : 'http') + '://'
+        const protocol = (httpsEnabled ? ctx.meta.scheme : 'http') + '://'
         return e.replace(
           'frame-ancestors',
-          'frame-ancestors ' + protocol + this.config.site.host.replace('www', '*')
+          'frame-ancestors ' + protocol + site.host.replace('www', '*')
         )
       })
     }
@@ -1006,7 +1034,7 @@ class WebVPN {
         if (!/domain=/i.test(e)) return e
         return e.split('; ').map(p => {
           if (!/domain=/i.test(p)) return p
-          return 'domain=' + this.config.vpnDomain.split(':')[0]
+          return 'domain=' + this.config.httpVpnDomain.split(':')[0]
         }).join('; ')
       })
     }
@@ -1051,7 +1079,9 @@ class WebVPN {
     }
     const referer = headers['referer']
     if (referer) {
-      if (referer.indexOf(this.config.site.host) || referer.indexOf(this.config.vpnDomain) < 0) {
+      const { site, httpVpnDomain, httpsVpnDomain } = this.config
+      const vpnDomain = referer.startsWith('https') ? httpsVpnDomain : httpVpnDomain
+      if (referer.indexOf(site.host) < 0 || referer.indexOf(httpVpnDomain) < 0) {
         delete headers['referer']
       } else {
         const host = new URL(referer).host
@@ -1061,7 +1091,9 @@ class WebVPN {
   }
 
   convertHost (host) {
-    return decodeHost(host.replace(this.config.vpnDomain, ''))
+    const { httpVpnDomain, httpsVpnDomain } = this.config
+    host = host.replace(httpsVpnDomain, '').replace(httpVpnDomain, '')
+    return decodeHost(host)
   }
 
   async convertCharsetData (ctx, headers, res) {

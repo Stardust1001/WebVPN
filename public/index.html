@@ -100,6 +100,7 @@
 
 <script>
 'inject_code'
+const site = new URL(config.site)
 
 const urlInput = document.querySelector('#input-url')
 const shareIdInput = document.querySelector('#share-id')
@@ -156,9 +157,18 @@ function calcUrl () {
 }
 
 function transformUrl (url) {
-  const { host, origin, protocol } = new URL(url)
-  const subdomain = encodeHost(host).replaceAll('=', '')
-  return location.origin.replace(location.protocol, protocol).replace('www', subdomain) + url.slice(origin.length)
+  const { httpsEnabled, port, httpsPort } = config
+  const u = new URL(url)
+  const subdomain = encodeHost(u.host)
+  const protocol = httpsEnabled ? u.protocol : 'http:'
+  let origin = protocol + '//' + site.hostname
+  if (protocol === 'https:' && httpsPort !== 443) {
+    origin += ':' + httpsPort
+  } else if (protocol === 'http:' && port !== 80) {
+    origin += ':' + port
+  }
+  origin = origin.replace('www', subdomain)
+  return url.replace(u.origin, origin)
 }
 
 function decodeUrl (url) {
