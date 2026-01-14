@@ -35,8 +35,9 @@ class WebVPN {
   constructor (config) {
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = config.NODE_TLS_REJECT_UNAUTHORIZED || 0
     const { port, httpsPort, site } = config
-    config.httpVpnDomain = site.hostname.replace('www', '') + (port === 80 ? '' : `:${port}`)
-    config.httpsVpnDomain = site.hostname.replace('www', '') + (httpsPort === 443 ? '' : `:${httpsPort}`)
+    config.vpnDomain = site.hostname.replace('www', '')
+    config.httpVpnDomain = config.vpnDomain + (port === 80 ? '' : `:${port}`)
+    config.httpsVpnDomain = config.vpnDomain + (httpsPort === 443 ? '' : `:${httpsPort}`)
 
     this.config = config
     this.mimes = ['json', 'js', 'css', 'html', 'image', 'video', 'audio']
@@ -100,7 +101,6 @@ class WebVPN {
     this.convertDomainsCode = `
       const httpVpnDomain = '${config.httpVpnDomain}'
       const httpsVpnDomain = '${config.httpsVpnDomain}'
-      const vpnDomain = (globalThis.location?.protocol || 'https:') === 'http:' ? httpVpnDomain : httpsVpnDomain
       const subdomains = ${JSON.stringify(config.subdomains)}
       const domainDict = {}
       const domainMode = '${config.domainMode}'
@@ -109,7 +109,7 @@ class WebVPN {
         return domainDict[text] || text.replace(':', '_._')
       }
       const _decode_host_original_ = text => {
-        return subdomains[text] || text.replace(vpnDomain, '').replace('_._', ':')
+        return subdomains[text] || text.replace('_._', ':')
       }
       const _encode_host_underline_ = text => {
         let value = domainDict[text]
@@ -133,7 +133,6 @@ class WebVPN {
     this.jsWorkerContextCode = `
       // worker 里面创造 __context__ 环境
       if (!self.window) {
-        ${this.convertDomainsCode}
         setTimeout = self.setTimeout.bind(self)
         setInterval = self.setInterval.bind(self)
         clearTimeout = self.clearTimeout.bind(self)
@@ -153,9 +152,9 @@ class WebVPN {
             url = new URL(url, target.href).href
           }
           const u = new URL(url)
+          const vpnDomain = u.protocol === 'http:' ? httpVpnDomain : httpsVpnDomain
           if (u.host.includes(vpnDomain)) return url
-          const subdomain = encodeHost(u.host)
-          return url.replace(u.origin, site.origin.replace('www', subdomain))
+          return url.replace(u.host, encodeHost(u.host) + vpnDomain)
         }
 
         self.webvpn = { target, site, transformUrl }
@@ -778,18 +777,10 @@ class WebVPN {
   }
 
   transformUrl (ctx, url) {
-    const { httpsEnabled, port, httpsPort, site } = this.config
+    const { httpVpnDomain, httpsVpnDomain } = this.config
     const u = new URL(url)
-    const subdomain = encodeHost(u.host)
-    const protocol = httpsEnabled ? u.protocol : 'http:'
-    let origin = protocol + '//' + site.hostname
-    if (protocol === 'https:' && httpsPort !== 443) {
-      origin += ':' + httpsPort
-    } else if (protocol === 'http:' && port !== 80) {
-      origin += ':' + port
-    }
-    origin = origin.replace('www', subdomain)
-    return url.replace(u.origin, origin)
+    const vpnDomain = u.protocol === 'http:' ? httpVpnDomain : httpsVpnDomain
+    return url.replace(u.host, encodeHost(u.host) + vpnDomain)
   }
 
   processHtml (ctx, res) {
@@ -841,12 +832,21 @@ class WebVPN {
     const { scheme, target } = ctx.meta
     const prefix = site.origin.slice(site.origin.indexOf('//'))
     const siteUrl = (httpsEnabled ? scheme : 'http') + ':' + prefix
-    return (isJsFile ? this.jsWorkerContextCode.replace('#targetUrl#', target.href).replace('#siteUrl#', siteUrl) : '')
-            + this.jsScopePrefixCode
+    let result = ''
+    if (isJsFile) {
+      result += `
+        if (!self.window) {
+          ${this.convertDomainsCode}
+        }
+      `
+      result += this.jsWorkerContextCode.replace('#targetUrl#', target.href).replace('#siteUrl#', siteUrl)
+    }
+    result += this.jsScopePrefixCode
             + code
             + '\n}\n'
             + this.calcHoistIdentifiersCode(code)
             + this.jsScopeSuffixCode
+    return result
   }
 
   calcHoistIdentifiersCode (code) {
@@ -858,18 +858,13 @@ class WebVPN {
 
   async appendScript (ctx, res) {
     const {
-      httpsEnabled, port, httpsPort, site, httpVpnDomain, httpsVpnDomain,
+      httpsEnabled, httpVpnDomain, httpsVpnDomain,
       interceptLog, enablePlugins, debug, disableDevtools
     } = this.config
     const { disableJump = this.config.disableJump, confirmJump = this.config.confirmJump } = ctx.meta
     const { base, scheme, target, isMainSession, shareId, customCode } = ctx.meta
     const { data } = res
-    let prefix = '//' + site.hostname
-    if (scheme === 'https' && httpsPort !== 443) {
-      prefix += ':' + httpsPort
-    } else if (scheme === 'http' && port !== 80) {
-      prefix += ':' + port
-    }
+    const prefix = '//www' + (httpsEnabled && scheme === 'https' ? httpsVpnDomain : httpVpnDomain)
     const siteUrl = (httpsEnabled ? scheme : 'http') + ':' + prefix
     const pageUrl = this.transformUrl(ctx, target.href)
     const code = `
@@ -889,11 +884,12 @@ class WebVPN {
         isMainSession: ${isMainSession},
         shareId: '${shareId}',
       };
-      ${this.convertDomainsCode || ''}
+      const convertDomainsCode = \`${this.convertDomainsCode}\`
+      eval(convertDomainsCode)
       ${customCode || ''}
       webvpn.intercept_code = ${JSON.stringify(this.jsInterceptCode.toString())}
       eval(webvpn.intercept_code)
-      webvpn.worker_wrapper_code = \`
+      webvpn.worker_wrapper_code = convertDomainsCode + \`
         ${this.jsWorkerContextCode.replace('#siteUrl#', siteUrl)}
         ${this.jsScopePrefixCode}
           #CODE#
@@ -1034,7 +1030,7 @@ class WebVPN {
         if (!/domain=/i.test(e)) return e
         return e.split('; ').map(p => {
           if (!/domain=/i.test(p)) return p
-          return 'domain=' + this.config.httpVpnDomain.split(':')[0]
+          return 'domain=' + this.config.vpnDomain
         }).join('; ')
       })
     }
@@ -1080,8 +1076,8 @@ class WebVPN {
     const referer = headers['referer']
     if (referer) {
       const { site, httpVpnDomain, httpsVpnDomain } = this.config
-      const vpnDomain = referer.startsWith('https') ? httpsVpnDomain : httpVpnDomain
-      if (referer.indexOf(site.host) < 0 || referer.indexOf(httpVpnDomain) < 0) {
+      const vpnDomain = referer.startsWith('http://') ? httpVpnDomain : httpsVpnDomain
+      if (referer.indexOf(site.host) < 0 || referer.indexOf(vpnDomain) < 0) {
         delete headers['referer']
       } else {
         const host = new URL(referer).host
