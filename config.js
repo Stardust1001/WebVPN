@@ -40,3 +40,6 @@ export default {
     'im': 'im.qq.com'
   }
 }
+
+// chiron1
+// ktKH988192
