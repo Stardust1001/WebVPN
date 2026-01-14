@@ -834,12 +834,8 @@ class WebVPN {
     const siteUrl = (httpsEnabled ? scheme : 'http') + ':' + prefix
     let result = ''
     if (isJsFile) {
-      result += `
-        if (!self.window) {
-          ${this.convertDomainsCode}
-        }
-      `
-      result += this.jsWorkerContextCode.replace('#targetUrl#', target.href).replace('#siteUrl#', siteUrl)
+      result += this.jsWorkerContextCode.replace('if (!self.window) {', 'if (!self.window) {\n' + this.convertDomainsCode)
+        .replace('#targetUrl#', target.href).replace('#siteUrl#', siteUrl)
     }
     result += this.jsScopePrefixCode
             + code
