@@ -994,7 +994,7 @@ class WebVPN {
       headers['access-control-allow-origin'] = headers['access-control-allow-origin'].map(e => {
         if (e === '*') return e
         const host = e.indexOf('http') >= 0 ? new URL(e).host : e
-        const vpnDomain = e.indexOf('https') >= 0 ? httpsVpnDomain : httpVpnDomain
+        const vpnDomain = e.indexOf('http://') >= 0 ? httpVpnDomain : httpsVpnDomain
         return e.replace(host, encodeHost(host) + vpnDomain)
       })
     }
