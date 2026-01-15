@@ -193,6 +193,8 @@
     replaceNodesUrls(node)
     if (node.nodeName === 'SCRIPT') {
       node.removeAttribute('integrity')
+    } else if (node.nodeName === 'STYLE') {
+      transformStyleNode(node)
     }
     if (node.nodeName === 'SCRIPT' && !node.src && !node.textContent.includes('self.__context__')) {
       if (node.textContent[0] === '{' || node.textContent[0] === '[') {
@@ -215,6 +217,46 @@
     html = Array.from(doc.childNodes).map(child => child.outerHTML).join('')
     html = html.replaceAll('&amp;amp;', '&amp;')
     return html
+  }
+
+  const transformStyleNode = (node) => {
+    let text = node.textContent
+    const matches = [
+      ...new Set(text.match(/url\([\"\']?(http|\/\/)[^\"\')]+/g)),
+      ...new Set(text.match(/@import\s[\"\'](http|\/\/)[^\"\']+/g))
+    ]
+    const dict = {}
+    matches.filter(m => {
+      return !m.includes('\n') && m.indexOf(httpVpnDomain) < 0 && m.indexOf(httpsVpnDomain) < 0
+    }).forEach(match => {
+      let url = ''
+      let prefix = ''
+      let quote = ''
+      if (match.slice(0, match.indexOf('//')).indexOf('http') >= 0) {
+        url = match.slice(match.indexOf('http'), -1)
+        prefix = match.indexOf('https') > 0 ? 'https://' : 'http://'
+      } else {
+        url = webvpn.protocol + match.slice(match.indexOf('//'), -1)
+        quote = match[match.indexOf('//') - 1]
+        prefix = '//'
+      }
+      const u = url.slice(url.indexOf('//') + 2)
+      if (!u || !/[\w]+\./.test(u)) return
+      if (/&#x\w+;/.test(url)) {
+        url = url.replaceAll(/&#x\w+;/g, ele => String.fromCharCode(parseInt(ele.slice(3, -1), 16)))
+      }
+      if (url.includes('"')) {
+        url = url.replaceAll('"', '')
+      }
+      const source = prefix + new URL(url).host
+      const value = transformUrl(source.startsWith('http') ? source : (webvpn.protocol + source))
+      dict[quote + source] = quote + value
+    })
+    Object.entries(dict).sort((a, b) => b[0].length - a[0].length).forEach(ele => {
+      const [key, value] = ele
+      text = text.replaceAll(key, value)
+    })
+    node.textContent = text
   }
 
   const decodeUrlInHtml = (html) => {
