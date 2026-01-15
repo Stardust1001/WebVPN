@@ -1086,14 +1086,15 @@
     },
     set (html) {
       html = (html || '').toString()
-      const childs = html2dom(html, this)
+      const self = this instanceof HTMLTemplateElement ? this.content : this
+      const childs = html2dom(html, self)
       console.log(
         '%cDOM 操作 拦截 innerHTML : ' + (html.length > 100 ? (html.slice(0, 100) + '...') : html),
         'color: #606666;background-color: lightblue;padding: 5px 10px;'
       )
-      this.childNodes.forEach(child => child.remove())
+      self.childNodes.forEach(child => child.remove())
       childs.forEach(child => {
-        Node.__appendChild__.call(this, child)
+        Node.__appendChild__.call(self, child)
       })
     }
   })
