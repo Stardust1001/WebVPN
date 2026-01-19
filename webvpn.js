@@ -975,7 +975,7 @@ class WebVPN {
   }
 
   async initResponseHeaders (ctx, res) {
-    const { httpsEnabled, httpVpnDomain, httpsVpnDomain, site } = this.config
+    const { httpsEnabled, vpnDomain, httpVpnDomain, httpsVpnDomain, domainMode, site } = this.config
     let headers = {}
     if (typeof res.headers.raw === 'function') {
       const raw = res.headers.raw()
@@ -1025,10 +1025,24 @@ class WebVPN {
     if (headers['set-cookie']) {
       headers['set-cookie'] = headers['set-cookie'].map(e => {
         e = e.replace(' Secure;', '')
-        if (!/domain=/i.test(e)) return e
+        if (!/domain=/i.test(e)) {
+          return e + '; domain=' + encodeHost(ctx.meta.target.host) + vpnDomain
+        }
         return e.split('; ').map(p => {
           if (!/domain=/i.test(p)) return p
-          return 'domain=' + this.config.vpnDomain
+          let domain = p.split('=')[1]
+          if (domain[0] === '.') {
+            if (domainMode === 'original') {
+              domain = '.' + encodeHost(domain.slice(1)) + vpnDomain
+            } else {
+              // warn warn warn warn warn warn
+              // cookie: .baidu.com，不支持 underline 模式
+              domain = vpnDomain
+            }
+          } else {
+            domain = encodeHost(domain) + vpnDomain
+          }
+          return 'domain=' + domain
         }).join('; ')
       })
     }
