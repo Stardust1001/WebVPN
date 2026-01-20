@@ -1031,16 +1031,15 @@ class WebVPN {
         return e.split('; ').map(p => {
           if (!/domain=/i.test(p)) return p
           let domain = p.split('=')[1]
-          if (domain[0] === '.') {
-            if (domainMode === 'original') {
-              domain = '.' + encodeHost(domain.slice(1)) + vpnDomain
-            } else {
-              // warn warn warn warn warn warn
-              // cookie: .baidu.com，不支持 underline 模式
-              domain = vpnDomain
-            }
-          } else {
+          const hasDot = domain[0] === '.'
+          if (hasDot) domain = domain.slice(1)
+          if (domainMode === 'original') {
             domain = encodeHost(domain) + vpnDomain
+            if (hasDot) domain = '.' + domain
+          } else {
+            // warn warn warn warn warn warn
+            // underline 模式不支持 cookie domain
+            domain = vpnDomain
           }
           return 'domain=' + domain
         }).join('; ')

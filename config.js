@@ -32,7 +32,7 @@ export default {
   // 是否禁用 devtools
   disableDevtools: true,
   // 域名编码模式，original (域名原名直接作为多级子域名) | underline（域名原名去除 . :）
-  domainMode: 'underline',
+  domainMode: 'underline', // underline 不支持 cookie 的 domain 设置 ！！！！！！
   // 无法使用泛解析情况下，可使用单个二级域名代理指定网站
   // 但请注意，有些网站会引用第三方网站的资源，那么第三方网站你也要代理
   subdomains: {
@@ -40,6 +40,3 @@ export default {
     'im': 'im.qq.com'
   }
 }
-
-// chiron1
-// ktKH988192
