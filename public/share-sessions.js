@@ -4,7 +4,7 @@
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
   await sleep(3000)
-  await fetch(webvpn.site + '/share-sessions?shareId=' + webvpn.shareId, {
+  await fetch(webvpn.siteUrl + '/share-sessions?shareId=' + webvpn.shareId, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'

@@ -16,7 +16,7 @@ import { fsUtils } from '@wp1001/node'
 const httpsAgent = new https.Agent({ rejectUnauthorized: false })
 
 const sharedSessions = {
-  cache: new Memcached('localhost', { retries: 10, retry: 10000, remove: true }),
+  cache: null,
   async getItem (key) {
     return new Promise(resolve => {
       sharedSessions.cache.get(key, (err, data) => {
@@ -253,6 +253,7 @@ class WebVPN {
 
     this.public = []
     this.initPublic()
+    this.initShareSessions()
   }
 
   async checkCaches () {
@@ -268,6 +269,17 @@ class WebVPN {
   async initPublic () {
     fsUtils.listDir('public').then(files => {
       this.public = files.map(file => path.join('public', file))
+    })
+  }
+
+  initShareSessions () {
+    const { memcached } = this.config
+    sharedSessions.cache = new Memcached('localhost:' + memcached.port, {
+      timeout: 1000,
+      retries: 10,
+      retry: 1000,
+      remove: true,
+      ...memcached
     })
   }
 
@@ -416,7 +428,7 @@ class WebVPN {
     if (subdomain === 'www') {
       return await this.serveWww(ctx)
     } else {
-      if (subdomain === vpnDomain.slice(1)) {
+      if (subdomain.split('-')[0] === vpnDomain.slice(1)) {
         ctx.res.writeHead(302, {
           location: ctx.scheme + '://' + site.host
         })
@@ -976,6 +988,7 @@ class WebVPN {
 
   async initResponseHeaders (ctx, res) {
     const { httpsEnabled, vpnDomain, httpVpnDomain, httpsVpnDomain, domainMode, site } = this.config
+    const { isMainSession, shareId, scheme, target } = ctx.meta
     let headers = {}
     if (typeof res.headers.raw === 'function') {
       const raw = res.headers.raw()
@@ -993,7 +1006,12 @@ class WebVPN {
         if (e === '*') return e
         const host = e.indexOf('http') >= 0 ? new URL(e).host : e
         const vpnDomain = e.indexOf('http://') >= 0 ? httpVpnDomain : httpsVpnDomain
-        return e.replace(host, encodeHost(host) + vpnDomain)
+        let domain = encodeHost(host)
+        if (shareId) {
+          domain += '-' + (isMainSession ? 'main' : 'share') + '-' + shareId
+        }
+        domain += vpnDomain
+        return e.replace(host, domain)
       })
     }
     headers['content-type'] = [headers['content-type']?.[0] || 'text/html']
@@ -1005,7 +1023,7 @@ class WebVPN {
           || e.includes('require-trusted-types-for')
         ) return ''
         if (e.indexOf('frame-ancestors') < 0 || e === `frame-ancestors 'none';`) return e
-        const protocol = (httpsEnabled ? ctx.meta.scheme : 'http') + '://'
+        const protocol = (httpsEnabled ? scheme : 'http') + '://'
         return e.replace(
           'frame-ancestors',
           'frame-ancestors ' + protocol + site.host.replace('www', '*')
@@ -1016,7 +1034,7 @@ class WebVPN {
       headers['location'] = headers['location'].map(e => {
         if (!e.startsWith('http')) {
           if (e[0] === '/') {
-            e = ctx.meta.target.origin + e
+            e = target.origin + e
           }
         }
         return this.transformUrl(ctx, e)
@@ -1026,7 +1044,7 @@ class WebVPN {
       headers['set-cookie'] = headers['set-cookie'].map(e => {
         e = e.replace(' Secure;', '')
         if (!/domain=/i.test(e)) {
-          return e + '; domain=' + encodeHost(ctx.meta.target.host) + vpnDomain
+          return e + '; domain=' + encodeHost(target.host) + vpnDomain
         }
         return e.split('; ').map(p => {
           if (!/domain=/i.test(p)) return p
@@ -1048,15 +1066,15 @@ class WebVPN {
     if (!headers['access-control-allow-origin']) {
       headers['access-control-allow-origin'] = ['*']
     }
-    if (this.config.httpsEnabled && ctx.meta.scheme === 'https') {
+    if (this.config.httpsEnabled && scheme === 'https') {
       if (!headers['content-security-policy']) {
         headers['content-security-policy'] = []
       }
       headers['content-security-policy'].push('upgrade-insecure-requests')
     }
     headers['x-frame-options'] = ['allowall']
-    if (!ctx.meta.isMainSession && ctx.meta.shareId) {
-      const cookie = await sharedSessions.getItem(ctx.meta.shareId + '-cookie')
+    if (!isMainSession && shareId) {
+      const cookie = await sharedSessions.getItem(shareId + '-cookie')
       if (cookie) headers['set-cookie'] = cookie
     }
     return headers
@@ -1099,7 +1117,7 @@ class WebVPN {
 
   convertHost (host) {
     const { httpVpnDomain, httpsVpnDomain } = this.config
-    host = host.replace(httpsVpnDomain, '').replace(httpVpnDomain, '')
+    host = host.split('-')[0].replace(httpsVpnDomain, '').replace(httpVpnDomain, '')
     return decodeHost(host)
   }
 
