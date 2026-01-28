@@ -6,7 +6,6 @@ import cluster from 'node:cluster'
 import { ZSTDDecompress } from 'simple-zstd'
 import chalk from 'chalk'
 import Koa from 'koa'
-import Memcached from 'memcached'
 import WebSocket, { WebSocketServer } from 'ws'
 import fetch, { File, FormData } from 'node-fetch'
 import iconv from 'iconv-lite'
@@ -15,19 +14,16 @@ import { fsUtils } from '@wp1001/node'
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false })
 
-const sharedSessions = {
-  cache: null,
-  async getItem (key) {
-    return new Promise(resolve => {
-      sharedSessions.cache.get(key, (err, data) => {
-        resolve(err ? null : data)
-      })
-    })
+const globalCache = {
+  cache: {},
+  getItem (key) {
+    return globalCache.cache[key]
   },
-  async setItem (key, value) {
-    return new Promise(resolve => {
-      sharedSessions.cache.set(key, value, 1e6, resolve)
-    })
+  setItem (key, value) {
+    globalCache.cache[key] = value
+    if (!cluster.isMaster) {
+      process.send({ workerId: process.pid, action: 'setCache', key, value })
+    }
   }
 }
 
@@ -253,7 +249,6 @@ class WebVPN {
 
     this.public = []
     this.initPublic()
-    this.initShareSessions()
   }
 
   async checkCaches () {
@@ -272,22 +267,36 @@ class WebVPN {
     })
   }
 
-  initShareSessions () {
-    const { memcached } = this.config
-    sharedSessions.cache = new Memcached('localhost:' + memcached.port, {
-      timeout: 1000,
-      retries: 10,
-      retry: 1000,
-      remove: true,
-      ...memcached
-    })
-  }
-
   start () {
     if (this.config.numProcesses > 1 && cluster.isMaster) {
-      this.fork()
+      for (let i = 0; i < this.config.numProcesses; i++) {
+        cluster.fork()
+      }
+      cluster.on('listening', (worker, address) => {
+        worker.on('message', ({ action, key, value, workerId }) => {
+          if (action === 'setCache') {
+            const params = { action: 'syncCache', key, value }
+            for (let key in cluster.workers) {
+              if (key === workerId) continue
+              cluster.workers[key].send(params)
+            }
+          }
+        })
+        console.log(chalk.green(`listening: worker ${worker.process.pid} - Address: ${address.address}:${address.port}`))
+      })
+      cluster.on('exit', (worker, code, signal) => {
+        console.log(chalk.yellow(`工作进程 ${worker.process.pid} 关闭 ${signal || code}. 重启中...`) + '\n')
+        cluster.fork()
+      })
     } else {
       this.createApp()
+      if (!cluster.isMaster) {
+        process.on('message', ({ action, key, value }) => {
+          if (action === 'syncCache') {
+            globalCache.cache[key] = value
+          }
+        })
+      }
     }
   }
 
@@ -303,7 +312,7 @@ class WebVPN {
     } else if (ctx.url.startsWith('/share-sessions')) {
       if (ctx.method === 'POST') {
         const body = await this.calcRequestBody(ctx)
-        await sharedSessions.setItem(ctx.query.shareId + '-clientCache', body)
+        await globalCache.setItem(ctx.query.shareId + '-clientCache', body)
       }
       return ctx.res.writeHead(200, {
         'access-control-allow-credentials': true,
@@ -354,19 +363,6 @@ class WebVPN {
       await fsUtils.mkdir(dir)
     }
     await fsUtils.write(path.join(dir, encodeURIComponent(pathname)), res.data)
-  }
-
-  fork () {
-    for (let i = 0; i < this.config.numProcesses; i++) {
-      cluster.fork()
-    }
-    cluster.on('listening', (worker, address) => {
-      console.log(chalk.green(`listening: worker ${worker.process.pid} - Address: ${address.address}:${address.port}`))
-    })
-    cluster.on('exit', (worker, code, signal) => {
-      console.log(chalk.yellow(`工作进程 ${worker.process.pid} 关闭 ${signal || code}. 重启中...`) + '\n')
-      cluster.fork()
-    })
   }
 
   createApp () {
@@ -549,14 +545,14 @@ class WebVPN {
       }
       if (isMainSession) {
         if (ctx.headers['cookie']) {
-          await sharedSessions.setItem(shareId + '-cookie', ctx.headers['cookie'])
+          await globalCache.setItem(shareId + '-cookie', ctx.headers['cookie'])
         }
         if (ctx.headers['authorization']) {
-          await sharedSessions.setItem(shareId + '-authorization', ctx.headers['authorization'])
+          await globalCache.setItem(shareId + '-authorization', ctx.headers['authorization'])
         }
       } else {
-        const cookie = await sharedSessions.getItem(shareId + '-cookie')
-        const authorization = await sharedSessions.getItem(shareId + '-authorization')
+        const cookie = await globalCache.getItem(shareId + '-cookie')
+        const authorization = await globalCache.getItem(shareId + '-authorization')
         if (cookie) ctx.headers['cookie'] = cookie
         if (authorization) ctx.headers['authorization'] = authorization
       }
@@ -937,7 +933,7 @@ class WebVPN {
       !isMainSession && shareId
       ?
       `<script>
-        const { cookie, localStorage: local } = ${await sharedSessions.getItem(shareId + '-clientCache') || '{}'}
+        const { cookie, localStorage: local } = ${await globalCache.getItem(shareId + '-clientCache') || '{}'}
         document.cookie += cookie
         localStorage.clear()
         for (let key in local) localStorage[key] = local[key]
@@ -1074,7 +1070,7 @@ class WebVPN {
     }
     headers['x-frame-options'] = ['allowall']
     if (!isMainSession && shareId) {
-      const cookie = await sharedSessions.getItem(shareId + '-cookie')
+      const cookie = await globalCache.getItem(shareId + '-cookie')
       if (cookie) headers['set-cookie'] = cookie
     }
     return headers

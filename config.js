@@ -38,9 +38,5 @@ export default {
   subdomains: {
     'baidu': 'www.baidu.com',
     'im': 'im.qq.com'
-  },
-  // memcached，用于会话共享的存储器
-  memcached: {
-    port: 11211
   }
 }
