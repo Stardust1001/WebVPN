@@ -457,6 +457,7 @@ class WebVPN {
       ctx.body = err
       return
     }
+    if (res === true) return
 
     this.deleteIgnoreHeaders(this.ignoreResponseHeaderRegexps, res.headers)
     Object.keys(res.headers).forEach(key => ctx.set(key, res.headers[key]))
@@ -598,9 +599,8 @@ class WebVPN {
     if (isHttps && !options.agent) {
       options.agent = httpsAgent
     }
-    if (await this.beforeRequest(ctx, options)) {
-      return
-    }
+    const result = await this.beforeRequest(ctx, options)
+    if (result) return result
     await new Promise(resolve => {
       const lib = isHttps ? https : http
       const req = lib.request(options, async res => {
@@ -634,9 +634,7 @@ class WebVPN {
       options.body = await this.calcRequestBody(ctx)
     }
     const result = await this.beforeRequest(ctx, options)
-    if (result) {
-      return result
-    }
+    if (result) return result
     try {
       return await this.fetchRequest(ctx, options)
     } catch (err) {
@@ -961,6 +959,7 @@ class WebVPN {
   }
 
   getResponseType (ctx, url) {
+    if (ctx.method === 'PUT' || ctx.method === 'POST') return 'text'
     const index = url.indexOf('?')
     const link = index < 0 ? url : url.slice(0, index)
     for (let reg of this.mimeRegs) {
