@@ -1250,7 +1250,7 @@
   }
 
   const logger = console.log
-  console.log = function () {
+  console.log = function log () {
     const isCustom = arguments[0] === 'custom'
     const ignore = isCustom || typeof arguments[0] !== 'string'
 
