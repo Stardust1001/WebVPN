@@ -1039,7 +1039,11 @@ class WebVPN {
       headers['set-cookie'] = headers['set-cookie'].map(e => {
         e = e.replace(' Secure;', '')
         if (!/domain=/i.test(e)) {
-          return e + '; domain=' + encodeHost(target.host) + vpnDomain
+          // let domain = encodeHost(target.host)
+          // if (shareId) domain += '-' + (isMainSession ? 'main' : 'share') + '-' + shareId
+          // domain += vpnDomain
+          // return e + '; domain=' + domain
+          return e
         }
         return e.split('; ').map(p => {
           if (!/domain=/i.test(p)) return p
@@ -1047,7 +1051,9 @@ class WebVPN {
           const hasDot = domain[0] === '.'
           if (hasDot) domain = domain.slice(1)
           if (domainMode === 'original') {
-            domain = encodeHost(domain) + vpnDomain
+            domain = encodeHost(domain)
+            if (shareId) domain += '-' + (isMainSession ? 'main' : 'share') + '-' + shareId
+            domain += vpnDomain
             if (hasDot) domain = '.' + domain
           } else {
             // warn warn warn warn warn warn
