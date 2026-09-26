@@ -1,0 +1,13 @@
+=== RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-msvc === 
+=== NO --target, host=x86_64 === 
+rustc 1.98.1 (48a229cea 2026-09-01)
+binary: rustc
+commit-hash: 48a229ceaefd4985c50990b14116b6d856af0985
+commit-date: 2026-09-01
+host: x86_64-pc-windows-msvc
+release: 1.98.1
+LLVM version: 22.1.8
+=== BUILD START === 
+   Compiling webvpn v0.8.0 (C:\Users\Stardust\Desktop\WebVPN\rust)
+    Finished `release` profile [optimized] target(s) in 1m 48s
+CARGO_EXIT=0 
