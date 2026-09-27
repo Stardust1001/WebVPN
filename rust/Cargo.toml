@@ -47,6 +47,13 @@ percent-encoding = "2"
 flate2 = "1"
 zstd = "0.13"
 toml = "0.8"
+# oxc: JS AST parser for rewriteThis（this 完整改写，默认关闭）
+# 仅 config.rewrite_this = true 时在运行时使用
+oxc_allocator = "0.151"
+oxc_parser = "0.151"
+oxc_ast = "0.151"
+oxc_span = "0.151"
+oxc_ast_visit = "0.151"
 
 [profile.release]
 opt-level = 3

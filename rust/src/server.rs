@@ -315,7 +315,7 @@ pub async fn proxy_route(
     if !meta.is_done && !data.is_empty() {
         let data_str = String::from_utf8_lossy(&data).to_string();
         let mut new_data = replace_urls(&data_str, &meta.mime, &state.config, &meta, &state.codec);
-        new_data = custom_response(&new_data);
+        new_data = custom_response(&new_data, &meta.mime, state.config.rewrite_this);
 
         if meta.mime == "html" {
             new_data = process_html(&new_data);

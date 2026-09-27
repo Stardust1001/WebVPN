@@ -12,6 +12,18 @@ import iconv from 'iconv-lite'
 
 import { fsUtils } from '@wp1001/node'
 
+// rewriteThis 开启时才需要 acorn + magic-string，用动态 import 懒加载避免影响默认路径
+let _acornPromise
+function getAcorn () {
+  if (!_acornPromise) _acornPromise = import('acorn').then(m => m.default || m)
+  return _acornPromise
+}
+let _magicStringPromise
+function getMagicString () {
+  if (!_magicStringPromise) _magicStringPromise = import('magic-string').then(m => m.default || m)
+  return _magicStringPromise
+}
+
 const httpsAgent = new https.Agent({ rejectUnauthorized: false })
 
 const globalCache = {
@@ -137,6 +149,15 @@ class WebVPN {
     this.sslDir = config.sslDir || 'ssl'
 
     this.jsInterceptCode = fs.readFileSync(path.join(this.publicDir, 'intercept.js'))
+
+    // rewriteThis 开启时预加载 acorn + magic-string，并缓存解析后的 AST 改写器
+    this.rewriteThis = !!config.rewriteThis
+    this._acorn = null
+    this._MagicString = null
+    if (this.rewriteThis) {
+      getAcorn().then(acorn => { this._acorn = acorn }).catch(e => { console.error('[WebVPN] rewriteThis: failed to load acorn:', e) })
+      getMagicString().then(MagicString => { this._MagicString = MagicString }).catch(e => { console.error('[WebVPN] rewriteThis: failed to load magic-string:', e) })
+    }
 
     this.convertDomainsCode = `
       const httpVpnDomain = ${JSON.stringify(config.httpVpnDomain)}
@@ -1439,11 +1460,96 @@ class WebVPN {
                 .replaceAll('nomodule', 'nomod')
                 .replaceAll(' integrity', ' no-integrity')
                 .replaceAll('use strict', '')
-                .replace(this.reWithThis, ' with(this === self ? __self__ : this)')
                 // 仅改写 location.<prop> 形式的属性访问，避免命中字符串/注释中的文本
                 // 通过词法边界 (\\b) 与点号约束，降低误匹配
                 .replace(this.reLocationProps, 'location.__$1__')
+      if (this.rewriteThis) {
+        // 开启 rewriteThis：用 acorn AST 解析所有 this，替换为 (this === self ? __self__ : this)
+        // 覆盖默认的 with(this) 正则改写（更彻底，拦截任何 this 穿透获得 window 的可能）
+        this.rewriteThisInResponse(ctx, res)
+      } else {
+        // 默认：仅用正则改写 with(this) 模式（性能更好）
+        res.data = res.data.replace(this.reWithThis, ' with(this === self ? __self__ : this)')
+      }
     }
+  }
+
+  /// rewriteThis 开启时，对响应中的 JS 代码做 acorn AST 解析，把每个 this 替换为
+  /// (this === self ? __self__ : this)。HTML 响应只解析内联 <script> 内容，避免把
+  /// HTML 标签当 JS 解析导致报错。解析失败时回退到正则 with(this) 改写。
+  rewriteThisInResponse (ctx, res) {
+    const acorn = this._acorn
+    const MagicString = this._MagicString
+    // 模块尚未加载完成（启动瞬间）：回退到正则，保证不漏改
+    if (!acorn || !MagicString) {
+      res.data = res.data.replace(this.reWithThis, ' with(this === self ? __self__ : this)')
+      return
+    }
+    if (ctx.meta.mime === 'js') {
+      res.data = this.rewriteThisInJs(res.data, acorn, MagicString)
+    } else if (ctx.meta.mime === 'html') {
+      // 快速跳过：整个 HTML 都不含 this 时无需做脚本抽取与解析
+      if (!res.data.includes('this')) return
+      // 抽取内联 <script> 内容逐段改写（倒序回填避免位置偏移）
+      const matches = [...res.data.matchAll(this.reScriptTags)].filter(match => {
+        const typeIndex = match[1].indexOf('type=')
+        let isScript = true
+        if (typeIndex > 0) {
+          const type = match[1].slice(typeIndex + 6).split(match[1][typeIndex + 5])[0]
+          isScript = type.indexOf('javascript') >= 0
+          if (!isScript && type.indexOf('text/') < 0 && !type.includes('json')) {
+            isScript = true
+          }
+        }
+        return isScript && match[2]
+      })
+      matches.sort((a, b) => b.index - a.index)
+      let data = res.data
+      for (const match of matches) {
+        const index = match[0].length - match[2].length - 9 + match.index
+        const rewritten = this.rewriteThisInJs(match[2], acorn, MagicString)
+        data = data.slice(0, index) + rewritten + data.slice(index + match[2].length)
+      }
+      res.data = data
+    } else {
+      // 其他类型：回退到正则 with(this) 改写
+      res.data = res.data.replace(this.reWithThis, ' with(this === self ? __self__ : this)')
+    }
+  }
+
+  /// 用 acorn 解析单段 JS 代码，把每个 ThisExpression 的 this 替换为
+  /// (this === self ? __self__ : this)。解析失败时回退到正则。
+  rewriteThisInJs (code, acorn, MagicString) {
+    // 快速跳过：代码不含 this 关键字时无需启动 acorn（this 总是以字面量 "this" 出现）
+    if (!code.includes('this')) return code
+    let ast
+    try {
+      ast = acorn.parse(code, {
+        ecmaVersion: 'latest',
+        sourceType: 'script',
+        allowReturnOutsideFunction: true
+      })
+    } catch {
+      // 非标准/损坏的 JS：回退到正则 with(this) 改写，至少覆盖最常见的场景
+      return code.replace(this.reWithThis, ' with(this === self ? __self__ : this)')
+    }
+    const ms = new MagicString(code)
+    const walk = node => {
+      if (!node || typeof node !== 'object') return
+      if (node.type === 'ThisExpression') {
+        ms.overwrite(node.start, node.end, '(this === self ? __self__ : this)')
+      }
+      for (const key of Object.keys(node)) {
+        const val = node[key]
+        if (Array.isArray(val)) {
+          for (const child of val) walk(child)
+        } else if (val && typeof val === 'object' && val.type) {
+          walk(val)
+        }
+      }
+    }
+    walk(ast)
+    return ms.toString()
   }
 
   beforeResponse (ctx, res) { }

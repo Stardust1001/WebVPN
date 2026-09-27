@@ -40,6 +40,10 @@ pub struct Config {
     pub debug: bool,
     /// 是否禁用 devtools
     pub disable_devtools: bool,
+    /// 是否启用 this 完整改写（oxc AST 解析，把每个 this 替换为 (this === self ? __self__ : this)）
+    /// 默认 false：仅用正则改写 with(this) 模式（性能更好）
+    /// true：用 oxc 解析全部 JS，拦截任何 this 穿透获得 window 的可能（更安全但更慢）
+    pub rewrite_this: bool,
     /// 域名编码模式 original | underline
     pub domain_mode: String,
     /// 单域名代理映射
@@ -70,6 +74,7 @@ impl Default for Config {
             enable_plugins: true,
             debug: false,
             disable_devtools: true,
+            rewrite_this: false,
             domain_mode: "underline".to_string(),
             subdomains: {
                 let mut m = HashMap::new();
@@ -151,6 +156,7 @@ struct ConfigToml {
     enable_plugins: Option<bool>,
     debug: Option<bool>,
     disable_devtools: Option<bool>,
+    rewrite_this: Option<bool>,
     domain_mode: Option<String>,
     subdomains: Option<HashMap<String, String>>,
 }
@@ -173,6 +179,7 @@ impl ConfigToml {
         if let Some(v) = self.enable_plugins { c.enable_plugins = v; }
         if let Some(v) = self.debug { c.debug = v; }
         if let Some(v) = self.disable_devtools { c.disable_devtools = v; }
+        if let Some(v) = self.rewrite_this { c.rewrite_this = v; }
         if let Some(v) = &self.domain_mode { c.domain_mode = v.clone(); }
         if let Some(v) = &self.subdomains { c.subdomains = v.clone(); }
     }

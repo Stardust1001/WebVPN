@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use regex::Regex;
 use once_cell::sync::Lazy;
+use oxc_ast_visit::Visit;
 use crate::config::Config;
 use crate::context::Meta;
 use crate::domain::DomainCodec;
@@ -345,20 +346,223 @@ pub fn process_js_scope_code(
 
 /// 对应 customResponse(ctx, res)
 /// 禁用 module / 严格模式，关闭 SRI，with(this) 重写，location.xxx 重写
-pub fn custom_response(data: &str) -> String {
+/// rewrite_this = true 时改用 oxc AST 解析全部 this（覆盖默认的 with(this) 正则改写）
+pub fn custom_response(data: &str, mime: &str, rewrite_this: bool) -> String {
     let mut data = data
         .replace("type=\"module\"", "type=\"mod\"")
         .replace("type=module", "type=mod")
         .replace("nomodule", "nomod")
         .replace(" integrity", " no-integrity")
         .replace("use strict", "");
-    // with(this) -> with(this === self ? __self__ : this)
-    data = WITH_THIS_RE.replace_all(&data, " with(this === self ? __self__ : this)").to_string();
     // location.xxx -> location.__xxx__
     data = LOCATION_PROP_RE.replace_all(&data, |caps: &regex::Captures| {
         format!("location.__{}__", &caps[1])
     }).to_string();
+
+    if rewrite_this {
+        // 开启 rewriteThis：用 oxc AST 解析所有 this，替换为 (this === self ? __self__ : this)
+        // 覆盖默认的 with(this) 正则改写（更彻底，拦截任何 this 穿透获得 window 的可能）
+        data = rewrite_this_in_response(&data, mime);
+    } else {
+        // 默认：仅用正则改写 with(this) 模式（性能更好）
+        data = WITH_THIS_RE.replace_all(&data, " with(this === self ? __self__ : this)").to_string();
+    }
     data
+}
+
+/// rewriteThis 开启时，对响应中的 JS 代码做 oxc AST 解析，把每个 this 替换为
+/// (this === self ? __self__ : this)。HTML 响应只解析内联 <script> 内容，避免把
+/// HTML 标签当 JS 解析导致报错。解析失败时回退到正则 with(this) 改写。
+fn rewrite_this_in_response(data: &str, mime: &str) -> String {
+    match mime {
+        "js" => rewrite_this_in_js(data),
+        "html" => rewrite_this_in_html_scripts(data),
+        _ => WITH_THIS_RE.replace_all(data, " with(this === self ? __self__ : this)").to_string(),
+    }
+}
+
+/// 抽取 HTML 中内联 <script> 内容逐段改写（倒序回填避免位置偏移）
+/// 逻辑与 process_html_scope_codes 的脚本抽取一致
+fn rewrite_this_in_html_scripts(data: &str) -> String {
+    // 快速跳过：整个 HTML 都不含 this 时无需做脚本抽取与解析
+    if !data.contains("this") {
+        return data.to_string();
+    }
+    let re = &SCRIPT_TAG_RE;
+    let mut matches: Vec<(usize, usize, String)> = Vec::new(); // (content_start, content_len, content)
+    for caps in re.captures_iter(data) {
+        let attrs = caps.get(1).unwrap().as_str();
+        let content = caps.get(2).unwrap().as_str().to_string();
+        let full = caps.get(0).unwrap().as_str();
+        let full_start = caps.get(0).unwrap().start();
+
+        // 判断 type 是否为 JS（与 process_html_scope_codes 一致）
+        let mut is_script = true;
+        if let Some(type_idx) = attrs.find("type=").filter(|&i| i > 0) {
+            let quote_char = attrs.as_bytes().get(type_idx + 5).copied().unwrap_or(b'"');
+            let after = &attrs[type_idx + 6..];
+            let type_val = match after.find(quote_char as char) {
+                Some(end) => &after[..end],
+                None => after,
+            };
+            is_script = type_val.contains("javascript");
+            if !is_script && !type_val.contains("text/") && !type_val.contains("json") {
+                is_script = true;
+            }
+        }
+        if is_script && !content.is_empty() {
+            // content 在原 data 中的起始位置
+            let content_start = full_start + full.len() - content.len() - 9;
+            matches.push((content_start, content.len(), content));
+        }
+    }
+    if matches.is_empty() {
+        return data.to_string();
+    }
+    // 倒序回填
+    matches.sort_by(|a, b| b.0.cmp(&a.0));
+    let mut result = data.to_string();
+    for (start, len, content) in matches {
+        let rewritten = rewrite_this_in_js(&content);
+        let (before, after) = result.split_at(start);
+        let after = &after[len..];
+        result = format!("{}{}{}", before, rewritten, after);
+    }
+    result
+}
+
+/// oxc AST visitor：收集所有 ThisExpression 的 (start, end) span
+struct ThisCollector {
+    spans: Vec<(u32, u32)>,
+}
+
+impl<'a> oxc_ast_visit::Visit<'a> for ThisCollector {
+    fn visit_this_expression(&mut self, it: &oxc_ast::ast::ThisExpression) {
+        self.spans.push((it.span.start, it.span.end));
+        oxc_ast_visit::walk::walk_this_expression(self, it);
+    }
+}
+
+/// 用 oxc 解析单段 JS 代码，把每个 ThisExpression 的 this 替换为
+/// (this === self ? __self__ : this)。解析失败时回退到正则 with(this) 改写。
+fn rewrite_this_in_js(code: &str) -> String {
+    // 快速跳过：代码不含 this 关键字时无需启动 oxc（this 总是以字面量 "this" 出现）
+    if !code.contains("this") {
+        return code.to_string();
+    }
+
+    use oxc_allocator::Allocator;
+    use oxc_parser::{Parser, ParseOptions};
+    use oxc_span::SourceType;
+
+    let allocator = Allocator::default();
+    let source_type = SourceType::script();
+    // allow_return_outside_function: 与 Node 版 acorn 的 allowReturnOutsideFunction: true 对齐，
+    // 被代理的脚本可能出现顶层 return（如 document.write 注入的片段）
+    let options = ParseOptions {
+        allow_return_outside_function: true,
+        ..ParseOptions::default()
+    };
+    let ret = Parser::new(&allocator, code, source_type).with_options(options).parse();
+
+    // 致命错误（无法恢复）：program 为空，回退到正则 with(this) 改写
+    if ret.fatal_error {
+        return WITH_THIS_RE.replace_all(code, " with(this === self ? __self__ : this)").to_string();
+    }
+
+    let program = &ret.program;
+    let mut collector = ThisCollector { spans: Vec::new() };
+    collector.visit_program(program);
+
+    let mut spans = collector.spans.clone();
+    spans.sort_by_key(|&(s, _)| s);
+    spans.dedup();
+
+    if spans.is_empty() {
+        // 解析成功但无 this（可能是 this 仅出现在字符串/注释中）
+        return code.to_string();
+    }
+
+    const REPLACEMENT: &str = "(this === self ? __self__ : this)";
+    let mut out = String::with_capacity(code.len() + spans.len() * REPLACEMENT.len());
+    let mut cursor: usize = 0;
+    for (start, end) in spans {
+        let s = start as usize;
+        let e = end as usize;
+        if s < cursor || e < s || e > code.len() {
+            continue;
+        }
+        out.push_str(&code[cursor..s]);
+        out.push_str(REPLACEMENT);
+        cursor = e;
+    }
+    out.push_str(&code[cursor..]);
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 与 Node 版 acorn 行为对齐验证：顶层 return + this 应被正确改写
+    #[test]
+    fn test_toplevel_return_and_this() {
+        let code = "return this;";
+        let out = rewrite_this_in_js(code);
+        assert!(
+            out.contains("(this === self ? __self__ : this)"),
+            "top-level return + this should be rewritten, got: {}",
+            out
+        );
+    }
+
+    /// 与 Node 版 acorn 行为对齐验证：损坏的 JS 应回退到正则 with(this) 改写
+    #[test]
+    fn test_malformed_js_falls_back_to_regex() {
+        // 语法错误：function 后缺括号。oxc 应判定 fatal_error，回退正则。
+        let code = "function(){ with(this) }";
+        let out = rewrite_this_in_js(code);
+        assert!(
+            out.contains("with(this === self ? __self__ : this)"),
+            "malformed JS should fall back to regex with(this) rewrite, got: {}",
+            out
+        );
+    }
+
+    /// 不含 this 的代码应 fast-skip 原样返回
+    #[test]
+    fn test_no_this_fast_skip() {
+        let code = "const x = 42; function add(a, b) { return a + b; }";
+        let out = rewrite_this_in_js(code);
+        assert_eq!(out, code, "code without this should be returned unchanged");
+    }
+
+    /// 字符串/注释中的 this 不应被改写（AST 解析识别真正的 ThisExpression）
+    #[test]
+    fn test_this_in_string_and_comment_preserved() {
+        let code = "var s = \"this is a string\"; // this is a comment\nconsole.log(this);";
+        let out = rewrite_this_in_js(code);
+        assert!(out.contains("\"this is a string\""), "string content preserved");
+        assert!(out.contains("// this is a comment"), "comment content preserved");
+        assert_eq!(
+            out.matches("(this === self ? __self__ : this)").count(),
+            1,
+            "only the real this expression should be rewritten"
+        );
+    }
+
+    /// with(this) 经 AST 改写后应为 with((this === self ? __self__ : this))
+    /// （AST 路径只替换 this 表达式本身，保留外层 with(...) 结构）
+    #[test]
+    fn test_with_this_ast_rewrite() {
+        let code = "with(this) { foo(); }";
+        let out = rewrite_this_in_js(code);
+        assert!(
+            out.contains("with((this === self ? __self__ : this))"),
+            "with(this) should be AST-rewritten to with((this === self ? __self__ : this)), got: {}",
+            out
+        );
+    }
 }
 
 /// 对应 replaceUrls(ctx, res)：抽取匹配 + 替换
