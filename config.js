@@ -15,6 +15,10 @@ export default {
   cache: false,
   // 缓存文件夹地址
   cacheDir: 'cache',
+  // public 资源文件夹地址
+  publicDir: 'public',
+  // SSL 证书文件夹地址
+  sslDir: 'ssl',
   // 是否在浏览器控制台打印拦截操作的日志
   interceptLog: false,
   // 是否禁止跳转
@@ -23,8 +27,6 @@ export default {
   confirmJump: false,
   // 是否禁用 source map
   disableSourceMap: true,
-  // 这个设置 0，可有效避免 Hostname/IP does not match certificate's altnames 错误
-  NODE_TLS_REJECT_UNAUTHORIZED: 0,
   // 是否启用插件
   enablePlugins: true,
   // 是否开启调试（当前是VConsole）

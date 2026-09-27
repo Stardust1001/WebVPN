@@ -37,12 +37,6 @@
     addScript
   })
 
-  const appendBuffer = SourceBuffer.prototype.appendBuffer
-  SourceBuffer.prototype.appendBuffer = buf => {
-    this._buffer = this._buffer ? unionBuffers([this._buffer, buf]) : buf
-    appendBuffer.call(this, buf)
-  }
-
   const unionBuffers = buffers => {
     buffers = Array.from(buffers)
     const sum = buffers.reduce((sum, buf) => {
@@ -55,6 +49,14 @@
       index += buf.length
     })
     return union
+  }
+
+  const appendBuffer = SourceBuffer.prototype.appendBuffer
+  // 必须用 function 而非箭头函数：SourceBuffer 实例通过 this 绑定，
+  // 箭头函数的 this 是词法作用域（外层 IIFE 的 this，通常为 window），会导致 _buffer 缓存到错误对象上
+  SourceBuffer.prototype.appendBuffer = function (buf) {
+    this._buffer = this._buffer ? unionBuffers([this._buffer, buf]) : buf
+    appendBuffer.call(this, buf)
   }
 
 })();
@@ -80,7 +82,7 @@
 
 (async function () {
 
-  const { sleep, addStyle, addScript, decodeUrl, blobs, site } = webvpn
+  const { sleep, addStyle, addScript, decodeUrl, blobs, siteUrl } = webvpn
 
   const provideDownloads = async (url, blob, type, name) => {
     let box = document.querySelector('#-pd-')
@@ -127,7 +129,7 @@
 
   const download = async (url, blob, filename) => {
     if (!window.saveAs) {
-      await addScript(site + '/public/filesaver.js')
+      await addScript(siteUrl + '/public/filesaver.js')
     }
     if (blob) {
       await downloadBlob(blob, filename)
@@ -154,10 +156,10 @@
       downloadBlob(video, filename)
       return 
     }
-    if (audio.size > video.site) {
+    if (audio.size > video.size) {
       [video, audio] = [audio, video]
     }
-    downloadBlob(audio, filename.replace('视频', '音频').replace('mp4', 'mp3'))
+    downloadBlob(audio, filename.replaceAll('视频', '音频').replaceAll('mp4', 'mp3'))
     downloadBlob(video, filename)
   }
 
@@ -182,22 +184,50 @@
   webvpn.download = download
   webvpn.medias = medias
 
-  while (true) {
-    Array.from([
-      ...(webvpn.logs?.DOM?.['audio src setter'] ?? []),
-      ...(webvpn.logs?.DOM?.['video src setter'] ?? [])
-    ]).forEach(text => {
+  // 此前是 while(true) 无限轮询，每秒全量扫描日志数组，既永不停止又重复处理已扫过的条目。
+  // 改为：记录已扫描的偏移量，只处理增量；页面隐藏时拉长间隔节省 CPU；页面卸载时停止。
+  const scanLogs = () => {
+    const srcSetterLogs = [
+      ...(webvpn.logs?.DOM?.['audio src'] ?? []),
+      ...(webvpn.logs?.DOM?.['video src'] ?? [])
+    ]
+    for (let i = lastScannedSrcSetter; i < srcSetterLogs.length; i++) {
+      const text = srcSetterLogs[i]
       const url = text.split('src : ')[1]
       const type = text.includes('audio src') ? 'audio' : 'video'
       checkMediaUrl(url, type)
-    })
-    Array.from(webvpn.logs?.DOM?.['setAttribute'] ?? []).forEach(text => {
-      if (!text.includes('audio - src') && !text.includes('video - src')) return
+    }
+    lastScannedSrcSetter = srcSetterLogs.length
+
+    const setAttrLogs = webvpn.logs?.DOM?.['setAttribute'] ?? []
+    for (let i = lastScannedSetAttr; i < setAttrLogs.length; i++) {
+      const text = setAttrLogs[i]
+      if (!text.includes('audio - src') && !text.includes('video - src')) continue
       const [brief, attr, url] = text.split(' - ')
       const type = brief.split(' : ')[1]
       checkMediaUrl(url, type)
-    })
-    await sleep(1000)
+    }
+    lastScannedSetAttr = setAttrLogs.length
   }
+
+  let lastScannedSrcSetter = 0
+  let lastScannedSetAttr = 0
+  let stopped = false
+  let delay = 1000
+
+  const tick = async () => {
+    if (stopped) return
+    scanLogs()
+    await sleep(delay)
+    tick()
+  }
+  tick()
+
+  // 页面隐藏时降低频率（5s），可见时恢复（1s）
+  document.addEventListener('visibilitychange', () => {
+    delay = document.hidden ? 5000 : 1000
+  })
+  // 页面卸载时停止轮询，避免泄露/报错
+  window.addEventListener('beforeunload', () => { stopped = true })
 
 })();

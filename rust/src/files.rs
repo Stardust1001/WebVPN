@@ -7,6 +7,15 @@ use tokio::sync::Mutex;
 use crate::config::Config;
 use crate::context::Meta;
 
+/// 对应 JS encodeURIComponent：仅不编码 A-Za-z0-9-_.!~*'()，其余全部编码。
+/// Node 版 getCache/setCache 用 encodeURIComponent(pathname) 生成缓存文件名，
+/// 此前误用 NON_ALPHANUMERIC 会把 `.` 编码为 %2E，导致 .js/.css/.html 缓存文件
+/// 丢失扩展名，get_content_type_by_ext 无法识别，回退为 octet-stream。
+const ENCODE_URI_COMPONENT: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
+    .add(b' ').add(b'"').add(b'#').add(b'$').add(b'%').add(b'&').add(b'+').add(b',')
+    .add(b'/').add(b':').add(b';').add(b'<').add(b'=').add(b'>').add(b'?').add(b'@')
+    .add(b'[').add(b'\\').add(b']').add(b'^').add(b'`').add(b'{').add(b'|').add(b'}');
+
 /// 静态文件列表（对应 this.public）
 #[derive(Clone, Default)]
 pub struct PublicFiles {
@@ -110,7 +119,7 @@ impl DiskCache {
         let pathname = meta.target.path();
         let filename = percent_encoding::utf8_percent_encode(
             pathname,
-            percent_encoding::NON_ALPHANUMERIC,
+            ENCODE_URI_COMPONENT,
         ).to_string();
         let guard = self.inner.lock().await;
         let files = guard.get(host)?;
@@ -136,7 +145,7 @@ impl DiskCache {
         let pathname = meta.target.path();
         let filename = percent_encoding::utf8_percent_encode(
             pathname,
-            percent_encoding::NON_ALPHANUMERIC,
+            ENCODE_URI_COMPONENT,
         ).to_string();
         let dir = format!("{}/{}", self.cache_dir, host);
         let _ = tokio::fs::create_dir_all(&dir).await;

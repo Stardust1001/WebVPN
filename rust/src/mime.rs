@@ -5,18 +5,20 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 
 /// (正则, mime 类型) —— 与 webvpn.js this.mimeRegs 一致
+/// 每条正则都以 (?:$|#) 结尾，确保扩展名位于路径末尾或紧接 #fragment，
+/// 避免误匹配 foo.json.txt 这类文件名（Node 版同样锚定）。
 pub static MIME_REGS: Lazy<Vec<(Regex, &'static str)>> = Lazy::new(|| {
     vec![
-        (Regex::new(r"(?i)\.json").unwrap(), "json"),
-        (Regex::new(r"(?i)\.js").unwrap(), "js"),
-        (Regex::new(r"(?i)\.css").unwrap(), "css"),
-        (Regex::new(r"(?i)\.wasm").unwrap(), "wasm"),
-        (Regex::new(r"(?i)\.(png|jpg|ico|svg|gif|webp|jpeg)").unwrap(), "image"),
-        (Regex::new(r"(?i)\.(mp4|m3u8|ts|flv)[^a-zA-Z]").unwrap(), "video"),
-        (Regex::new(r"(?i)\.(mp3|wav|ogg)").unwrap(), "audio"),
-        (Regex::new(r"(?i)\.(pdf|csv|tsv|doc|docx|xls|xlsx|ppt|pptx)").unwrap(), "pdf-office"),
-        (Regex::new(r"(?i)\.(html|php|do|asp|htm|shtml)").unwrap(), "html"),
-        (Regex::new(r"(?i)\.(ttf|eot|woff|woff2)").unwrap(), "font"),
+        (Regex::new(r"(?i)\.json(?:$|#)").unwrap(), "json"),
+        (Regex::new(r"(?i)\.js(?:$|#)").unwrap(), "js"),
+        (Regex::new(r"(?i)\.css(?:$|#)").unwrap(), "css"),
+        (Regex::new(r"(?i)\.wasm(?:$|#)").unwrap(), "wasm"),
+        (Regex::new(r"(?i)\.(?:png|jpg|ico|svg|gif|webp|jpeg)(?:$|#)").unwrap(), "image"),
+        (Regex::new(r"(?i)\.(?:mp4|m3u8|ts|flv)(?:$|#)").unwrap(), "video"),
+        (Regex::new(r"(?i)\.(?:mp3|wav|ogg)(?:$|#)").unwrap(), "audio"),
+        (Regex::new(r"(?i)\.(?:pdf|csv|tsv|doc|docx|xls|xlsx|ppt|pptx)(?:$|#)").unwrap(), "pdf-office"),
+        (Regex::new(r"(?i)\.(?:html|php|do|asp|htm|shtml)(?:$|#)").unwrap(), "html"),
+        (Regex::new(r"(?i)\.(?:ttf|eot|woff|woff2)(?:$|#)").unwrap(), "font"),
     ]
 });
 
@@ -99,4 +101,34 @@ pub fn get_mime_by_response_headers(content_type: &str) -> Option<String> {
         return Some("image".to_string());
     }
     None
+}
+
+/// 对应 getContentTypeByExt(filepath)
+/// 按文件扩展名返回 content-type（用于 respondFile 提供静态文件）
+pub fn get_content_type_by_ext(filepath: &str) -> &'static str {
+    let ext = filepath.rsplit('.').next().unwrap_or("").to_lowercase();
+    match ext.as_str() {
+        "html" => "text/html; charset=utf-8",
+        "js" => "application/javascript; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "json" => "application/json; charset=utf-8",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "svg" => "image/svg+xml",
+        "webp" => "image/webp",
+        "ico" => "image/x-icon",
+        "mp4" => "video/mp4",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "woff" => "font/woff",
+        "woff2" => "font/woff2",
+        "ttf" => "font/ttf",
+        "eot" => "application/vnd.ms-fontobject",
+        "pdf" => "application/pdf",
+        "wasm" => "application/wasm",
+        "txt" => "text/plain; charset=utf-8",
+        _ => "application/octet-stream",
+    }
 }

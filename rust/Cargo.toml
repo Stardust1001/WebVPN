@@ -15,7 +15,9 @@ hyper-util = { version = "0.1", features = ["full"] }
 tower = { version = "0.5", features = ["full"] }
 tower-http = { version = "0.6", features = ["full"] }
 # HTTP client (manual redirect, TLS, streaming)
-reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "json"] }
+# gzip/deflate/brotli: reqwest 自动解压这三种编码（与 node-fetch 行为一致），
+# zstd 不在列 —— 由 convert_charset_data / 浏览器自行处理。
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "json", "gzip", "deflate", "brotli"] }
 # TLS for HTTPS server
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 rustls-pemfile = "2"

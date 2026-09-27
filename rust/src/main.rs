@@ -18,10 +18,12 @@ use std::sync::Arc;
 use std::net::SocketAddr;
 
 use axum::{
+    Extension,
     Router,
     body::Body,
     extract::{Request, State, WebSocketUpgrade},
     http::{HeaderMap, Method, StatusCode, Uri},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::any,
 };
@@ -70,17 +72,18 @@ async fn main() {
     state.public_files.init().await;
     state.disk_cache.init().await;
 
-    // 3. axum 路由（HTTP 和 HTTPS 共用同一个 router）
-    let app = make_router(state.clone());
+    // 3. axum 路由：HTTP 和 HTTPS 各用一个 router，区别仅在中间件注入的 SchemeFlag
+    //    （对应 Node 版 Koa 自动根据实际 server 判定 http/https scheme）
+    let app_http = make_router(state.clone(), false);
 
     // 4. HTTP 服务
     let http_addr: SocketAddr = format!("0.0.0.0:{}", config.port).parse().expect("invalid http port");
     let http_listener = TcpListener::bind(http_addr).await.expect("bind http failed");
     log::info!("HTTP 监听 {}", http_addr);
 
-    let app_http = app.clone().into_make_service_with_connect_info::<SocketAddr>();
+    let app_http_svc = app_http.into_make_service_with_connect_info::<SocketAddr>();
     tokio::spawn(async move {
-        if let Err(e) = axum::serve(http_listener, app_http).await {
+        if let Err(e) = axum::serve(http_listener, app_http_svc).await {
             log::error!("HTTP server error: {}", e);
         }
     });
@@ -94,8 +97,9 @@ async fn main() {
             Some(tls) => {
                 let listener = TcpListener::bind(https_addr).await.expect("bind https failed");
                 log::info!("HTTPS 监听 {}", https_addr);
+                let app_https = make_router(state.clone(), true);
                 tokio::spawn(async move {
-                    serve_tls(listener, tls, app).await;
+                    serve_tls(listener, tls, app_https).await;
                 });
             }
             None => {
@@ -108,11 +112,22 @@ async fn main() {
     std::future::pending::<()>().await;
 }
 
-/// 构造一个带 state 的路由
-fn make_router(state: Arc<AppState>) -> Router {
+/// 标记当前请求来自 TLS 还是明文 HTTP 连接。
+/// 由 make_router 中的中间件注入到 request extensions，
+/// root_handler 提取后用于判断 scheme（对应 Node 版 request.socket.encrypted）。
+#[derive(Clone, Copy)]
+struct SchemeFlag(bool);
+
+/// 构造一个带 state 的路由。
+/// is_tls 决定中间件注入的 SchemeFlag，使 handler 能正确判断 http/https scheme。
+fn make_router(state: Arc<AppState>, is_tls: bool) -> Router {
     Router::new()
         .route("/", any(root_handler))
         .route("/{*path}", any(root_handler))
+        .layer(middleware::from_fn(move |mut req: Request, next: Next| async move {
+            req.extensions_mut().insert(SchemeFlag(is_tls));
+            next.run(req).await
+        }))
         .with_state(state)
 }
 
@@ -122,6 +137,7 @@ fn make_router(state: Arc<AppState>) -> Router {
 /// 用 Result<WebSocketUpgrade, _> 区分：ws 升级请求时为 Ok，普通请求时为 Err。
 async fn root_handler(
     State(state): State<Arc<AppState>>,
+    Extension(scheme_flag): Extension<SchemeFlag>,
     ws_upgrade: Result<WebSocketUpgrade, axum::extract::ws::rejection::WebSocketUpgradeRejection>,
     method: Method,
     uri: Uri,
@@ -133,16 +149,25 @@ async fn root_handler(
         let host = headers.get("host").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
         let origin = headers.get("origin").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
         let uri_str = uri.to_string();
+        // 判断底层连接是否加密（对应 Node 版 request.socket.encrypted）：
+        // SchemeFlag 由 make_router 中间件注入（TLS 连接为 true）；
+        // 额外检查 x-forwarded-proto=https 以兼容反代终止 TLS 的场景。
+        let is_tls = scheme_flag.0
+            || headers
+                .get("x-forwarded-proto")
+                .and_then(|v| v.to_str().ok())
+                .map(|v| v == "https")
+                .unwrap_or(false);
         let state_ws = state.clone();
         return upgrade
             .on_upgrade(move |socket| async move {
-                let _ = ws_bridge(&state_ws, &host, &origin, &uri_str, socket).await;
+                let _ = ws_bridge(&state_ws, &host, &origin, &uri_str, is_tls, socket).await;
             })
             .into_response();
     }
 
     // 普通请求：收集 body，构造完整 URL，调用 proxy_route
-    let full_url = build_full_url(&headers, &uri);
+    let full_url = build_full_url(&headers, &uri, scheme_flag.0);
     let body = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(b) => b,
         Err(e) => {
@@ -169,10 +194,12 @@ async fn root_handler(
 }
 
 /// 根据 Host 头 + URI 构造完整 URL
-fn build_full_url(headers: &HeaderMap, uri: &Uri) -> String {
+/// is_tls 由 make_router 中间件注入的 SchemeFlag 给出（对应 Node 版 request.socket.encrypted），
+/// 不再依赖 Host:443 推断（浏览器默认省略 443 端口，会导致直接 HTTPS 部署被误判为 http）。
+/// 额外检查 x-forwarded-proto=https 以兼容反向代理终止 TLS 的场景。
+fn build_full_url(headers: &HeaderMap, uri: &Uri, is_tls: bool) -> String {
     let host = headers.get("host").and_then(|v| v.to_str().ok()).unwrap_or("localhost");
-    // 判断 scheme：端口 443 或有 x-forwarded-proto=https 视作 https
-    let scheme = if host.ends_with(":443")
+    let scheme = if is_tls
         || headers
             .get("x-forwarded-proto")
             .and_then(|v| v.to_str().ok())
@@ -229,7 +256,10 @@ async fn serve_tls(listener: TcpListener, tls: TlsAcceptor, app: Router) {
         let (tcp_stream, _remote) = match listener.accept().await {
             Ok(c) => c,
             Err(e) => {
+                // 持续性错误（如 EMFILE 描述符耗尽）下立即 continue 会忙循环占满 CPU，
+                // 短暂 sleep 让系统有机会回收资源。对应 Node 版 server.on('error') 的兜底。
                 log::warn!("tcp accept failed: {}", e);
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 continue;
             }
         };

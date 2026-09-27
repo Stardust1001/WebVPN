@@ -1,6 +1,7 @@
 // JS / HTML 改写：对应 customResponse / refactorJsScopeCode / calcHoistIdentifiersCode
 // processHtml / processHtmlScopeCodes / processJsScopeCode / appendScript
 
+use std::collections::HashMap;
 use regex::Regex;
 use once_cell::sync::Lazy;
 use crate::config::Config;
@@ -12,7 +13,7 @@ use crate::headers::transform_url;
 /// customResponse: with(this) 重写
 static WITH_THIS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[\s\{\}\;]?with\s*\(\s*this\s*\)").unwrap());
 /// customResponse: location.xxx -> location.__xxx__
-static LOCATION_PROP_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"location\.(hostname|host|origin|href|protocol|navigate|assign|replace|reload|toString)").unwrap());
+static LOCATION_PROP_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\blocation\.(hostname|host|origin|href|protocol|navigate|assign|replace|reload|toString)\b").unwrap());
 /// replaceUrls(html): href/src/action/srcset/poster 属性
 static HTML_ATTR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)\s(href|src|action|srcset|poster)=("|')?(http:|https:|http%3A|https%3A|//)[^\s>]*"#).unwrap());
 /// replaceUrls(html/css): url(...)
@@ -20,11 +21,15 @@ static CSS_URL_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)url\([\"\']?(htt
 /// replaceUrls(html/css): @import
 static CSS_IMPORT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)@import\s[\"\'](http|//)[^\"\']+"#).unwrap());
 /// replaceMatches: 域名有效性检查
-static WORD_DOT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[\w]+\.").unwrap());
+/// (?-u) 使 \w 仅匹配 ASCII [A-Za-z0-9_]，与 JS 默认（无 u flag）行为一致
+static WORD_DOT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?-u)[\w]+\.").unwrap());
 /// replaceMatches: &#x 实体解码
-static HEX_ENTITY_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"&#x\w+;").unwrap());
+/// (?-u) 同上：JS reHtmlEntity=/&#x\w+;/g 的 \w 是 ASCII-only
+static HEX_ENTITY_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?-u)&#x\w+;").unwrap());
 /// calcHoistIdentifiersCode: function/class 名提取
-static HOIST_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(function|class)\s+([\$\_\w]+)\s*\(").unwrap());
+/// (?-u) 使 \w 仅 ASCII：JS \w 不会匹配 CJK 等 Unicode 标识符，
+/// 若不抑制 Unicode 模式，Rust 会为 `function 名前()` 生成多余的 self.名前 = 名前 提升代码
+static HOIST_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?-u)(function|class)\s+([\$\_\w]+)\s*\(").unwrap());
 /// processHtml: CSP meta 去除
 static CSP_META_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)<meta\s+http-equiv="Content-Security-Policy"[^>]+>"#).unwrap());
 /// processHtmlScopeCodes: <script> 抽取
@@ -37,7 +42,7 @@ static DOCTYPE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^\s*?<!DOCTYPE ht
 /// JS 关键字（对应 this.jsKeywords）
 pub static JS_KEYWORDS: Lazy<Vec<&'static str>> = Lazy::new(|| {
     vec![
-        "break", "case", "catch", "continue", "default", "delete", "do", "else", "finaly", "for",
+        "break", "case", "catch", "continue", "default", "delete", "do", "else", "finally", "for",
         "function", "if", "in", "instanceof", "new", "return", "switch", "this", "throw", "try",
         "typeof", "var", "void", "while", "with",
         "boolean", "byte", "char", "class", "const", "debugger", "double", "enum", "export",
@@ -64,17 +69,29 @@ pub fn js_worker_context_code() -> &'static str {
         }
         const target = new URL('#targetUrl#')
         const site = new URL('#siteUrl#')
+        const workerHost = self.location.host
         function transformUrl (url) {
           url = (url ? url.toString() : '').trim()
+          if (url.startsWith('data:') || url.startsWith('mailto:') || url.startsWith('tel:') || url.startsWith('javascript:') || url.startsWith('blob:') || url.startsWith('#')) {
+            return url
+          }
           if (url.startsWith('//')) {
             url = target.protocol + url
           } else if (url.startsWith('/')) {
             url = new URL(url, target.href).href
+          } else if (url.indexOf('//') < 0) {
+            return url
           }
-          const u = new URL(url)
+          let u
+          try { u = new URL(url) } catch { return url }
           const vpnDomain = u.protocol === 'http:' ? httpVpnDomain : httpsVpnDomain
           if (u.host.includes(vpnDomain)) return url
-          return url.replace(u.host, encodeHost(u.host) + vpnDomain)
+          let subdomain = encodeHost(u.host)
+          const hostPrefix = workerHost.replace(vpnDomain, '')
+          if (!hostPrefix.includes('.') && hostPrefix.includes('-')) {
+            subdomain += '-' + hostPrefix.split('-').slice(-2).join('-')
+          }
+          return url.replace(u.host, subdomain + vpnDomain)
         }
 
         self.webvpn = { target, site, transformUrl }
@@ -82,17 +99,11 @@ pub fn js_worker_context_code() -> &'static str {
         const locationAttrs = ['hash', 'host', 'hostname', 'href', 'origin', 'pathname', 'port', 'protocol', 'search']
 
         self.__location__ = {}
-        locationAttrs.forEach(key => {
-          self.location['__' + key + '__'] = webvpn.target[key]
-          for (let i = 0; i < 2; i++) {
-            if (i) key = '__' + key + '__'
-            Object.defineProperty(self.__location__, key, {
-              get () {
-                key = key.replaceAll('__', '')
-                return webvpn.target[key] || location[key]
-              }
-            })
-          }
+        locationAttrs.forEach(attr => {
+          self.location['__' + attr + '__'] = webvpn.target[attr]
+          const getter = () => webvpn.target[attr] || location[attr]
+          Object.defineProperty(self.__location__, attr, { get: getter })
+          Object.defineProperty(self.__location__, '__' + attr + '__', { get: getter })
         })
         self.__location__.toString = () => self.__location__.href
 
@@ -132,7 +143,7 @@ pub fn js_worker_context_code() -> &'static str {
           },
           set (target, prop, value) {
             self[prop] = value
-            return value
+            return true
           }
         })
 
@@ -145,14 +156,14 @@ pub fn js_worker_context_code() -> &'static str {
           if (isInputUrl) {
             input = newUrl
           } else {
-            const init = {}
+            const reqInit = {}
             for (let key in input) {
               const value = input[key]
               if (key === 'url' || typeof value === 'function') continue
               if (key === 'mode' && value === 'navigate') continue
-              init[key] = value
+              reqInit[key] = value
             }
-            input = new Request(newUrl, init)
+            input = new Request(newUrl, reqInit)
           }
           return fetch.apply(self, [input, init])
         }
@@ -183,10 +194,13 @@ pub fn js_scope_suffix_code() -> &'static str {
 /// 对应 calcHoistIdentifiersCode(code)
 /// 扫描 function/class 名，把提升的标识符挂到 self 上
 pub fn calc_hoist_identifiers_code(code: &str) -> String {
+    // Node: matches.map(m => m[2]).filter(k => !jsKeywords.includes(k))
+    // 不去重——同名 function 出现 N 次会生成 N 行 try{self.X=X}catch{}（无害，仅重复赋值）。
+    // 此前去重会导致生成代码行数与 Node 不一致，移除去重保持严格对齐。
     let mut names: Vec<String> = Vec::new();
     for caps in HOIST_RE.captures_iter(code) {
         let name = caps.get(2).map(|m| m.as_str()).unwrap_or("");
-        if !JS_KEYWORDS.contains(&name) && !names.iter().any(|n| n == name) {
+        if !JS_KEYWORDS.contains(&name) {
             names.push(name.to_string());
         }
     }
@@ -243,7 +257,10 @@ pub fn refactor_js_scope_code(
 
 /// 对应 processHtml(ctx, res)：去掉 CSP meta
 pub fn process_html(data: &str) -> String {
-    CSP_META_RE.replace_all(data, "").to_string()
+    // Node: res.data.match(this.reMetaCsp) 返回首个匹配（无 g 标志），
+    // 再 res.data.replace(match[0], '') 删除该首个匹配字符串（String.replace 首匹配）。
+    // 用 Regex::replace（首匹配）而非 replace_all，保持一致。
+    CSP_META_RE.replace(data, "").to_string()
 }
 
 /// 对应 processHtmlScopeCodes(ctx, code)
@@ -254,7 +271,7 @@ pub fn process_html_scope_codes(
     meta: &Meta,
     convert_domains_code: &str,
 ) -> String {
-    let re = SCRIPT_TAG_RE.clone();
+    let re = &SCRIPT_TAG_RE;
     // 收集所有匹配，过滤出 JS 脚本且有内容的
     struct Match {
         full: String,
@@ -272,7 +289,9 @@ pub fn process_html_scope_codes(
 
         // 判断 type 是否为 JS
         let mut is_script = true;
-        if let Some(type_idx) = attrs.find("type=") {
+        // Node: `if (typeIndex > 0)` —— 严格大于，type= 位于属性组首位（如 <scripttype=...>）
+        // 时跳过类型检查、保持 isScript=true 默认值。filter(|i| i > 0) 与之对齐。
+        if let Some(type_idx) = attrs.find("type=").filter(|&i| i > 0) {
             // type 值的引号字符
             let quote_char = attrs.as_bytes().get(type_idx + 5).copied().unwrap_or(b'"');
             let after = &attrs[type_idx + 6..];
@@ -398,28 +417,31 @@ fn replace_matches(
         let mut quote = String::new();
 
         // match.slice(0, match.indexOf('//')).indexOf('http') >= 0
-        let before_slash = match m.find("//") {
-            Some(i) => &m[..i],
+        let slash_idx = match m.find("//") {
+            Some(i) => i,
             None => continue,
         };
+        let before_slash = &m[..slash_idx];
         if before_slash.contains("http") {
-            // url = match.slice(match.indexOf('http'), -1)
-            // 注意 JS slice(-1) 是去掉最后一个字符
+            // 正则 [^"')]+ / [^\s>]* 已不含尾部分隔符，slice(..., -1) 会截掉 URL 末尾字符：
+            // 有路径时仅影响路径（host 提取不受影响），但无路径 URL（如 url(http://example.com)）
+            // 会导致 host 被截断（example.com → example.co），替换 key 不匹配，URL 漏改。
+            // 因此这里不再 slice(-1)，直接从 'http' 处取到末尾。
             let http_idx = m.find("http").unwrap();
-            url = m[http_idx..m.len().saturating_sub(1)].to_string();
-            prefix = if m.find("https").map(|i| i > 0).unwrap_or(false) {
+            url = m[http_idx..].to_string();
+            // 此前用 match.indexOf('https') > 0 判断协议，路径含 'https' 时误判；改为检查 url 前缀
+            prefix = if url.starts_with("https") {
                 "https://".to_string()
             } else {
                 "http://".to_string()
             };
         } else {
-            // url = scheme + ':' + match.slice(match.indexOf('//'), -1)
-            let slash_idx = m.find("//").unwrap();
+            // 同上，不再 slice(-1)
             // quote = match[match.indexOf('//') - 1]  （取 // 前一个字符）
             if slash_idx > 0 {
                 quote = (m.as_bytes()[slash_idx - 1] as char).to_string();
             }
-            url = format!("{}:{}", scheme, &m[slash_idx..m.len().saturating_sub(1)]);
+            url = format!("{}:{}", scheme, &m[slash_idx..]);
             prefix = "//".to_string();
         }
 
@@ -476,13 +498,28 @@ fn replace_matches(
         }
     }
 
-    // 按 key 长度降序排序，逐个替换
-    dict.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
-    let mut data = data.to_string();
-    for (key, value) in dict {
-        data = data.replace(&key, &value);
+    // 此前对每个 key 单独调用 data.replace(key, value) 是 O(n×m)：
+    // n 个模式各扫描一遍 m 长度的文本。改为构造单一正则一次遍历替换。
+    if dict.is_empty() {
+        return data.to_string();
     }
-    data
+    // 按长度降序，避免短 key 先命中长 key 的前缀
+    dict.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+    // 构造 pattern：每个 key 转义后用 '|' 连接
+    let pattern = dict.iter()
+        .map(|(k, _)| regex::escape(k))
+        .collect::<Vec<_>>()
+        .join("|");
+    let re = match Regex::new(&pattern) {
+        Ok(r) => r,
+        Err(_) => return data.to_string(),
+    };
+    // 把 dict 转成 HashMap 便于闭包查找
+    let map: HashMap<&String, &String> = dict.iter().map(|(k, v)| (k, v)).collect();
+    re.replace_all(data, |caps: &regex::Captures| {
+        let m = caps.get(0).unwrap().as_str();
+        map.get(&m.to_string()).map(|v| v.as_str()).unwrap_or(m).to_string()
+    }).to_string()
 }
 
 /// 对应 getBase(ctx, res)
@@ -513,12 +550,10 @@ pub fn get_base(data: &str, meta: &Meta) -> String {
 }
 
 /// 对应 processOthers(ctx, res)
+/// 此前有 JSON.stringify(res.data) 的死分支：res.data 本就是字符串（来自 res.text()），
+/// 再次 stringify 会双重编码 JSON 文本，导致客户端拿到被破坏的 JSON。已移除（与 Node 版一致）。
 pub fn process_others(data: &str, mime: &str, disable_source_map: bool) -> String {
     let mut data = data.to_string();
-    if mime == "json" {
-        // JSON.stringify(res.data) —— 这里 data 已是字符串，做 JSON 字符串串化
-        data = serde_json::to_string(&data).unwrap_or(data);
-    }
     if disable_source_map && (mime == "html" || mime == "js") {
         data = data.replace("sourceMappingURL", "");
     }
@@ -556,54 +591,67 @@ pub async fn append_script(
     let site_url = format!("{}:{}", if https_enabled { scheme } else { "http" }, prefix);
     let page_url = transform_url(target.as_str(), config, codec, meta);
 
-    // worker_wrapper_code 模板：convertDomainsCode + worker_context(siteUrl替换) + scopePrefix + #CODE# + } + scopeSuffix
+    // worker_wrapper_code 模板：worker_context(siteUrl替换) + scopePrefix + #CODE# + } + scopeSuffix
+    // 注意：convertDomainsCode 不拼进字符串，而是运行时用 JS 变量引用相加（与 Node 版一致），
+    // 否则会导致 convertDomainsCode 内容被重复拼接。
     let worker_context = js_worker_context_code().replace("#siteUrl#", &site_url);
     let worker_wrapper_code = format!(
-        "{}\n        {}\n        {}\n          #CODE#\n        }}\n        {}",
-        convert_domains_code,
+        "\n{}\n{}\n  #CODE#\n}}\n{}\n",
         worker_context,
         js_scope_prefix_code(),
         js_scope_suffix_code()
     );
 
-    // intercept_code = JSON.stringify(jsInterceptCode)
-    let intercept_code_json = serde_json::to_string(js_intercept_code).unwrap_or_else(|_| "''".to_string());
+    // 对应 Node 版 appendScript 中所有字符串值均用 JSON.stringify 注入：
+    // 生成双引号字符串字面量并正确转义 " \ \n \r \t 等特殊字符。
+    // 此前用 format!("'{}'", val) 单引号包裹不转义，若值含单引号/反斜杠会破坏脚本。
+    let site_url_json = serde_json::to_string(&site_url).unwrap_or_else(|_| "\"\"".to_string());
+    let protocol_json = serde_json::to_string(&format!("{}:", scheme)).unwrap_or_else(|_| "\"\"".to_string());
+    let source_url_json = serde_json::to_string(target.as_str()).unwrap_or_else(|_| "\"\"".to_string());
+    let page_url_json = serde_json::to_string(&page_url).unwrap_or_else(|_| "\"\"".to_string());
+    let hostname_json = serde_json::to_string(target.host_str().unwrap_or("")).unwrap_or_else(|_| "\"\"".to_string());
+    let http_vpn_json = serde_json::to_string(http_vpn_domain).unwrap_or_else(|_| "\"\"".to_string());
+    let https_vpn_json = serde_json::to_string(https_vpn_domain).unwrap_or_else(|_| "\"\"".to_string());
+    let base_json = serde_json::to_string(base).unwrap_or_else(|_| "\"\"".to_string());
+    let share_id_json = serde_json::to_string(share_id).unwrap_or_else(|_| "\"\"".to_string());
+    // convertDomainsCode / worker_wrapper_code / intercept_code 同样用 JSON 字符串注入
+    let convert_domains_json = serde_json::to_string(convert_domains_code).unwrap_or_else(|_| "\"\"".to_string());
+    let worker_wrapper_json = serde_json::to_string(&worker_wrapper_code).unwrap_or_else(|_| "\"\"".to_string());
+    let intercept_code_json = serde_json::to_string(js_intercept_code).unwrap_or_else(|_| "\"\"".to_string());
 
     let mut code = format!(
         r#"
     <script>
       self.webvpn = {{
-        siteUrl: '{}',
-        protocol: '{}:',
-        sourceUrl: '{}',
-        pageUrl: '{}',
-        hostname: '{}',
-        httpVpnDomain: '{}',
-        httpsVpnDomain: '{}',
-        base: '{}',
+        siteUrl: {},
+        protocol: {},
+        sourceUrl: {},
+        pageUrl: {},
+        hostname: {},
+        httpVpnDomain: {},
+        httpsVpnDomain: {},
+        base: {},
         interceptLog: {},
         disableJump: {},
         confirmJump: {},
         isMainSession: {},
-        shareId: '{}',
+        shareId: {},
       }};
-      const convertDomainsCode = `{}`
-      eval(convertDomainsCode)
+      const convertDomainsCode = {}
+      ;new Function(convertDomainsCode)()
       {}
       webvpn.intercept_code = {}
       eval(webvpn.intercept_code)
-      webvpn.worker_wrapper_code = convertDomainsCode + `
-        {}
-      `
+      webvpn.worker_wrapper_code = convertDomainsCode + {}
     </script>
     "#,
-        site_url, scheme, target.as_str(), page_url, target.host_str().unwrap_or(""),
-        http_vpn_domain, https_vpn_domain, base,
-        intercept_log, disable_jump, confirm_jump, is_main_session, share_id,
-        convert_domains_code,
+        site_url_json, protocol_json, source_url_json, page_url_json, hostname_json,
+        http_vpn_json, https_vpn_json, base_json,
+        intercept_log, disable_jump, confirm_jump, is_main_session, share_id_json,
+        convert_domains_json,
         custom_code,
         intercept_code_json,
-        worker_wrapper_code
+        worker_wrapper_json
     );
 
     if enable_plugins {
@@ -620,14 +668,20 @@ pub async fn append_script(
     }
     if !is_main_session && !share_id.is_empty() {
         let client_cache = global_cache.get_item(&format!("{}-clientCache", share_id)).await.unwrap_or_else(|| "{}".to_string());
+        let client_cache_json = serde_json::to_string(&client_cache).unwrap_or_else(|_| "\"{}\"".to_string());
         code.push_str(&format!(
             r#"<script>
-        const {{ cookie, localStorage: local }} = {}
-        document.cookie += cookie
-        localStorage.clear()
-        for (let key in local) localStorage[key] = local[key]
+        try {{
+          const clientCache = {}
+          const {{ cookie, localStorage: local }} = JSON.parse(clientCache)
+          if (cookie) document.cookie += cookie
+          if (local) {{
+            localStorage.clear()
+            for (let key in local) localStorage[key] = local[key]
+          }}
+        }} catch (e) {{ console.warn('webvpn session restore failed:', e) }}
       </script>"#,
-            client_cache
+            client_cache_json
         ));
     }
     code.push_str("<script>\n      const ss = Array.from(document.querySelectorAll('script'));\n      ss.forEach(script => script.remove());\n    </script>\n");

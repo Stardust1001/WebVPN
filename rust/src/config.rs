@@ -88,11 +88,15 @@ impl Default for Config {
 
 impl Config {
     /// 根据 site 计算派生域名（对应 Node 构造函数）
+    /// Node: config.vpnDomain = '.' + site.hostname.replace(/^www\./, '')
+    /// 即先去掉开头的 "www."，再在最前面补 "."，得到形如 ".webvpn.info" 的 vpnDomain。
     pub fn derive(&mut self) {
         let site = Url::parse(&self.site).unwrap_or_else(|_| Url::parse("http://www.webvpn.info").unwrap());
-        // site.hostname.replace('www', '') —— JS 的 replace 只替换第一处
         let host = site.host_str().unwrap_or("www.webvpn.info");
-        let vpn_domain = host.replacen("www", "", 1);
+        // 对应 site.hostname.replace(/^www\./, '')：仅去掉开头的 "www."，不动其余位置的 "www"
+        let stripped = host.strip_prefix("www.").unwrap_or(host);
+        // 对应 '.' + ...
+        let vpn_domain = format!(".{}", stripped);
         self.vpn_domain = vpn_domain.clone();
         self.http_vpn_domain = format!("{}{}", vpn_domain, if self.port == 80 { String::new() } else { format!(":{}", self.port) });
         self.https_vpn_domain = format!("{}{}", vpn_domain, if self.https_port == 443 { String::new() } else { format!(":{}", self.https_port) });

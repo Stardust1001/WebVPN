@@ -1,7 +1,9 @@
 // HTTP/HTTPS 服务器 + 请求生命周期：对应 proxyRoute / routeInit / serveWww / request / fetchRequest / respondPipe / createApp
 
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Arc;
+use std::time::Duration;
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use once_cell::sync::Lazy;
@@ -15,7 +17,12 @@ use url::Url;
 /// HTML 检测：响应首字符为 [ 或 { 时判断是否 JSON
 static HTML_TAG_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"<[a-zA-Z]+").unwrap());
 /// JSONP 检测：callback({... 或 callback([...)
-static JSONP_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[\w\$_]+\([\{\[]").unwrap());
+/// (?-u) 使 \w 仅 ASCII [A-Za-z0-9_]，与 JS reJsonp=/^[\w\$_]+\(/ 的默认行为一致；
+/// 否则 Rust 的 Unicode \w 会匹配 CJK 等回调名，导致 JSONP 误判
+static JSONP_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?-u)^[\w\$_]+\([\{\[]").unwrap());
+/// 会话共享后缀正则：-(main|share)-<shareId>，shareId 不含点号
+/// 兼容 original（subdomain 含点号）和 underline 两种模式
+static SHARE_SESSION_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"-(main|share)-([^.]+)$").unwrap());
 
 use crate::cache::GlobalCache;
 use crate::charset::convert_charset_data;
@@ -29,12 +36,86 @@ use crate::headers::{
     IGNORE_RESPONSE_HEADER_REGEXPS,
 };
 use crate::mime::{
-    get_mime_by_response_headers, get_response_type, CACHE_MIMES, NO_TRANSFORM_MIMES,
+    get_content_type_by_ext, get_mime_by_response_headers, get_response_type,
+    CACHE_MIMES, NO_TRANSFORM_MIMES,
 };
 use crate::rewrite::{
     append_script, custom_response, get_base, process_html, process_html_scope_codes,
     process_js_scope_code, process_others, replace_urls,
 };
+
+/// WebSocket 客户端连接目标 wss 站点时使用的「不校验证书」验证器。
+///
+/// 对应 Node 版 WebSocket 客户端（ws 库）默认 `rejectUnauthorized` 配合
+/// `NODE_TLS_REJECT_UNAUTHORIZED=0` 的行为，即对自签 / 证书不匹配的目标站点放行。
+/// 与 reqwest 的 `danger_accept_invalid_certs(true)` 保持一致（见 AGENTS.md §14.10）。
+///
+/// 仅用于 ws_bridge 的 wss 连接路径，不影响 HTTPS 反向代理主链路。
+#[derive(Debug)]
+struct NoVerifyCert;
+
+impl rustls::client::danger::ServerCertVerifier for NoVerifyCert {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        // 返回 rustls 默认支持的算法集，避免握手时算法协商失败
+        rustls::crypto::CryptoProvider::get_default()
+            .map(|p| p.signature_verification_algorithms.supported_schemes().to_vec())
+            .unwrap_or_default()
+    }
+}
+
+/// 上游请求错误：区分超时（504）与其他错误（502）
+/// 对应 Node 版 request() 中 AbortError -> 504 / 其他 -> 502 的逻辑
+pub enum UpstreamError {
+    Timeout,
+    BadGateway(String),
+}
+
+impl fmt::Display for UpstreamError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UpstreamError::Timeout => write!(f, "gateway timeout"),
+            UpstreamError::BadGateway(msg) => write!(f, "{}", msg),
+        }
+    }
+}
+
+/// reqwest 启用 gzip/deflate/br 特性后会自动解压这三种编码（与 node-fetch 一致），
+/// 必须删除对应的 content-encoding 头，否则浏览器会对已解压的 body 再次解压。
+/// zstd reqwest 不会自动解压，保留 content-encoding 让浏览器自行处理。
+/// 对应 Node 版 fetchRequest 中 `if (['gzip','deflate','br'].includes(encoding)) delete headers['content-encoding']`
+fn should_remove_content_encoding(encoding: &str) -> bool {
+    let enc = encoding.to_lowercase();
+    enc.contains("gzip") || enc.contains("deflate") || enc.contains("br")
+}
 
 /// 共享状态（对应 WebVPN 实例的字段）
 pub struct AppState {
@@ -57,9 +138,16 @@ impl AppState {
         let public_files = PublicFiles::new(&config.public_dir);
         let disk_cache = DiskCache::new(&config);
         // 复用单一 Client：禁用自动重定向（手动处理 3xx）、接受无效证书（对应 NODE_TLS_REJECT_UNAUTHORIZED=0）
+        // timeout：对应 Node 版 AbortController（requestTimeout || 60000），超时返回 504
+        // gzip/deflate/brotli：reqwest 0.12 中 Cargo.toml feature 仅使方法可用，必须在 builder 上
+        // 显式开启才会自动解压。对应 Node 版 node-fetch 对这三种编码的自动解压行为。
         let http_client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .danger_accept_invalid_certs(true)
+            .timeout(Duration::from_secs(60))
+            .gzip(true)
+            .deflate(true)
+            .brotli(true)
             .build()
             .expect("failed to build reqwest client");
         Self { config, codec, convert_domains_code, js_intercept_code, global_cache, public_files, disk_cache, http_client }
@@ -95,7 +183,14 @@ pub async fn proxy_route(
     };
 
     let host_header = headers.get("host").and_then(|v| v.to_str().ok()).unwrap_or("");
-    let subdomain = host_header.replace(&vpn_domain, "");
+    // Node 版：host.endsWith(vpnDomain) ? host.slice(0, -vpnDomain.length) : host
+    // 仅在 host 以 vpnDomain 结尾时截掉后缀；否则保留原样。
+    // 此前用 host.replace(&vpn_domain, "") 会误删 host 中间出现的 vpnDomain 子串。
+    let subdomain = if host_header.ends_with(&vpn_domain) {
+        &host_header[..host_header.len() - vpn_domain.len()]
+    } else {
+        host_header
+    };
 
     // 3. subdomain === 'www' -> serveWww
     if subdomain == "www" {
@@ -104,18 +199,8 @@ pub async fn proxy_route(
 
     // 4. subdomain 以 vpnDomain 开头（非法/根域误访问）-> 302 回首页
     // subdomain.split('-')[0] === vpnDomain.slice(1)
-    // vpnDomain.slice(1) 去掉开头的 '.'（因为 vpnDomain 形如 .webvpn.info）
-    let vpn_prefix = if vpn_domain.starts_with('.') {
-        &vpn_domain[1..]
-    } else {
-        // vpnDomain 不以 . 开头时（如 webvpn.info），slice(1) 会去掉第一个字符
-        // 但实际 vpnDomain 总是以 . 开头（因为 site.hostname.replace('www','') 得到 .webvpn.info）
-        // 为安全起见，用 vpnDomain 本身比较
-        &vpn_domain[..]
-    };
-    // 更准确地复刻：vpnDomain.slice(1) 即去掉第一个字符
+    // vpnDomain.slice(1) 去掉开头的 '.'（vpnDomain 形如 .webvpn.info，总以 . 开头）
     let slice1 = if vpn_domain.len() > 1 { &vpn_domain[1..] } else { vpn_domain.as_str() };
-    let _ = vpn_prefix;
     if subdomain.split('-').next().unwrap_or("") == slice1 {
         let location = format!("{}://{}", scheme, state.config.site_host());
         let mut hm = HeaderMap::new();
@@ -127,35 +212,63 @@ pub async fn proxy_route(
     if let Some(filepath) = state.public_files.check(uri).await {
         let data = tokio::fs::read(&filepath).await.map_err(|e| e.to_string())?;
         let mut hm = HeaderMap::new();
-        hm.insert("content-type", HeaderValue::from_static("application/octet-stream"));
+        let ct = get_content_type_by_ext(filepath.to_str().unwrap_or(""));
+        hm.insert("content-type", HeaderValue::from_static(ct));
         return Ok(Some(ProxyOutput { status: StatusCode::OK, headers: hm, body: data }));
     }
 
     // 6. routeInit
-    let mut meta = route_init(state, &subdomain, &scheme, uri, headers, method).await?;
+    let mut meta = route_init(state, subdomain, &scheme, uri, headers, method).await?;
 
     // 7. 缓存命中？
     if state.config.cache && meta.cache != Some(false) {
         if let Some(path) = state.disk_cache.get(&meta).await {
             let data = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
             let mut hm = HeaderMap::new();
-            hm.insert("content-type", HeaderValue::from_static("application/octet-stream"));
+            let ct = get_content_type_by_ext(path.to_str().unwrap_or(""));
+            hm.insert("content-type", HeaderValue::from_static(ct));
             return Ok(Some(ProxyOutput { status: StatusCode::OK, headers: hm, body: data }));
         }
     }
 
     // 8. noTransform mimes -> respondPipe 流式透传
     if NO_TRANSFORM_MIMES.contains(&meta.mime.as_str()) {
-        return respond_pipe(state, method, &meta, headers, body).await.map(Some);
+        return match respond_pipe(state, method, &meta, headers, body).await {
+            Ok(output) => Ok(Some(output)),
+            Err(UpstreamError::Timeout) => {
+                log::error!("pipe timeout: {}", meta.url);
+                Ok(Some(ProxyOutput {
+                    status: StatusCode::GATEWAY_TIMEOUT,
+                    headers: HeaderMap::new(),
+                    body: b"Gateway Timeout".to_vec(),
+                }))
+            }
+            Err(UpstreamError::BadGateway(e)) => {
+                log::error!("pipe failed: {} \n{}", meta.url, e);
+                Ok(Some(ProxyOutput {
+                    status: StatusCode::BAD_GATEWAY,
+                    headers: HeaderMap::new(),
+                    body: e.into_bytes(),
+                }))
+            }
+        };
     }
 
     // 9. request()：发上游请求
     let res = match upstream_request(state, method, &meta, headers, body).await {
         Ok(r) => r,
-        Err(e) => {
+        Err(UpstreamError::Timeout) => {
+            log::error!("request timeout: {}", meta.url);
+            return Ok(Some(ProxyOutput {
+                status: StatusCode::GATEWAY_TIMEOUT,
+                headers: HeaderMap::new(),
+                body: b"Gateway Timeout".to_vec(),
+            }));
+        }
+        Err(UpstreamError::BadGateway(e)) => {
             log::error!("request failed: {} \n{}", meta.url, e);
             return Ok(Some(ProxyOutput {
-                status: StatusCode::INTERNAL_SERVER_ERROR,
+                status: StatusCode::BAD_GATEWAY,
                 headers: HeaderMap::new(),
                 body: e.into_bytes(),
             }));
@@ -197,13 +310,10 @@ pub async fn proxy_route(
         }
     }
 
-    // 计算 base（replaceUrls 里会用到）
-    let data_str = String::from_utf8_lossy(&data).to_string();
-    meta.base = get_base(&data_str, &meta);
-
     // 11. afterRequest 钩子（这里简化，不做短路）
     // 12. shouldReplaceUrls + customResponse
     if !meta.is_done && !data.is_empty() {
+        let data_str = String::from_utf8_lossy(&data).to_string();
         let mut new_data = replace_urls(&data_str, &meta.mime, &state.config, &meta, &state.codec);
         new_data = custom_response(&new_data);
 
@@ -211,6 +321,8 @@ pub async fn proxy_route(
             new_data = process_html(&new_data);
             new_data = process_html_scope_codes(&new_data, &state.config, &meta, &state.convert_domains_code);
             if !meta.is_xhr {
+                // base 仅 appendScript 用到，且需基于改写前的原始 HTML 提取 <base href>
+                meta.base = get_base(&data_str, &meta);
                 new_data = append_script(&new_data, &state.config, &meta, &state.codec, &state.convert_domains_code, &state.js_intercept_code, &state.global_cache).await;
             }
         } else if meta.mime == "js" {
@@ -275,7 +387,10 @@ async fn route_init(
     })
 }
 
-/// 对应 checkShareSession(ctx)
+/// 对应 checkShareSession(ctx)（webvpn.js:645-681）
+/// 使用正则匹配会话后缀 -(main|share)-<shareId>，兼容 original 和 underline 两种模式。
+/// original 模式下 subdomain 含点号（如 www.example.com-main-shareId），
+/// 此前用 !includes('.') 判断会跳过 original 模式的会话共享。
 async fn check_share_session(
     state: &Arc<AppState>,
     subdomain: &mut String,
@@ -284,11 +399,13 @@ async fn check_share_session(
     let mut is_main_session = false;
     let mut share_id = String::new();
 
-    if !subdomain.contains('.') && subdomain.contains('-') {
-        let parts: Vec<String> = subdomain.split('-').map(|s| s.to_string()).collect();
-        *subdomain = parts[0].clone();
-        is_main_session = parts.get(1).map(|p| p == "main").unwrap_or(false);
-        share_id = parts.get(2).cloned().unwrap_or_default();
+    if let Some(caps) = SHARE_SESSION_RE.captures(subdomain.as_str()) {
+        let match_start = caps.get(0).unwrap().start();
+        let session_type = caps.get(1).unwrap().as_str().to_string();
+        let s_id = caps.get(2).unwrap().as_str().to_string();
+        *subdomain = subdomain[..match_start].to_string();
+        is_main_session = session_type == "main";
+        share_id = s_id;
 
         if is_main_session {
             if let Some(cookie) = headers.get("cookie").and_then(|v| v.to_str().ok()) {
@@ -319,7 +436,7 @@ async fn serve_www(
         let inject = format!("const config = {}\n{}", config_json, state.convert_domains_code);
         let text = text.replace("'inject_code'", &inject);
         let mut hm = HeaderMap::new();
-        hm.insert("content-type", HeaderValue::from_static("text/html"));
+        hm.insert("content-type", HeaderValue::from_static("text/html; charset=utf-8"));
         return Ok(ProxyOutput { status: StatusCode::OK, headers: hm, body: text.into_bytes() });
     }
     if uri.starts_with("/share-sessions") {
@@ -343,7 +460,8 @@ async fn serve_www(
     if let Some(filepath) = state.public_files.check(uri).await {
         let data = tokio::fs::read(&filepath).await.map_err(|e| e.to_string())?;
         let mut hm = HeaderMap::new();
-        hm.insert("content-type", HeaderValue::from_static("application/octet-stream"));
+        let ct = get_content_type_by_ext(filepath.to_str().unwrap_or(""));
+        hm.insert("content-type", HeaderValue::from_static(ct));
         return Ok(ProxyOutput { status: StatusCode::OK, headers: hm, body: data });
     }
     Ok(ProxyOutput { status: StatusCode::NOT_FOUND, headers: HeaderMap::new(), body: vec![] })
@@ -365,7 +483,7 @@ async fn upstream_request(
     meta: &Meta,
     headers: &HeaderMap,
     body: Bytes,
-) -> Result<UpstreamResponse, String> {
+) -> Result<UpstreamResponse, UpstreamError> {
     let mut req_headers = headermap_to_hashmap(headers);
 
     // deleteIgnoreHeaders + strip share suffix + setOriginHeaders
@@ -397,7 +515,15 @@ async fn upstream_request(
         builder = builder.body(body);
     }
 
-    let resp = builder.send().await.map_err(|e| e.to_string())?;
+    let resp = match builder.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            if e.is_timeout() {
+                return Err(UpstreamError::Timeout);
+            }
+            return Err(UpstreamError::BadGateway(e.to_string()));
+        }
+    };
     let status = resp.status();
 
     let raw_headers = headermap_to_hashmap(resp.headers());
@@ -406,7 +532,8 @@ async fn upstream_request(
         .and_then(|v| v.first().cloned())
         .unwrap_or_default();
     let content_encoding = raw_headers.get("content-encoding")
-        .and_then(|v| v.first().cloned());
+        .and_then(|v| v.first().cloned())
+        .unwrap_or_default();
 
     let mut headers = init_response_headers(&raw_headers, meta, &state.config, &state.codec, &state.global_cache).await;
     delete_ignore_headers(&IGNORE_RESPONSE_HEADER_REGEXPS, &mut headers);
@@ -426,20 +553,43 @@ async fn upstream_request(
     let mime = new_mime.unwrap_or_else(|| meta.mime.clone());
 
     if NO_TRANSFORM_MIMES.contains(&mime.as_str()) {
-        if mime == "json" {
+        // reqwest 启用 gzip/deflate/br 特性后已自动解压这三种编码，必须删除 content-encoding
+        // 否则浏览器会对已解压的 body 再次解压。zstd 不自动解压，保留让浏览器处理。
+        // 对应 Node 版 fetchRequest:853-856
+        if should_remove_content_encoding(&content_encoding) {
             headers.remove("content-encoding");
+        }
+        if mime == "json" {
             let text = resp.text().await.unwrap_or_default();
             let data = if text.is_empty() { "{}".to_string() } else { text };
             return Ok(UpstreamResponse { status, headers, data: Some(data.into_bytes()), is_done: true, mime: Some("json".to_string()) });
         }
-        let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+        let bytes = match resp.bytes().await {
+            Ok(b) => b,
+            Err(e) => {
+                if e.is_timeout() {
+                    return Err(UpstreamError::Timeout);
+                }
+                return Err(UpstreamError::BadGateway(e.to_string()));
+            }
+        };
         return Ok(UpstreamResponse { status, headers, data: Some(bytes.to_vec()), is_done: true, mime: Some(mime.clone()) });
     }
 
+    // 非 noTransform 路径：content-encoding 一律删除
+    // reqwest 已自动解压 gzip/deflate/br；zstd 由 convert_charset_data 解压
     headers.remove("content-encoding");
 
-    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
-    let (text, new_ct) = convert_charset_data(&bytes, content_encoding.as_deref(), &content_type, &mime);
+    let bytes = match resp.bytes().await {
+        Ok(b) => b,
+        Err(e) => {
+            if e.is_timeout() {
+                return Err(UpstreamError::Timeout);
+            }
+            return Err(UpstreamError::BadGateway(e.to_string()));
+        }
+    };
+    let (text, new_ct) = convert_charset_data(&bytes, Some(&content_encoding), &content_type, &mime);
     if new_ct != content_type {
         headers.insert("content-type".to_string(), vec![new_ct]);
     }
@@ -459,34 +609,24 @@ async fn upstream_request(
 }
 
 /// 剥离 origin/referer/host 中的 share session 后缀
+/// 对应 checkShareSession 中第一段循环（webvpn.js:657-661）
 fn strip_share_suffix(_state: &Arc<AppState>, headers: &mut HashMap<String, Vec<String>>, meta: &Meta) {
     if !meta.share_id.is_empty() {
         let share_suffix = format!("-{}-{}", if meta.is_main_session { "main" } else { "share" }, meta.share_id);
         for key in &["host", "origin", "referer"] {
             if let Some(vals) = headers.get_mut(*key) {
                 for v in vals.iter_mut() {
-                    *v = v.replace(&share_suffix, "");
+                    // JS 用 .replace(shareSuffix, '')（首匹配），Rust str::replace 替换全部。
+                    // 用 replacen 保持一致，避免路径中恰好含同字符串时误删。
+                    *v = v.replacen(&share_suffix, "", 1);
                 }
             }
         }
     }
-    // origin/referer 含 - 的情况（对应 checkShareSession 末尾循环）
-    for key in &["origin", "referer"] {
-        if let Some(vals) = headers.get_mut(*key) {
-            for v in vals.iter_mut() {
-                if v.contains('-') {
-                    if let Ok(u) = Url::parse(v) {
-                        let host = u.host_str().unwrap_or("");
-                        let subdomain = host.split('.').next().unwrap_or("");
-                        if subdomain.contains('-') {
-                            let suffix = format!("-{}", subdomain.split('-').skip(1).collect::<Vec<_>>().join("-"));
-                            *v = v.replace(&suffix, "");
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // 此前此处还有第二段循环：用 new URL(origin).host.split('.')[0] 再次解析会话后缀并删除。
+    // 但上面第一段已用 shareSuffix 精确清理 origin/referer，第二段在 original 模式下
+    // （编码 host 是多段子域名）会把目标域名第一段当 subdomain，split('-') 后误删，
+    // 反而破坏已被清理干净的 header。整段删除。
 }
 
 /// 对应 respondPipe(ctx)：流式管道透传（noTransform mimes）
@@ -496,11 +636,12 @@ async fn respond_pipe(
     meta: &Meta,
     headers: &HeaderMap,
     body: Bytes,
-) -> Result<ProxyOutput, String> {
+) -> Result<ProxyOutput, UpstreamError> {
     let mut req_headers = headermap_to_hashmap(headers);
+    // 与 upstream_request 保持一致的顺序：deleteIgnoreHeaders + strip share suffix + setOriginHeaders
+    delete_ignore_headers(&IGNORE_REQUEST_HEADER_REGEXPS, &mut req_headers);
     strip_share_suffix(state, &mut req_headers, meta);
     set_origin_headers(&mut req_headers, &state.config, &state.codec);
-    delete_ignore_headers(&IGNORE_REQUEST_HEADER_REGEXPS, &mut req_headers);
 
     if !meta.is_main_session && !meta.share_id.is_empty() {
         if let Some(cookie) = state.global_cache.get_item(&format!("{}-cookie", meta.share_id)).await {
@@ -525,10 +666,22 @@ async fn respond_pipe(
         builder = builder.body(body);
     }
 
-    let resp = builder.send().await.map_err(|e| e.to_string())?;
+    let resp = match builder.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            if e.is_timeout() {
+                return Err(UpstreamError::Timeout);
+            }
+            return Err(UpstreamError::BadGateway(e.to_string()));
+        }
+    };
     let status = resp.status();
 
     let raw_headers = headermap_to_hashmap(resp.headers());
+    let content_encoding = raw_headers.get("content-encoding")
+        .and_then(|v| v.first().cloned())
+        .unwrap_or_default();
+
     let mut headers = init_response_headers(&raw_headers, meta, &state.config, &state.codec, &state.global_cache).await;
     delete_ignore_headers(&IGNORE_RESPONSE_HEADER_REGEXPS, &mut headers);
 
@@ -537,25 +690,67 @@ async fn respond_pipe(
         headers.insert("content-type".to_string(), vec!["application/wasm".to_string()]);
     }
 
-    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    // reqwest 已自动解压 gzip/deflate/br，必须删除 content-encoding
+    // zstd 保留让浏览器处理（对应 Node 版 fetchRequest:853-856）
+    if should_remove_content_encoding(&content_encoding) {
+        headers.remove("content-encoding");
+    }
+
+    let bytes = match resp.bytes().await {
+        Ok(b) => b,
+        Err(e) => {
+            if e.is_timeout() {
+                return Err(UpstreamError::Timeout);
+            }
+            return Err(UpstreamError::BadGateway(e.to_string()));
+        }
+    };
     let out_headers = headermap_from(&headers);
     Ok(ProxyOutput { status, headers: out_headers, body: bytes.to_vec() })
 }
 
 /// WebSocket 桥接：连接目标 ws 并双向桥接
 /// 对应 wsServer.onConnection
+///
+/// `is_tls`：底层连接是否加密（对应 Node 版 request.socket.encrypted）。
+/// 仅在 origin 缺失（非浏览器客户端）时作为回退判断依据。
 pub async fn ws_bridge(
     state: &Arc<AppState>,
     host: &str,
     origin: &str,
     uri: &str,
+    is_tls: bool,
     client_ws: axum::extract::ws::WebSocket,
 ) -> Result<(), String> {
     let host = convert_host(host, &state.config, &state.codec);
-    let protocol = if !origin.starts_with("https") { "ws" } else { "wss" };
+    // origin 缺失时（非浏览器客户端）按 socket 是否加密判断，而非强制 https
+    let use_wss = if !origin.is_empty() {
+        origin.starts_with("https")
+    } else {
+        is_tls
+    };
+    let protocol = if use_wss { "wss" } else { "ws" };
     let ws_url = format!("{}://{}{}", protocol, host, uri);
 
-    let (target_ws, _response) = tokio_tungstenite::connect_async(&ws_url)
+    // 对应 Node 版 WebSocket 客户端（ws 库）默认 rejectUnauthorized 与 NODE_TLS_REJECT_UNAUTHORIZED=0 配合
+    // 即对自签/证书不匹配的目标 wss 站点放行，与 reqwest 的 danger_accept_invalid_certs(true) 保持一致。
+    // tokio-tungstenite 默认用 webpki-roots 严格校验，需手动构造 rustls ClientConfig 关闭校验。
+    let connector = if use_wss {
+        let roots = rustls::RootCertStore::empty();
+        let config = rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        // dangerous() + dangerous_accept_invalid_certs(true) 关闭证书校验
+        let mut config = config;
+        config.dangerous().set_certificate_verifier(std::sync::Arc::new(NoVerifyCert));
+        Some(tokio_tungstenite::Connector::Rustls(std::sync::Arc::new(config)))
+    } else {
+        None
+    };
+
+    let (target_ws, _response) = tokio_tungstenite::connect_async_tls_with_config(
+        &ws_url, None, false, connector,
+    )
         .await
         .map_err(|e| format!("ws connect failed: {}", e))?;
 
@@ -594,7 +789,15 @@ pub async fn ws_bridge(
         let _ = client_tx.close().await;
     };
 
-    tokio::join!(c2t, t2c);
+    // 对应 Node 版 ws 双向 on('message')/on('close')：任一方向结束即整体结束。
+    // 用 select! 而非 join!：join! 会等两个 future 都完成，当一方提前结束
+    // （对端断连 / 出错 / 收到 Close）时另一方仍挂在其 .next().await 或 .send().await，
+    // 导致连接与内存泄漏到 OS 超时。select! 让先结束的一方取消另一方，两个 sink
+    // 借 drop 自动关闭。
+    tokio::select! {
+        _ = c2t => {},
+        _ = t2c => {},
+    }
     Ok(())
 }
 

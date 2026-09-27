@@ -117,7 +117,7 @@
   const transformUrl = (url) => {
     url = (url ? url.toString() : '').trim()
     for (let prefix of ignoredPrefixes) {
-      if (url.indexOf(prefix) >= 0) {
+      if (url.startsWith(prefix)) {
         return url
       }
     }
@@ -133,7 +133,8 @@
     if (url.indexOf('http://') > 0 || url.indexOf('https://') > 0) {
       url = url.slice(url.indexOf('http'))
     }
-    const u = new URL(url)
+    let u
+    try { u = new URL(url) } catch { return url }
     const vpnDomain = u.protocol === 'https:' ? httpsVpnDomain : httpVpnDomain
     if (u.host.includes(vpnDomain)) {
       // if (url.startsWith('http') && webvpn.protocol === 'http:') {
@@ -152,13 +153,17 @@
   const decodeUrl = (url) => {
     url = (url || '').trim()
     if (!url) return url
+    for (const prefix of ignoredPrefixes) {
+      if (url.startsWith(prefix)) return url
+    }
     if (url.split('?')[0].indexOf('http') < 0) {
       return urljoin(location.href, url)
     }
     if (url.indexOf('http://') > 0 || url.indexOf('https://') > 0) {
       url = url.slice(url.indexOf('http'))
     }
-    const u = new URL(url)
+    let u
+    try { u = new URL(url) } catch { return url }
     const vpnDomain = u.protocol === 'https:' ? httpsVpnDomain : httpVpnDomain
     if (!u.host.includes(vpnDomain)) return url
     let subdomain = u.host.replace(vpnDomain, '')
@@ -201,7 +206,10 @@
         try {
           JSON.parse(node.textContent)
         } catch {
-          node.textContent = `new Function(\`with (self.__context__) { ${node.textContent} }\`).bind(self.__context__)()`
+          // 此前直接把 textContent 拼进模板字符串，若内容含反引号 / `${` / 反斜杠会破坏注入代码甚至注入任意脚本。
+          // 改用 JSON.stringify 安全编码：运行时 JSON.parse 还原原始脚本文本，再交给 Function 在 __context__ 作用域运行。
+          const encoded = JSON.stringify(node.textContent)
+          node.textContent = `new Function("with(self.__context__){"+JSON.parse(${encoded})+"}").call(self.__context__)()`
         }
       }
     }
@@ -219,11 +227,16 @@
     return html
   }
 
+  const reStyleUrl = /url\(["']?(http|\/\/)[^"')]+/g
+  const reStyleImport = /@import\s["'](http|\/\/)[^"']+/g
+  const reCssUrlWrap = /url\(([^\)]+)\)/g
+  const reCssUrlStrip = /^url\(["']?|["']?\)$/g
+
   const transformStyleNode = (node) => {
     let text = node.textContent
     const matches = [
-      ...new Set(text.match(/url\([\"\']?(http|\/\/)[^\"\')]+/g)),
-      ...new Set(text.match(/@import\s[\"\'](http|\/\/)[^\"\']+/g))
+      ...new Set(text.match(reStyleUrl)),
+      ...new Set(text.match(reStyleImport))
     ]
     const dict = {}
     matches.filter(m => {
@@ -233,10 +246,11 @@
       let prefix = ''
       let quote = ''
       if (match.slice(0, match.indexOf('//')).indexOf('http') >= 0) {
-        url = match.slice(match.indexOf('http'), -1)
-        prefix = match.indexOf('https') > 0 ? 'https://' : 'http://'
+        // 同 replaceMatches：正则 [^"')]+ 已不含尾部分隔符，slice(..., -1) 会截掉 URL 末尾字符
+        url = match.slice(match.indexOf('http'))
+        prefix = url.startsWith('https') ? 'https://' : 'http://'
       } else {
-        url = webvpn.protocol + match.slice(match.indexOf('//'), -1)
+        url = webvpn.protocol + match.slice(match.indexOf('//'))
         quote = match[match.indexOf('//') - 1]
         prefix = '//'
       }
@@ -248,13 +262,15 @@
       if (url.includes('"')) {
         url = url.replaceAll('"', '')
       }
-      const source = prefix + new URL(url).host
+      let host
+      try { host = new URL(url).host } catch { return }
+      const source = prefix + host
       const value = transformUrl(source.startsWith('http') ? source : (webvpn.protocol + source))
       dict[quote + source] = quote + value
     })
     Object.entries(dict).sort((a, b) => b[0].length - a[0].length).forEach(ele => {
       const [key, value] = ele
-      text = text.replaceAll(key, value)
+      text = text.replaceAll(key, () => value)
     })
     node.textContent = text
   }
@@ -267,7 +283,7 @@
     })
     if (urls.size) {
       Array.from(urls).sort((a, b) => b.length - a.length).forEach(url => {
-        html = html.replaceAll(url, decodeUrl(url))
+        html = html.replaceAll(url, () => decodeUrl(url))
       })
     }
     return html
@@ -323,7 +339,7 @@
     if (!checkUrlShouldReplace(url, attr)) return 
     let newUrl = transformUrl(url)
     if (attr === 'srcset') {
-      let parts = url.split(/(\\n|,|\s+)/g)
+      let parts = url.split(/(\n|,|\s+)/g)
       const symbols = [' ', ',', '']
       parts = parts.map(function (part) {
         if (symbols.includes(part) || /^\dx$/.test(part)) return part
@@ -349,7 +365,7 @@
     if (!url) return false
     if (attr === 'srcset') return !!url
     for (const prefix of ignoredPrefixes) {
-      if (url.indexOf(prefix) >= 0) return false
+      if (url.startsWith(prefix)) return false
     }
     const vpnDomain = url.startsWith('https://') ? httpsVpnDomain : httpVpnDomain
     return url.indexOf(vpnDomain) < 0
@@ -473,13 +489,13 @@
     if (isInputUrl) {
       input = newUrl
     } else {
-      const init = {}
+      const reqInit = {}
       for (let key in input) {
         const value = input[key]
         if (key === 'url' || typeof value === 'function') continue
-        init[key] = value
+        reqInit[key] = value
       }
-      input = new Request(newUrl, init)
+      input = new Request(newUrl, reqInit)
     }
     return fetch(input, init)
   }
@@ -678,7 +694,8 @@
   /* go 拦截 */
   const go = History.prototype.go
   History.prototype.go = function (value) {
-    if ((value + '') !== (parseInt(value) + '')) {
+    // parseInt('100px')===100 会误判为数字索引；改用严格整数字符串判断
+    if (!/^-?\d+$/.test(value + '')) {
       console.log(
         '%cHistory 操作 拦截 go : ' + value,
         'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
@@ -743,20 +760,30 @@
     /* window.__location__ */
     if (!Object.keys(win.location).length) return
     win.__location__ = {}
-    locationAttrs.forEach(key => {
-      win.location['__' + key + '__'] = webvpn.target[key]
-      for (let i = 0; i < 2; i++) {
-        if (i) key = '__' + key + '__'
-        Object.defineProperty(win.__location__, key, {
+    // 缓存 decodeUrl 后的 URL 对象：原实现每次属性访问都 new URL，且 getter 内
+    // key = key.replaceAll('__','') 会修改闭包变量，逻辑脆弱。改为按 href 失效缓存，
+    // 用独立的 attr 常量避免闭包变量被修改。
+    let cachedHref = null
+    let cachedUrl = null
+    const getParsedUrl = () => {
+      const href = win.location.href
+      if (href !== cachedHref) {
+        cachedHref = href
+        try { cachedUrl = new URL(decodeUrl(href)) } catch { cachedUrl = null }
+      }
+      return cachedUrl
+    }
+    locationAttrs.forEach(attr => {
+      win.location['__' + attr + '__'] = webvpn.target[attr]
+      for (const name of [attr, '__' + attr + '__']) {
+        Object.defineProperty(win.__location__, name, {
           get () {
-            key = key.replaceAll('__', '')
-            if (locationAttrs.includes(key)) {
-              return new URL(decodeUrl(win.location.href))[key]
-            }
-            return webvpn.target[key] || location[key]
+            const u = getParsedUrl()
+            if (u && attr in u) return u[attr]
+            return webvpn.target[attr] || location[attr]
           },
           set (value) {
-            if (key === 'href' || key === '__href__') {
+            if (attr === 'href') {
               console.log(
                 '%c__location__ 拦截 href : ' + value,
                 'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
@@ -765,7 +792,7 @@
               value = transformUrl(value)
               win.location.href = value
             } else {
-              win.location[key] = value
+              win.location[attr] = value
             }
             return true
           }
@@ -839,7 +866,7 @@
       },
       set (target, prop, value) {
         win[prop] = value
-        return value
+        return true
       }
     })
     return win
@@ -847,18 +874,39 @@
 
   redefineGlobals(window)
 
-  for (let key in window) {
-    if (typeof window[key] === 'function') {
-      window[key] = window[key].bind(window)
-    }
+  // 此前对 window 上所有函数属性执行 window[key] = window[key].bind(window)：
+  // 1) for...in 会遍历继承属性；2) bind 后函数 name 变为 "bound xxx"，破坏依赖 fn.name 的代码；
+  // 3) 不可写 / 不可配置的属性（如 eval、alert 等很多原生方法）赋值会静默失败或严格模式抛错。
+  // 改为：用 Object.keys 仅遍历自身可枚举属性，检查描述符可写后再赋值。
+  for (const key of Object.keys(window)) {
+    try {
+      const desc = Object.getOwnPropertyDescriptor(window, key)
+      if (!desc || !desc.writable || desc.get || desc.set) continue
+      const fn = window[key]
+      if (typeof fn !== 'function' || fn.name.startsWith('bound ')) continue
+      const bound = fn.bind(window)
+      // 尽量保留原 name，减少对依赖 fn.name 的代码的破坏
+      try { Object.defineProperty(bound, 'name', { value: fn.name }) } catch {}
+      window[key] = bound
+    } catch {}
   }
 
-  setInterval(() => {
+  // 检查 __context__.location 是否被赋值为字符串（导航意图），是则执行跳转。
+  // 与 scheduleScan 一样做成 visibility-aware：页面隐藏时降频，卸载时停止，避免空转耗电。
+  let locTimer = null
+  let locStopped = false
+  let locDelay = 500
+  const checkContextLocation = () => {
+    if (locStopped) return
     const location = window.__context__.location
     if (typeof location === 'string') {
       window.location.href = transformUrl(location)
     }
-  }, 500)
+    locDelay = document.hidden ? 5000 : 500
+    locTimer = setTimeout(checkContextLocation, locDelay)
+  }
+  checkContextLocation()
+  window.addEventListener('beforeunload', () => { locStopped = true; clearTimeout(locTimer) })
 
   /* 因为用 __document__ 替换了 document, __document__ 的时候类型跟 document 不一致 */
   const observe = MutationObserver.prototype.observe
@@ -883,7 +931,7 @@
       let value = getAttribute.bind(this)(attr)
       if (value && (value.startsWith('http') || value.startsWith('//')) && type !== 'custom' && item[2].includes(attr)) {
         console.log(
-          '%cDOM 操作 拦截 getAttribute : ' + item[1] + ' - ' + item[2] + ' ' + value,
+          '%cDOM 操作 拦截 getAttribute : ' + item[1] + ' - ' + attr + ' ' + value,
           'color: #606666;background-color: lime;padding: 5px 10px;'
         )
         value = decodeUrl(value)
@@ -982,12 +1030,16 @@
           'color: #606666;background-color: lime;padding: 5px 10px;'
         )
         let url = this.getAttribute('href') || decodeUrl(location.href)
-        if (url.startsWith('blob:') || url.startsWith('javascript:')) return url
+        if (ignoredPrefixes.some(prefix => url.startsWith(prefix))) return url
         if (!url.startsWith('http') && !url.startsWith('//')) {
           url = urljoin(webvpn.currentHref, url)
         }
         if (attr === 'href') return url
-        return new URL(url)[attr]
+        try {
+          return new URL(url)[attr]
+        } catch {
+          return url
+        }
       }
     })
   })
@@ -1008,9 +1060,9 @@
         },
         set (target, property, value) {
           if (property === 'background' || property === 'backgroundImage') {
-            value = value.replace(/url\(([^\)]+)\)/g, text => {
-              const url = text.replace(/(url\(|\)|\'|\")/g, '')
-              return text.replace(url, transformUrl(url))
+            value = value.replace(reCssUrlWrap, text => {
+              const url = text.replace(reCssUrlStrip, '')
+              return text.replace(url, () => transformUrl(url))
             })
             console.log(
               '%cstyle 操作 拦截 ' + property + ' : ' + value,
@@ -1029,10 +1081,10 @@
   Object.defineProperty(CSSStyleDeclaration.prototype, 'cssText', {
     set (value) {
       let hasUrl = false
-      value = value.replace(/url\(([^\)]+)\)/g, text => {
+      value = value.replace(reCssUrlWrap, text => {
         hasUrl = true
-        const url = text.replace(/(url\(|\)|\'|\")/g, '')
-        return text.replace(url, transformUrl(url))
+        const url = text.replace(reCssUrlStrip, '')
+        return text.replace(url, () => transformUrl(url))
       })
       hasUrl && console.log(
         '%cstyle 操作 拦截 cssText : ' + value,
@@ -1204,7 +1256,23 @@
   window.addEventListener('load', replaceNodesUrls)
   setTimeout(replaceNodesUrls, 1000)
   setTimeout(replaceNodesUrls, 2000)
-  setInterval(replaceNodesUrls, 3000)
+  // 此前是固定 setInterval(replaceNodesUrls, 3000) 永久运行，页面稳定后仍每 3s 全量遍历 DOM。
+  // 改为：页面可见时每 3s 扫描一次，隐藏时拉长至 10s（节省后台 CPU），卸载时停止。
+  let scanStopped = false
+  let scanTimer = null
+  const scheduleScan = () => {
+    if (scanStopped) return
+    clearTimeout(scanTimer)
+    scanTimer = setTimeout(() => {
+      if (scanStopped) return
+      replaceNodesUrls()
+      scanDelay = document.hidden ? 10000 : 3000
+      scheduleScan()
+    }, scanDelay)
+  }
+  let scanDelay = 3000
+  scheduleScan()
+  window.addEventListener('beforeunload', () => { scanStopped = true; clearTimeout(scanTimer) })
 
   /* 事件绑定的 this 对象拦截替换 */
   const wael = window.addEventListener
@@ -1243,8 +1311,8 @@
   }
 
   URL._createObjectURL_ = URL.createObjectURL
-  URL.createObjectURL = object => {
-    const url = URL._createObjectURL_.call(this, object)
+  URL.createObjectURL = function (object) {
+    const url = URL._createObjectURL_(object)
     blobs[url] = object
     return url
   }
@@ -1263,9 +1331,10 @@
         shouldLog = logTypes.some((type) => title.indexOf(type) >= 0)
       }
     }
-    if (title) {
+    // 仅在需要时归档日志：interceptLog 关闭且无插件消费 logs 时，跳过 groupLogs 避免无谓开销与内存增长
+    if (title && (interceptLog || webvpn.medias || webvpn.download)) {
       groupLogs(title, arguments)
-      if (!interceptLog || !shouldLog) return 
+      if (!interceptLog || !shouldLog) return
     }
 
     logger.apply(console, arguments)
@@ -1295,10 +1364,18 @@
     logs[category] = logs[category] || {}
     logs[category][type] = logs[category][type] || []
 
-    if (args.length === 2 && args[0].startsWith('%c')) {
-      args = args[0].slice(2)
+    // 归档为字符串：consumers (logs.query / plugins.js scanLogs) 均按字符串处理
+    // 2 参且首参为 '%c' 前缀时，去 '%c' 取首参文本（第二参为 CSS 样式，丢弃）；其余情况拼接为字符串
+    let entry
+    if (args.length === 2 && typeof args[0] === 'string' && args[0].startsWith('%c')) {
+      entry = args[0].slice(2)
+    } else {
+      entry = args.map(a => typeof a === 'string' ? a : (() => { try { return JSON.stringify(a) } catch { return String(a) } })()).join(' ')
     }
-    logs[category][type].push(args)
+    // 限制每个分类的日志条数，超限时批量裁剪，避免每次 push 都 O(n) shift
+    const arr = logs[category][type]
+    if (arr.length > 600) arr.splice(0, arr.length - 500)
+    arr.push(entry)
   }
 
   Object.assign(webvpn, {

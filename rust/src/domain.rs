@@ -29,13 +29,15 @@ impl DomainCodec {
             return v.clone();
         }
         match self.mode.as_str() {
-            "original" => text.replace(':', "_._"),
+            // JS 用 .replace(':', '_._')（首匹配），Rust str::replace 替换全部。
+            // 用 replacen(.., 1) 保持一致，避免原 hostname 含字面 "_._" 时多替换。
+            "original" => text.replacen(':', "_._", 1),
             _ => {
-                // underline: . -> __, - -> _h_, : -> _c_
+                // 注意 JS 用 replaceAll('.', '__') / replaceAll('-', '_h_')（全替换），
+                // 但 : 用 .replace(':', '_c_')（首匹配）。用 replacen 保持一致。
                 let mut value = text.replace('.', "__");
-                // 注意 JS 用 replaceAll('-', '_h_')，先替换 - 再替换 :
                 value = value.replace('-', "_h_");
-                value = value.replace(':', "_c_");
+                value = value.replacen(':', "_c_", 1);
                 value
             }
         }
@@ -47,11 +49,11 @@ impl DomainCodec {
             return v.clone();
         }
         match self.mode.as_str() {
-            "original" => text.replace("_._", ":"),
+            "original" => text.replacen("_._", ":", 1),
             _ => {
                 // underline: _c_ -> :, _h_ -> -, __ -> .
-                // 注意顺序：JS 是 _c_ -> :, _h_ -> -, __ -> .
-                let mut value = text.replace("_c_", ":");
+                // 注意顺序：JS 是 .replace('_c_', ':')（首匹配），replaceAll('_h_', '-')，replaceAll('__', '.')
+                let mut value = text.replacen("_c_", ":", 1);
                 value = value.replace("_h_", "-");
                 value = value.replace("__", ".");
                 value

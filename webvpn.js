@@ -16,38 +16,64 @@ const httpsAgent = new https.Agent({ rejectUnauthorized: false })
 
 const globalCache = {
   cache: {},
+  ttl: 30 * 60 * 1000,
+  maxItems: 10000,
   getItem (key) {
-    return globalCache.cache[key]
+    const item = globalCache.cache[key]
+    if (!item) return undefined
+    if (item.expires && Date.now() > item.expires) {
+      delete globalCache.cache[key]
+      return undefined
+    }
+    return item.value
   },
   setItem (key, value) {
-    globalCache.cache[key] = value
+    // 防止恶意客户端生成大量 shareId 导致内存无限增长：
+    // 超过上限时淘汰最早写入的条目（近似 FIFO，已过期条目优先清理）
+    const cache = globalCache.cache
+    if (Object.keys(cache).length >= globalCache.maxItems) {
+      let oldestKey = null
+      let oldestTime = Infinity
+      for (const k in cache) {
+        const t = cache[k].expires
+        if (t < oldestTime) {
+          oldestTime = t
+          oldestKey = k
+        }
+      }
+      if (oldestKey) delete cache[oldestKey]
+    }
+    cache[key] = { value, expires: Date.now() + globalCache.ttl }
     if (!cluster.isMaster) {
       process.send({ workerId: process.pid, action: 'setCache', key, value })
     }
+  },
+  syncItem (key, value) {
+    globalCache.cache[key] = { value, expires: Date.now() + globalCache.ttl }
   }
 }
 
 class WebVPN {
   constructor (config) {
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = config.NODE_TLS_REJECT_UNAUTHORIZED || 0
     const { port, httpsPort, site } = config
-    config.vpnDomain = site.hostname.replace('www', '')
+    // 去掉前导 www. 标签，保留前导点（vpnDomain 用于子域后缀拼接，如 //www + vpnDomain）
+    config.vpnDomain = '.' + site.hostname.replace(/^www\./, '')
     config.httpVpnDomain = config.vpnDomain + (port === 80 ? '' : `:${port}`)
     config.httpsVpnDomain = config.vpnDomain + (httpsPort === 443 ? '' : `:${httpsPort}`)
 
     this.config = config
     this.mimes = ['json', 'js', 'css', 'html', 'image', 'video', 'audio']
     this.mimeRegs = [
-      [/\.json/i, 'json'],
-      [/\.js/i, 'js'],
-      [/\.css/i, 'css'],
-      [/\.wasm/i, 'wasm'],
-      [/\.(png|jpg|ico|svg|gif|webp|jpeg)/i, 'image'],
-      [/\.(mp4|m3u8|ts|flv)[^a-zA-Z]/i, 'video'],
-      [/\.(mp3|wav|ogg)/i, 'audio'],
-      [/\.(pdf|csv|tsv|doc|docx|xls|xlsx|ppt|pptx)/i, 'pdf-office'],
-      [/\.(html|php|do|asp|htm|shtml)/i, 'html'],
-      [/\.(ttf|eot|woff|woff2)/i, 'font']
+      [/\.json(?:$|#)/i, 'json'],
+      [/\.js(?:$|#)/i, 'js'],
+      [/\.css(?:$|#)/i, 'css'],
+      [/\.wasm(?:$|#)/i, 'wasm'],
+      [/\.(?:png|jpg|ico|svg|gif|webp|jpeg)(?:$|#)/i, 'image'],
+      [/\.(?:mp4|m3u8|ts|flv)(?:$|#)/i, 'video'],
+      [/\.(?:mp3|wav|ogg)(?:$|#)/i, 'audio'],
+      [/\.(?:pdf|csv|tsv|doc|docx|xls|xlsx|ppt|pptx)(?:$|#)/i, 'pdf-office'],
+      [/\.(?:html|php|do|asp|htm|shtml)(?:$|#)/i, 'html'],
+      [/\.(?:ttf|eot|woff|woff2)(?:$|#)/i, 'font']
     ]
     this.mimeDict = {
       'html': 'text/html',
@@ -63,7 +89,7 @@ class WebVPN {
       'event-stream': 'text/event-stream'
     }
     this.jsKeywords = [
-      'break', 'case', 'catch', 'continue', 'default', 'delete', 'do', 'else', 'finaly', 'for',
+      'break', 'case', 'catch', 'continue', 'default', 'delete', 'do', 'else', 'finally', 'for',
       'function', 'if', 'in', 'instanceof', 'new', 'return', 'switch', 'this', 'throw', 'try',
       'typeof', 'var', 'void', 'while', 'with',
       'boolean', 'byte', 'char', 'class', 'const', 'debugger', 'double', 'enum', 'export',
@@ -86,20 +112,38 @@ class WebVPN {
       /content-security-policy-report-only/i,
     ]
 
+    // 预编译热路径正则表达式，避免每次请求重复编译
+    this.reBase = /\<base\s+href=("|')[^"'']+/i
+    this.reHtmlLinks = /\s(href|src|action|srcset|poster)=("|')?(http\:|https\:|http\%3A|https\%3A|\/\/)[^\s\>]*/gi
+    this.reCssUrls = /url\(["']?(http|\/\/)[^"')]+/gi
+    this.reCssImports = /@import\s["'](http|\/\/)[^"']+/gi
+    this.reDomainCheck = /[\w]+\./
+    this.reHtmlEntity = /&#x\w+;/g
+    this.reMetaCsp = /<meta\s+http-equiv="Content-Security-Policy"[^>]+>/i
+    this.reScriptTags = /<script([^>]*)>([\S\s]*?)<\/script>/gi
+    this.reHoistIds = /(function|class)\s+([\$\_\w]+)\s*\(/g
+    this.reMetaCharset = /<meta charset=["'][^"'\/>]+/i
+    this.reMetaContentType = /<meta http-equiv="Content-Type" content="text\/html;\s*charset=[^"'\/>]+/i
+    this.reMetaCharsetReplace = /<meta charset=["'][^"'\/>]+["']>/i
+    this.reCookieDomain = /domain=/i
+    this.reWithThis = /[\s\{\}\;]?with\s*\(\s*this\s*\)/g
+    this.reLocationProps = /\blocation\.(hostname|host|origin|href|protocol|navigate|assign|replace|reload|toString)\b/g
+    this.reJsonp = /^[\w\$_]+\((\{|\[)/
+
     this.noTransformMimes = ['wasm', 'font', 'json', 'image', 'video', 'audio', 'pdf-office', 'stream', 'event-stream']
     this.cacheMimes = ['js', 'css', 'font', 'image', 'video', 'audio', 'pdf-office']
     this.cacheDir = config.cacheDir || 'cache'
+    this.publicDir = config.publicDir || 'public'
+    this.sslDir = config.sslDir || 'ssl'
 
-    this.checkCaches()
-
-    this.jsInterceptCode = fs.readFileSync('./public/intercept.js')
+    this.jsInterceptCode = fs.readFileSync(path.join(this.publicDir, 'intercept.js'))
 
     this.convertDomainsCode = `
-      const httpVpnDomain = '${config.httpVpnDomain}'
-      const httpsVpnDomain = '${config.httpsVpnDomain}'
+      const httpVpnDomain = ${JSON.stringify(config.httpVpnDomain)}
+      const httpsVpnDomain = ${JSON.stringify(config.httpsVpnDomain)}
       const subdomains = ${JSON.stringify(config.subdomains)}
       const domainDict = {}
-      const domainMode = '${config.domainMode}'
+      const domainMode = ${JSON.stringify(config.domainMode)}
       Object.entries(subdomains).forEach(([sub, name]) => domainDict[name] = sub)
       const _encode_host_original_ = text => {
         return domainDict[text] || text.replace(':', '_._')
@@ -124,7 +168,7 @@ class WebVPN {
       globalThis.encodeHost = domainMode === 'underline' ? _encode_host_underline_ : _encode_host_original_
       globalThis.decodeHost = domainMode === 'underline' ? _decode_host_underline_ : _decode_host_original_
     `
-    eval(this.convertDomainsCode)
+    new Function(this.convertDomainsCode)()
 
     this.jsWorkerContextCode = `
       // worker 里面创造 __context__ 环境
@@ -140,17 +184,29 @@ class WebVPN {
         }
         const target = new URL('#targetUrl#')
         const site = new URL('#siteUrl#')
+        const workerHost = self.location.host
         function transformUrl (url) {
           url = (url ? url.toString() : '').trim()
+          if (url.startsWith('data:') || url.startsWith('mailto:') || url.startsWith('tel:') || url.startsWith('javascript:') || url.startsWith('blob:') || url.startsWith('#')) {
+            return url
+          }
           if (url.startsWith('//')) {
             url = target.protocol + url
           } else if (url.startsWith('/')) {
             url = new URL(url, target.href).href
+          } else if (url.indexOf('//') < 0) {
+            return url
           }
-          const u = new URL(url)
+          let u
+          try { u = new URL(url) } catch { return url }
           const vpnDomain = u.protocol === 'http:' ? httpVpnDomain : httpsVpnDomain
           if (u.host.includes(vpnDomain)) return url
-          return url.replace(u.host, encodeHost(u.host) + vpnDomain)
+          let subdomain = encodeHost(u.host)
+          const hostPrefix = workerHost.replace(vpnDomain, '')
+          if (!hostPrefix.includes('.') && hostPrefix.includes('-')) {
+            subdomain += '-' + hostPrefix.split('-').slice(-2).join('-')
+          }
+          return url.replace(u.host, subdomain + vpnDomain)
         }
 
         self.webvpn = { target, site, transformUrl }
@@ -158,17 +214,11 @@ class WebVPN {
         const locationAttrs = ['hash', 'host', 'hostname', 'href', 'origin', 'pathname', 'port', 'protocol', 'search']
 
         self.__location__ = {}
-        locationAttrs.forEach(key => {
-          self.location['__' + key + '__'] = webvpn.target[key]
-          for (let i = 0; i < 2; i++) {
-            if (i) key = '__' + key + '__'
-            Object.defineProperty(self.__location__, key, {
-              get () {
-                key = key.replaceAll('__', '')
-                return webvpn.target[key] || location[key]
-              }
-            })
-          }
+        locationAttrs.forEach(attr => {
+          self.location['__' + attr + '__'] = webvpn.target[attr]
+          const getter = () => webvpn.target[attr] || location[attr]
+          Object.defineProperty(self.__location__, attr, { get: getter })
+          Object.defineProperty(self.__location__, '__' + attr + '__', { get: getter })
         })
         self.__location__.toString = () => self.__location__.href
 
@@ -208,7 +258,7 @@ class WebVPN {
           },
           set (target, prop, value) {
             self[prop] = value
-            return value
+            return true
           }
         })
 
@@ -221,14 +271,14 @@ class WebVPN {
           if (isInputUrl) {
             input = newUrl
           } else {
-            const init = {}
+            const reqInit = {}
             for (let key in input) {
               const value = input[key]
               if (key === 'url' || typeof value === 'function') continue
               if (key === 'mode' && value === 'navigate') continue
-              init[key] = value
+              reqInit[key] = value
             }
-            input = new Request(newUrl, init)
+            input = new Request(newUrl, reqInit)
           }
           return fetch.apply(self, [input, init])
         }
@@ -248,26 +298,32 @@ class WebVPN {
     `
 
     this.public = []
-    this.initPublic()
+    this._initialized = this.init()
+    this._initialized.catch(() => {})
+  }
+
+  async init () {
+    await this.checkCaches()
+    await this.initPublic()
   }
 
   async checkCaches () {
     if (this.config.cache) {
       this.caches = { }
       const dirs = await fsUtils.listDir(this.cacheDir)
-      dirs.forEach(async dir => {
+      for (const dir of dirs) {
         this.caches[dir] = await fsUtils.listDir(path.join(this.cacheDir, dir))
-      })
+      }
     }
   }
 
   async initPublic () {
-    fsUtils.listDir('public').then(files => {
-      this.public = files.map(file => path.join('public', file))
-    })
+    const files = await fsUtils.listDir(this.publicDir)
+    this.public = files.map(file => path.join(this.publicDir, file))
   }
 
-  start () {
+  async start () {
+    await this._initialized
     if (this.config.numProcesses > 1 && cluster.isMaster) {
       for (let i = 0; i < this.config.numProcesses; i++) {
         cluster.fork()
@@ -293,7 +349,7 @@ class WebVPN {
       if (!cluster.isMaster) {
         process.on('message', ({ action, key, value }) => {
           if (action === 'syncCache') {
-            globalCache.cache[key] = value
+            globalCache.syncItem(key, value)
           }
         })
       }
@@ -302,8 +358,8 @@ class WebVPN {
 
   async serveWww (ctx) {
     if (ctx.url === '/') {
-      ctx.res.writeHead(200, { 'Content-Type': 'text/html' })
-      let text = await fsUtils.read(path.join('public', 'index.html'))
+      ctx.res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      let text = await fsUtils.read(path.join(this.publicDir, 'index.html'))
       text = text.replace(
         `'inject_code'`,
         'const config = ' + JSON.stringify(this.config, null, 2) + '\n' + this.convertDomainsCode
@@ -314,12 +370,13 @@ class WebVPN {
         const body = await this.calcRequestBody(ctx)
         await globalCache.setItem(ctx.query.shareId + '-clientCache', body)
       }
-      return ctx.res.writeHead(200, {
-        'access-control-allow-credentials': true,
+      ctx.res.writeHead(200, {
+        'access-control-allow-credentials': 'true',
         'access-control-allow-origin': ctx.headers['origin'] || '*',
         'access-control-allow-headers': '*',
         'access-control-allow-methods': '*'
       })
+      ctx.res.end()
     } else {
       await this.checkPublic(ctx)
     }
@@ -327,7 +384,7 @@ class WebVPN {
 
   async checkPublic (ctx) {
     const parts = ctx.url.split('/public/')
-    let filepath = parts[1] && path.join('public', parts[1]) || ''
+    let filepath = parts[1] && path.join(this.publicDir, parts[1]) || ''
     filepath = filepath.split('?')[0]
 
     if (this.public.includes(filepath)) {
@@ -371,56 +428,108 @@ class WebVPN {
     app.use(this.proxyRoute.bind(this))
 
     const server = http.createServer({}, app.callback())
+    this.servers = [server]
 
-    this.wsServer = new WebSocketServer({ server })
-    this.wsServer.onConnection = async (client, request) => {
-      let { host, origin } = request.headers
-      if (host) host = this.convertHost(host)
-      const protocol = origin && !origin.startsWith('https') ? 'http' : 'https'
-      const url = protocol + '://' + host + (request.url || '')
-
-      const wsClient = new WebSocket(url)
-      await new Promise(resolve => {
-        wsClient.on('open', resolve)
+    this.wsServer = new WebSocketServer({ noServer: true })
+    server.on('upgrade', (request, socket, head) => {
+      this.wsServer.handleUpgrade(request, socket, head, client => {
+        this.onWsConnection(client, request)
       })
-      wsClient.on('message', message => {
-        message = message.toString()
-        client.send(message)
-      })
-      wsClient.on('close', () => {
-        client.close()
-      })
-
-      client.on('message', message => {
-        message = message.toString()
-        wsClient.send(message)
-      })
-      client.on('close', () => {
-        wsClient.close()
-      })
-    }
+    })
 
     server.listen(config.port)
 
     if (config.httpsEnabled) {
       const options = {
-        key: fs.readFileSync('ssl/server.key'),
-        cert: fs.readFileSync('ssl/server.pem')
+        key: fs.readFileSync(path.join(this.sslDir, 'server.key')),
+        cert: fs.readFileSync(path.join(this.sslDir, 'server.pem'))
       }
-      https.createServer(options, app.callback()).listen(config.httpsPort)
+      const httpsServer = https.createServer(options, app.callback())
+      httpsServer.on('upgrade', (request, socket, head) => {
+        this.wsServer.handleUpgrade(request, socket, head, client => {
+          this.onWsConnection(client, request)
+        })
+      })
+      httpsServer.listen(config.httpsPort)
+      this.servers.push(httpsServer)
     }
+
+    // 优雅关闭（防止 createApp 多次调用时重复注册信号处理器）
+    if (!this._signalRegistered) {
+      this._signalRegistered = true
+      const shutdown = () => this.shutdown()
+      process.on('SIGTERM', shutdown)
+      process.on('SIGINT', shutdown)
+    }
+  }
+
+  async onWsConnection (client, request) {
+    let { host, origin } = request.headers
+    if (host) host = this.convertHost(host)
+    // origin 缺失时（非浏览器客户端）按 socket 是否加密判断，而非强制 https
+    const protocol = origin
+      ? (origin.startsWith('https') ? 'https' : 'http')
+      : (request.socket.encrypted ? 'https' : 'http')
+    const url = protocol + '://' + host + (request.url || '')
+
+    const wsClient = new WebSocket(url)
+    wsClient.on('error', () => {
+      try { client.close() } catch {}
+    })
+    await new Promise(resolve => {
+      wsClient.on('open', resolve)
+      wsClient.on('error', resolve)
+    })
+    wsClient.on('message', message => {
+      message = message.toString()
+      client.send(message)
+    })
+    wsClient.on('close', () => {
+      client.close()
+    })
+    wsClient.on('error', () => {
+      try { client.close() } catch {}
+    })
+
+    client.on('message', message => {
+      message = message.toString()
+      wsClient.send(message)
+    })
+    client.on('close', () => {
+      wsClient.close()
+    })
+    client.on('error', () => {
+      try { wsClient.close() } catch {}
+    })
+  }
+
+  shutdown () {
+    if (this._shuttingDown) return
+    this._shuttingDown = true
+    console.log(chalk.yellow('正在关闭服务器...'))
+    for (const server of (this.servers || [])) {
+      server.close()
+    }
+    if (this.wsServer) {
+      for (const client of this.wsServer.clients) {
+        client.terminate()
+      }
+      this.wsServer.close()
+    }
+    setTimeout(() => process.exit(0), 3000).unref()
   }
 
   async proxyRoute (ctx, next) {
     const { httpVpnDomain, httpsVpnDomain, site } = this.config
-    if (ctx.headers.upgrade === 'websocket') {
-      this.wsServer.handleUpgrade(ctx.request, ctx.socket, ctx.headers, client => {
-        this.wsServer.onConnection(client, ctx.request)
-      })
-    }
-    ctx.scheme = new URL(ctx.request.href).protocol.slice(0, -1)
+    await next()
+    let scheme
+    try { scheme = new URL(ctx.request.href).protocol.slice(0, -1) } catch { scheme = 'http' }
+    ctx.scheme = scheme
     const vpnDomain = ctx.scheme === 'http' ? httpVpnDomain : httpsVpnDomain
-    let subdomain = ctx.headers.host.replace(vpnDomain, '')
+    const host = ctx.headers.host || ''
+    let subdomain = host.endsWith(vpnDomain)
+      ? host.slice(0, -vpnDomain.length)
+      : host
     if (subdomain === 'www') {
       return await this.serveWww(ctx)
     } else {
@@ -454,7 +563,9 @@ class WebVPN {
     try {
       res = await this.request(ctx)
     } catch (err) {
-      ctx.body = err
+      console.log(chalk.red('proxyRoute request error: ' + err.toString()))
+      try { ctx.res.writeHead(502); ctx.res.end('Bad Gateway') } catch {}
+      ctx.meta.done = true
       return
     }
     if (res === true) return
@@ -533,12 +644,16 @@ class WebVPN {
 
   async checkShareSession (ctx) {
     let isMainSession = false, shareId = ''
-    if (!ctx.subdomain.includes('.') && ctx.subdomain.includes('-')) {
-      const parts = ctx.subdomain.split('-')
-      ctx.subdomain = parts[0]
-      isMainSession = parts[1] === 'main'
-      shareId = parts[2]
-      const shareSuffix = '-' + parts.slice(1).join('-')
+    // 使用正则匹配会话后缀 -(main|share)-<shareId>，兼容 original 和 underline 两种模式。
+    // original 模式下 subdomain 含点号（如 www.example.com-main-shareId），
+    // 此前用 !includes('.') 判断会跳过 original 模式的会话共享。
+    // shareId 不含点号，故用 [^.]+ 匹配。
+    const sessionMatch = ctx.subdomain.match(/-(main|share)-([^.]+)$/)
+    if (sessionMatch) {
+      ctx.subdomain = ctx.subdomain.slice(0, sessionMatch.index)
+      isMainSession = sessionMatch[1] === 'main'
+      shareId = sessionMatch[2]
+      const shareSuffix = '-' + sessionMatch[1] + '-' + shareId
       for (let key of ['host', 'origin', 'referer']) {
         if (ctx.headers[key]) {
           ctx.headers[key] = ctx.headers[key].replace(shareSuffix, '')
@@ -558,23 +673,46 @@ class WebVPN {
         if (authorization) ctx.headers['authorization'] = authorization
       }
     }
-    for (let key of ['origin', 'referer']) {
-      if (ctx.headers[key]?.includes('-')) {
-        const subdomain = new URL(ctx.headers[key]).host.split('.')[0]
-        if (subdomain.includes('-')) {
-          ctx.headers[key] = ctx.headers[key].replace('-' + subdomain.split('-').slice(1).join('-'), '')
-        }
-      }
-    }
+    // 此前此处还有第二段循环：用 new URL(origin).host.split('.')[0] 再次解析会话后缀并删除。
+    // 但上面第一段已用 shareSuffix 精确清理 origin/referer，第二段在 original 模式下
+    // （编码 host 是多段子域名）会把目标域名第一段当 subdomain，split('-') 后误删，
+    // 反而破坏已被清理干净的 header。整段删除。
     return { isMainSession, shareId }
   }
 
+  getContentTypeByExt (filepath) {
+    const ext = path.extname(filepath).slice(1).toLowerCase()
+    const dict = {
+      html: 'text/html; charset=utf-8',
+      js: 'application/javascript; charset=utf-8',
+      css: 'text/css; charset=utf-8',
+      json: 'application/json; charset=utf-8',
+      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+      gif: 'image/gif', svg: 'image/svg+xml', webp: 'image/webp', ico: 'image/x-icon',
+      mp4: 'video/mp4', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg',
+      woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', eot: 'application/vnd.ms-fontobject',
+      pdf: 'application/pdf', wasm: 'application/wasm', txt: 'text/plain; charset=utf-8'
+    }
+    return dict[ext] || 'application/octet-stream'
+  }
+
   async respondFile (ctx, filepath) {
-    ctx.res.writeHead(200)
+    ctx.res.writeHead(200, { 'Content-Type': this.getContentTypeByExt(filepath) })
     const stream = fs.createReadStream(filepath)
+    // 此前仅监听 error；客户端中途断开会触发 close 而非 error，
+    // stream 继续读取并写入已关闭的 socket 导致泄漏与 write-after-end 警告。
     await new Promise(resolve => {
+      let resolved = false
+      const finish = () => { if (resolved) return; resolved = true; resolve() }
+      const cleanup = () => { stream.destroy(); finish() }
       stream.pipe(ctx.res)
-      stream.on('end', resolve)
+      stream.on('end', finish)
+      stream.on('error', () => {
+        try { ctx.res.writeHead(500); ctx.res.end('Internal Server Error') } catch {}
+        finish()
+      })
+      ctx.res.on('error', cleanup)
+      ctx.res.on('close', cleanup)
     })
   }
 
@@ -602,17 +740,34 @@ class WebVPN {
     const result = await this.beforeRequest(ctx, options)
     if (result) return result
     await new Promise(resolve => {
+      let resolved = false
+      const finish = () => { if (resolved) return; resolved = true; resolve() }
       const lib = isHttps ? https : http
       const req = lib.request(options, async res => {
         const headers = await this.initResponseHeaders(ctx, res)
         this.deleteIgnoreHeaders(this.ignoreResponseHeaderRegexps, headers)
         ctx.res.writeHead(res.statusCode, headers)
         res.pipe(ctx.res)
-        res.on('end', resolve)
+        // 客户端中途断开时 ctx.res 触发 close（非 error），需销毁上游 res 流避免泄漏
+        const cleanup = () => { res.destroy(); req.destroy(); finish() }
+        res.on('end', finish)
+        res.on('error', () => {
+          try { ctx.res.writeHead(500); ctx.res.end('Internal Server Error') } catch {}
+          finish()
+        })
+        ctx.res.on('error', cleanup)
+        ctx.res.on('close', cleanup)
       })
       req.on('error', err => {
-        ctx.res.writeHead(500)
-        ctx.body = err
+        const msg = 'pipe request failed: ' + ctx.meta.url + ' - ' + err.toString()
+        console.log(chalk.red(msg))
+        try { ctx.res.writeHead(502); ctx.res.end('Bad Gateway') } catch {}
+        finish()
+      })
+      req.setTimeout(this.config.requestTimeout || 60000, () => {
+        req.destroy()
+        try { ctx.res.writeHead(504); ctx.res.end('Gateway Timeout') } catch {}
+        finish()
       })
       req.end()
     })
@@ -636,32 +791,46 @@ class WebVPN {
     const result = await this.beforeRequest(ctx, options)
     if (result) return result
     try {
-      return await this.fetchRequest(ctx, options)
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), this.config.requestTimeout || 60000)
+      options.signal = controller.signal
+      try {
+        return await this.fetchRequest(ctx, options)
+      } finally {
+        clearTimeout(timeout)
+      }
     } catch (err) {
       const msg = 'request failed: ' + ctx.meta.url + '\n' + err.toString()
       console.log(chalk.red(msg) + '\n')
-      throw msg
+      if (err.name === 'AbortError') {
+        try { ctx.res.writeHead(504); ctx.res.end('Gateway Timeout') } catch {}
+      } else {
+        try { ctx.res.writeHead(502); ctx.res.end('Bad Gateway') } catch {}
+      }
+      ctx.meta.done = true
+      return { status: 502, data: '', headers: {} }
     }
   }
 
   async calcRequestBody (ctx) {
     const hasFile = ctx.headers['content-type']?.includes('multipart/form-data; boundary')
-    let body = hasFile ? [] : ''
-    await new Promise(resolve => {
-      ctx.req.on('data', chunk => {
-        if (hasFile) {
-          body.push(...chunk)
-        } else {
-          body += chunk
-        }
-      })
-      ctx.req.on('end', resolve)
-    })
     if (hasFile) {
-      const formData = new FormData()
-      formData.append(undefined, new File([new Uint8Array(body)], undefined, {}))
-      body = formData
+      // multipart/form-data 保留原始字节流，直接交给 node-fetch 透传
+      // 之前用 FormData 重建会丢失字段名、文件名、boundary，导致上传数据损坏
+      const chunks = []
+      await new Promise(resolve => {
+        ctx.req.on('data', chunk => chunks.push(chunk))
+        ctx.req.on('end', resolve)
+        ctx.req.on('error', resolve)
+      })
+      return Buffer.concat(chunks)
     }
+    let body = ''
+    await new Promise(resolve => {
+      ctx.req.on('data', chunk => { body += chunk })
+      ctx.req.on('end', resolve)
+      ctx.req.on('error', resolve)
+    })
     return body
   }
 
@@ -679,12 +848,15 @@ class WebVPN {
     ctx.meta.mime = this.getMimeByResponseHeaders(headers) || ctx.meta.mime
 
     if (this.noTransformMimes.includes(ctx.meta.mime)) {
-      if (headers['content-encoding']?.includes('gzip')) {
+      // node-fetch 会自动解压 gzip/deflate/br，必须删除对应的 content-encoding 头，
+      // 否则浏览器会对已解压的 body 再次解压。zstd node-fetch 不会自动解压，保留让浏览器处理。
+      const encoding = (headers['content-encoding'] || '').toString().toLowerCase()
+      if (encoding.includes('gzip') || encoding.includes('deflate') || encoding.includes('br')) {
         delete headers['content-encoding']
       }
       ctx.meta.done = true
       if (ctx.meta.mime === 'json') {
-        delete headers['content-encoding']
+        // content-encoding 已在上面的 if 中删除，此处不再重复
         data = await res.text()
         if (data === '') data = '{}'
         return {
@@ -696,7 +868,16 @@ class WebVPN {
       ctx.res.writeHead(res.status, headers)
       res.body.pipe(ctx.res)
       await new Promise((resolve) => {
-        res.body.on('end', resolve)
+        let resolved = false
+        const finish = () => { if (resolved) return; resolved = true; resolve() }
+        const cleanup = () => { res.body.destroy(); finish() }
+        res.body.on('end', finish)
+        res.body.on('error', () => {
+          try { ctx.res.statusCode = 500; ctx.res.end() } catch {}
+          finish()
+        })
+        ctx.res.on('error', cleanup)
+        ctx.res.on('close', cleanup)
       })
     } else {
       ctx.status = res.status
@@ -728,7 +909,7 @@ class WebVPN {
   }
 
   getBase (ctx, res) {
-    const match = res.data.match(/\<base\s+href=(\"|\')[^\"\']+/)
+    const match = res.data.match(this.reBase)
     if (match) {
       const text = match[0]
       const index = Math.max(text.indexOf('"'), text.indexOf('\''))
@@ -738,13 +919,13 @@ class WebVPN {
   }
 
   getHtmlLinkMatches (ctx, res) {
-    return [...new Set(res.data.match(/\s(href|src|action|srcset|poster)=(\"|\')?(http\:|https\:|http\%3A|https\%3A|\/\/)[^\s\>]*/g))]
+    return [...new Set(res.data.match(this.reHtmlLinks))]
   }
 
   getCssUrlMatches (ctx, res) {
     return [
-      ...new Set(res.data.match(/url\([\"\']?(http|\/\/)[^\"\')]+/g)),
-      ...new Set(res.data.match(/@import\s[\"\'](http|\/\/)[^\"\']+/g))
+      ...new Set(res.data.match(this.reCssUrls)),
+      ...new Set(res.data.match(this.reCssImports))
     ]
   }
 
@@ -758,41 +939,50 @@ class WebVPN {
       let prefix = ''
       let quote = ''
       if (match.slice(0, match.indexOf('//')).indexOf('http') >= 0) {
-        url = match.slice(match.indexOf('http'), -1)
-        prefix = match.indexOf('https') > 0 ? 'https://' : 'http://'
+        // 正则 [^"')]+ / [^\s>]* 已不含尾部分隔符，slice(..., -1) 会截掉 URL 末尾字符：
+        // 有路径时仅影响路径（host 提取不受影响），但无路径 URL（如 url(http://example.com)）
+        // 会导致 host 被截断（example.com → example.co），替换 key 不匹配，URL 漏改。
+        url = match.slice(match.indexOf('http'))
+        // 此前用 match.indexOf('https') > 0 判断协议，路径含 'https' 时误判；改为检查 url 前缀
+        prefix = url.startsWith('https') ? 'https://' : 'http://'
       } else {
-        url = ctx.meta.scheme + ':' + match.slice(match.indexOf('//'), -1)
+        url = ctx.meta.scheme + ':' + match.slice(match.indexOf('//'))
         quote = match[match.indexOf('//') - 1]
         prefix = '//'
       }
       const u = url.slice(url.indexOf('//') + 2)
-      if (!u || !/[\w]+\./.test(u)) return
-      if (/&#x\w+;/.test(url)) {
-        url = url.replaceAll(/&#x\w+;/g, ele => String.fromCharCode(parseInt(ele.slice(3, -1), 16)))
-      }
+      if (!u || !this.reDomainCheck.test(u)) return
+      url = url.replaceAll(this.reHtmlEntity, ele => String.fromCharCode(parseInt(ele.slice(3, -1), 16)))
       if (url.includes('"')) {
         url = url.replaceAll('"', '')
       }
-      const source = prefix + new URL(url).host
+      let host
+      try { host = new URL(url).host } catch { return }
+      const source = prefix + host
       const value = this.transformUrl(ctx, source.startsWith('http') ? source : (ctx.meta.scheme + ':' + source))
       dict[quote + source] = quote + value
     })
-    Object.entries(dict).sort((a, b) => b[0].length - a[0].length).forEach(ele => {
-      const [key, value] = ele
-      res.data = res.data.replaceAll(key, value)
-    })
+    // 此前对每个 key 单独调用 res.data.replaceAll(key, value) 是 O(n×m)：
+    // n 个模式各扫描一遍 m 长度的文本。改为构造单一正则一次遍历替换。
+    const keys = Object.keys(dict)
+    if (keys.length === 0) return res.data
+    // 按长度降序，避免短 key 先命中长 key 的前缀
+    keys.sort((a, b) => b.length - a.length)
+    const pattern = new RegExp(keys.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g')
+    res.data = res.data.replace(pattern, m => dict[m] !== undefined ? dict[m] : m)
     return res.data
   }
 
   transformUrl (ctx, url) {
     const { httpVpnDomain, httpsVpnDomain } = this.config
-    const u = new URL(url)
+    let u
+    try { u = new URL(url) } catch { return url }
     const vpnDomain = u.protocol === 'http:' ? httpVpnDomain : httpsVpnDomain
     return url.replace(u.host, encodeHost(u.host) + vpnDomain)
   }
 
   processHtml (ctx, res) {
-    const match = res.data.match(/<meta\s+http-equiv=\"Content-Security-Policy\"[^>]+>/)
+    const match = res.data.match(this.reMetaCsp)
     if (match) {
       res.data = res.data.replace(match[0], '')
     }
@@ -800,7 +990,7 @@ class WebVPN {
   }
 
   processHtmlScopeCodes (ctx, code) {
-    const matches = [...code.matchAll(/<script([^>]*)>([\S\s]*?)<\/script>/gi)].filter(match => {
+    const matches = [...code.matchAll(this.reScriptTags)].filter(match => {
       const typeIndex = match[1].indexOf('type=')
       let isScript = true
       if (typeIndex > 0) {
@@ -854,7 +1044,7 @@ class WebVPN {
   }
 
   calcHoistIdentifiersCode (code) {
-    const matches = [...code.matchAll(/(function|class)\s+([\$\_\w]+)\s*\(/g)]
+    const matches = [...code.matchAll(this.reHoistIds)]
     if (!matches.length) return ''
     const names = matches.map(m => m[2]).filter(k => !this.jsKeywords.includes(k))
     return names.map(n => `try { self.${n} = ${n}; } catch {}`).join('\n')
@@ -874,32 +1064,26 @@ class WebVPN {
     const code = `
     <script>
       self.webvpn = {
-        siteUrl: '${siteUrl}',
-        protocol: '${scheme}:',
-        sourceUrl: '${target.href}',
-        pageUrl: '${pageUrl}',
-        hostname: '${target.hostname}',
-        httpVpnDomain: '${httpVpnDomain}',
-        httpsVpnDomain: '${httpsVpnDomain}',
-        base: '${base}',
+        siteUrl: ${JSON.stringify(siteUrl)},
+        protocol: ${JSON.stringify(scheme + ':')},
+        sourceUrl: ${JSON.stringify(target.href)},
+        pageUrl: ${JSON.stringify(pageUrl)},
+        hostname: ${JSON.stringify(target.hostname)},
+        httpVpnDomain: ${JSON.stringify(httpVpnDomain)},
+        httpsVpnDomain: ${JSON.stringify(httpsVpnDomain)},
+        base: ${JSON.stringify(base)},
         interceptLog: ${interceptLog},
         disableJump: ${disableJump},
         confirmJump: ${confirmJump},
         isMainSession: ${isMainSession},
-        shareId: '${shareId}',
+        shareId: ${JSON.stringify(shareId)},
       };
-      const convertDomainsCode = \`${this.convertDomainsCode}\`
-      eval(convertDomainsCode)
+      const convertDomainsCode = ${JSON.stringify(this.convertDomainsCode)}
+      ;new Function(convertDomainsCode)()
       ${customCode || ''}
       webvpn.intercept_code = ${JSON.stringify(this.jsInterceptCode.toString())}
       eval(webvpn.intercept_code)
-      webvpn.worker_wrapper_code = convertDomainsCode + \`
-        ${this.jsWorkerContextCode.replace('#siteUrl#', siteUrl)}
-        ${this.jsScopePrefixCode}
-          #CODE#
-        }
-        ${this.jsScopeSuffixCode}
-      \`
+      webvpn.worker_wrapper_code = convertDomainsCode + ${JSON.stringify('\n' + this.jsWorkerContextCode.replace('#siteUrl#', siteUrl) + '\n' + this.jsScopePrefixCode + '\n  #CODE#\n}\n' + this.jsScopeSuffixCode + '\n')}
     </script>
     ${
       enablePlugins
@@ -931,10 +1115,15 @@ class WebVPN {
       !isMainSession && shareId
       ?
       `<script>
-        const { cookie, localStorage: local } = ${await globalCache.getItem(shareId + '-clientCache') || '{}'}
-        document.cookie += cookie
-        localStorage.clear()
-        for (let key in local) localStorage[key] = local[key]
+        try {
+          const clientCache = ${JSON.stringify(await globalCache.getItem(shareId + '-clientCache') || '{}')}
+          const { cookie, localStorage: local } = JSON.parse(clientCache)
+          if (cookie) document.cookie += cookie
+          if (local) {
+            localStorage.clear()
+            for (let key in local) localStorage[key] = local[key]
+          }
+        } catch (e) { console.warn('webvpn session restore failed:', e) }
       </script>`
       : ''
     }
@@ -948,9 +1137,8 @@ class WebVPN {
   }
 
   processOthers (ctx, res) {
-    if (ctx.meta.mime === 'json' && typeof res.data === 'string') {
-      res.data = JSON.stringify(res.data)
-    }
+    // 此前有 res.data = JSON.stringify(res.data) 的死分支：
+    // res.data 本就是字符串（来自 res.text()），再次 stringify 会双重编码 JSON 文本，导致客户端拿到被破坏的 JSON。已移除。
     if (this.config.disableSourceMap) {
       if (ctx.meta.mime === 'html' || ctx.meta.mime === 'js') {
         res.data = res.data.replaceAll('sourceMappingURL', '')
@@ -967,7 +1155,9 @@ class WebVPN {
         return reg[1]
       }
     }
-    if (new URL(link).pathname === '/') {
+    let pathname = ''
+    try { pathname = new URL(link).pathname } catch {}
+    if (pathname === '/') {
       return 'html'
     }
     return 'text'
@@ -999,7 +1189,13 @@ class WebVPN {
     if (headers['access-control-allow-origin']) {
       headers['access-control-allow-origin'] = headers['access-control-allow-origin'].map(e => {
         if (e === '*') return e
-        const host = e.indexOf('http') >= 0 ? new URL(e).host : e
+        // 目标站可能返回 null / 畸形 origin，new URL 会抛异常导致整个响应处理中断
+        let host
+        try {
+          host = e.indexOf('http') >= 0 ? new URL(e).host : e
+        } catch {
+          return e
+        }
         const vpnDomain = e.indexOf('http://') >= 0 ? httpVpnDomain : httpsVpnDomain
         let domain = encodeHost(host)
         if (shareId) {
@@ -1021,7 +1217,7 @@ class WebVPN {
         const protocol = (httpsEnabled ? scheme : 'http') + '://'
         return e.replace(
           'frame-ancestors',
-          'frame-ancestors ' + protocol + site.host.replace('www', '*')
+          'frame-ancestors ' + protocol + site.host.replace(/^www\./, '*.')
         )
       })
     }
@@ -1037,8 +1233,12 @@ class WebVPN {
     }
     if (headers['set-cookie']) {
       headers['set-cookie'] = headers['set-cookie'].map(e => {
-        e = e.replace(' Secure;', '')
-        if (!/domain=/i.test(e)) {
+        // 此前用字符串 ' Secure;' 替换，仅能命中中间位置（带分号后缀）的 Secure；
+        // 末尾的 Secure（如 "name=value; Path=/; Secure"）不会被移除，
+        // 导致 HTTP 部署下浏览器因 Secure 标志丢弃该 cookie。
+        // 改用正则匹配所有位置的 Secure 标志（含大小写、无空格、末尾等情形）。
+        e = e.replace(/;\s*Secure\b/gi, '')
+        if (!this.reCookieDomain.test(e)) {
           // let domain = encodeHost(target.host)
           // if (shareId) domain += '-' + (isMainSession ? 'main' : 'share') + '-' + shareId
           // domain += vpnDomain
@@ -1046,7 +1246,7 @@ class WebVPN {
           return e
         }
         return e.split('; ').map(p => {
-          if (!/domain=/i.test(p)) return p
+          if (!this.reCookieDomain.test(p)) return p
           let domain = p.split('=')[1]
           const hasDot = domain[0] === '.'
           if (hasDot) domain = domain.slice(1)
@@ -1076,7 +1276,15 @@ class WebVPN {
     headers['x-frame-options'] = ['allowall']
     if (!isMainSession && shareId) {
       const cookie = await globalCache.getItem(shareId + '-cookie')
-      if (cookie) headers['set-cookie'] = cookie
+      if (cookie) {
+        // 缓存的 cookie 是 Cookie 请求头格式（"a=1; b=2"），需拆分为单个 cookie
+        // 再与目标响应自身的 set-cookie 合并，避免覆盖目标站点新设置的 cookie
+        const cached = cookie.split(';').map(c => c.trim()).filter(Boolean)
+        const existing = Array.isArray(headers['set-cookie'])
+          ? headers['set-cookie']
+          : (headers['set-cookie'] ? [headers['set-cookie']] : [])
+        headers['set-cookie'] = [...cached, ...existing]
+      }
     }
     return headers
   }
@@ -1100,8 +1308,13 @@ class WebVPN {
       headers['host'] = this.convertHost(headers['host'])
     }
     if (headers['origin']) {
-      const host = new URL(headers['origin']).host
-      headers['origin'] = headers['origin'].replace(host, this.convertHost(host))
+      // origin/referer 来自客户端、不可信，new URL 须 try/catch；改用 URL 重组 host
+      // 避免字符串 .replace(host, ...) 在路径中误伤同名子串
+      try {
+        const u = new URL(headers['origin'])
+        u.host = this.convertHost(u.host)
+        headers['origin'] = u.origin
+      } catch {}
     }
     const referer = headers['referer']
     if (referer) {
@@ -1110,15 +1323,29 @@ class WebVPN {
       if (referer.indexOf(site.host) < 0 || referer.indexOf(vpnDomain) < 0) {
         delete headers['referer']
       } else {
-        const host = new URL(referer).host
-        headers['referer'] = referer.replace(host, this.convertHost(host))
+        try {
+          const u = new URL(referer)
+          u.host = this.convertHost(u.host)
+          headers['referer'] = u.toString()
+        } catch {
+          delete headers['referer']
+        }
       }
     }
   }
 
   convertHost (host) {
-    const { httpVpnDomain, httpsVpnDomain } = this.config
-    host = host.split('-')[0].replace(httpsVpnDomain, '').replace(httpVpnDomain, '')
+    if (!host) return host
+    const { httpVpnDomain, httpsVpnDomain, vpnDomain } = this.config
+    // 非 vpn 域名的 host 直接返回，避免对第三方域名误跑 decodeHost 破坏其原样
+    if (!host.includes(vpnDomain) && !host.includes(httpVpnDomain) && !host.includes(httpsVpnDomain)) {
+      return host
+    }
+    // 先剥离 vpnDomain（含端口后缀）和会话共享后缀 -(main|share)-<id>，
+    // 再把剩余整体交给 decodeHost。此前用 split('-')[0] 截断，在 original 模式下
+    // 目标域名本身的连字符（如 a-b.example.com，original 模式不编码 -）会被误切。
+    host = host.replace(httpsVpnDomain, '').replace(httpVpnDomain, '')
+    host = host.replace(/-(main|share)-[^.]+$/, '')
     return decodeHost(host)
   }
 
@@ -1129,12 +1356,17 @@ class WebVPN {
     let text, buffer
     if (res.headers.get('content-encoding') === 'zstd') {
       res.headers.delete('content-encoding')
-      text = await new Promise(resolve => {
-        let body = ''
+      // 先收集原始字节 Buffer，再统一 decode；此前用 body += chunk 会隐式 toString('utf8')，
+      // 非 utf-8 页面的字节被提前腐蚀，后续 iconv.decode 无法正确还原。
+      const chunks = []
+      await new Promise(resolve => {
         const stream = res.body.pipe(ZSTDDecompress())
-        stream.on('data', chunk => body += chunk)
-        stream.on('end', () => resolve(body))
+        stream.on('data', chunk => chunks.push(chunk))
+        stream.on('end', resolve)
+        stream.on('error', resolve)
       })
+      buffer = Buffer.concat(chunks)
+      text = iconv.decode(buffer, 'utf-8')
     } else {
       buffer = Buffer.from(await res.arrayBuffer())
       text = iconv.decode(buffer, 'utf-8')
@@ -1142,9 +1374,9 @@ class WebVPN {
     let contentType = headers['content-type']?.[0] || ''
     let charset = contentType.split('charset=')[1]?.toLowerCase()
     if (!charset) {
-      let match = text.match(/<meta charset=[\"\'][^"'\/>]+/)
+      let match = text.match(this.reMetaCharset)
       if (!match) {
-        match = text.match(/<meta http-equiv=\"Content-Type\" content=\"text\/html;\s*charset=[^"'\/>]+/i)
+        match = text.match(this.reMetaContentType)
       }
       if (!match) {
         return text
@@ -1158,14 +1390,14 @@ class WebVPN {
     headers['content-type'] = [contentType.replace(charset, 'utf-8')]
     if (buffer) {
       text = iconv.decode(buffer, charset)
-      text = text.replace(/<meta charset="\w+">/, '<meta charset="utf-8">')
+      text = text.replace(this.reMetaCharsetReplace, '<meta charset="utf-8">')
     }
     return text
   }
 
   isJsonpResponse (data, ctx) {
     if (ctx.meta.mime === 'html') {
-      return /^[\w\$_]+\((\{|\[)/.test(data)
+      return this.reJsonp.test(data)
     }
     return false
   }
@@ -1207,9 +1439,10 @@ class WebVPN {
                 .replaceAll('nomodule', 'nomod')
                 .replaceAll(' integrity', ' no-integrity')
                 .replaceAll('use strict', '')
-                .replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(this === self ? __self__ : this)')
-                // 这个替换并不优雅，也不完整，有问题就取消
-                .replace(/location\.(hostname|host|origin|href|protocol|navigate|assign|replace|reload|toString)/g, 'location.__$1__')
+                .replace(this.reWithThis, ' with(this === self ? __self__ : this)')
+                // 仅改写 location.<prop> 形式的属性访问，避免命中字符串/注释中的文本
+                // 通过词法边界 (\\b) 与点号约束，降低误匹配
+                .replace(this.reLocationProps, 'location.__$1__')
     }
   }
 
