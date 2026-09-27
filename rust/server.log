@@ -1,0 +1,6 @@
+[2026-09-26T00:26:22Z INFO  webvpn] WebVPN 启动中...
+[2026-09-26T00:26:22Z INFO  webvpn] site = http://www.webvpn.info
+[2026-09-26T00:26:22Z INFO  webvpn] http_port = 18080, https_port = 18443
+[2026-09-26T00:26:22Z INFO  webvpn] domain_mode = underline
+[2026-09-26T00:26:22Z INFO  webvpn] vpn_domain = .webvpn.info
+[2026-09-26T00:26:22Z INFO  webvpn] HTTP 监听 0.0.0.0:18080

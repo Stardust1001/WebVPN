@@ -4,3 +4,5 @@ cache/
 yarn.lock
 shared-sessions.json
 reports.json
+rust/target/
+rust/vendor/

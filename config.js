@@ -15,6 +15,10 @@ export default {
   cache: false,
   // 缓存文件夹地址
   cacheDir: 'cache',
+  // public 资源文件夹地址
+  publicDir: 'public',
+  // SSL 证书文件夹地址
+  sslDir: 'ssl',
   // 是否在浏览器控制台打印拦截操作的日志
   interceptLog: false,
   // 是否禁止跳转
@@ -23,14 +27,16 @@ export default {
   confirmJump: false,
   // 是否禁用 source map
   disableSourceMap: true,
-  // 这个设置 0，可有效避免 Hostname/IP does not match certificate's altnames 错误
-  NODE_TLS_REJECT_UNAUTHORIZED: 0,
   // 是否启用插件
   enablePlugins: true,
   // 是否开启调试（当前是VConsole）
   debug: false,
   // 是否禁用 devtools
   disableDevtools: true,
+  // 是否启用 this 完整改写（acorn AST 解析，把每个 this 替换为 (this === self ? __self__ : this)）
+  // 默认 false：仅用正则改写 with(this) 模式（性能更好）
+  // true：用 acorn 解析全部 JS，拦截任何 this 穿透获得 window 的可能（更安全但更慢）
+  rewriteThis: false,
   // 域名编码模式，original (域名原名直接作为多级子域名) | underline（域名原名去除 . :）
   domainMode: 'underline', // underline 不支持 cookie 的 domain 设置 ！！！！！！
   // 无法使用泛解析情况下，可使用单个二级域名代理指定网站

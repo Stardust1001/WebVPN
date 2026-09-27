@@ -141,7 +141,7 @@ function calcUrl () {
     }
     url = 'https://' + url
   }
-  if (url.indexOf(location.hostname.replace('www', '')) > 0) {
+  if (url.indexOf(location.hostname.replace(/^www\./, '')) > 0) {
     url = decodeUrl(url)
   } else {
     url = transformUrl(url)
@@ -167,13 +167,30 @@ function transformUrl (url) {
   } else if (protocol === 'http:' && port !== 80) {
     origin += ':' + port
   }
-  origin = origin.replace('www', subdomain)
+  // 此前用 origin.replace('www', subdomain) 只替换第一个 'www' 出现，
+  // 若 'www' 出现在协议/端口等处会误伤。改为只替换 hostname 中的前导 'www.' 段。
+  const newHostname = site.hostname.replace(/^www\./, subdomain + '.')
+  origin = protocol + '//' + newHostname
+  if (protocol === 'https:' && httpsPort !== 443) {
+    origin += ':' + httpsPort
+  } else if (protocol === 'http:' && port !== 80) {
+    origin += ':' + port
+  }
   return url.replace(u.origin, origin)
 }
 
 function decodeUrl (url) {
   const { host, pathname, search } = new URL(url)
-  const subdomain = host.split('.')[0]
+  // 此前 host.split('.')[0] 只取第一段，在 original 模式下编码后的 host 是多段子域名
+  // （如 www.example.com.<vpnDomain>），仅取第一段 'www' 无法还原目标域名。
+  // 需根据 domainMode 提取 vpnDomain 之前的全部子域段。
+  const vpnDomain = config.httpsEnabled ? config.httpsVpnDomain : config.httpVpnDomain
+  let subdomain = host
+  if (host.endsWith(vpnDomain)) {
+    subdomain = host.slice(0, host.length - vpnDomain.length)
+    // original 模式下 subdomain 形如 'www.example.com.' （带尾点），underline 模式形如 'www__example__com'
+    if (subdomain.endsWith('.')) subdomain = subdomain.slice(0, -1)
+  }
   const isIp = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(subdomain)
   return (isIp ? 'http://' : 'https://') + decodeHost(subdomain) + pathname + search
 }
