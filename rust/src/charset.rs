@@ -8,8 +8,8 @@ use once_cell::sync::Lazy;
 /// 预编译：charset 检测用正则
 /// 排除集与 Node 版 reMetaCharset=/[^"'\/>]+/i 一致（仅 "、'、/、>），不含空格。
 /// 此前误加空格会使 <meta charset="utf-8 "> 等带尾随空格的标签匹配不到 charset。
-static META_CHARSET_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)<meta charset=["'][^"'/\>]+"#).unwrap());
-static META_CT_CHARSET_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)<meta http-equiv="Content-Type" content="text/html;\s*charset=[^"'/\>]+"#).unwrap());
+static META_CHARSET_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)<meta charset=["'][^"'/>]+"#).unwrap());
+static META_CT_CHARSET_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)<meta http-equiv="Content-Type" content="text/html;\s*charset=[^"'/>]+"#).unwrap());
 static META_CHARSET_REPLACE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)<meta charset=["'][^"'/>]+["']>"#).unwrap());
 
 /// 对应 convertCharsetData(ctx, headers, res)

@@ -12,7 +12,7 @@ use crate::headers::transform_url;
 
 /// 预编译热路径正则（避免每个请求重复 Regex::new）
 /// customResponse: with(this) 重写
-static WITH_THIS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[\s\{\}\;]?with\s*\(\s*this\s*\)").unwrap());
+static WITH_THIS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[\s{};]?with\s*\(\s*this\s*\)").unwrap());
 /// customResponse: location.xxx -> location.__xxx__
 static LOCATION_PROP_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\blocation\.(hostname|host|origin|href|protocol|navigate|assign|replace|reload|toString)\b").unwrap());
 /// replaceUrls(html): href/src/action/srcset/poster 属性
