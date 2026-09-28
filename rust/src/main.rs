@@ -71,6 +71,7 @@ async fn main() {
     let state = Arc::new(AppState::new(config.clone()));
     state.public_files.init().await;
     state.disk_cache.init().await;
+    state.session_store.init().await;
 
     // 3. axum 路由：HTTP 和 HTTPS 各用一个 router，区别仅在中间件注入的 SchemeFlag
     //    （对应 Node 版 Koa 自动根据实际 server 判定 http/https scheme）

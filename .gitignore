@@ -1,5 +1,6 @@
 node_modules/
 cache/
+sessions/
 .DS_Store
 yarn.lock
 shared-sessions.json

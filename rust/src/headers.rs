@@ -164,7 +164,7 @@ pub async fn init_response_headers(
     meta: &Meta,
     config: &Config,
     codec: &DomainCodec,
-    global_cache: &crate::cache::GlobalCache,
+    session_store: &crate::cache::SessionStore,
 ) -> HashMap<String, Vec<String>> {
     let https_enabled = config.https_enabled;
     let vpn_domain = &config.vpn_domain;
@@ -314,9 +314,9 @@ pub async fn init_response_headers(
     // x-frame-options: allowall
     headers.insert("x-frame-options".to_string(), vec!["allowall".to_string()]);
 
-    // 会话消费者：用 globalCache 中存的 cookie 与目标响应自身的 set-cookie 合并
+    // 会话消费者：用 sessionStore 中存的 cookie 与目标响应自身的 set-cookie 合并
     if !is_main_session && !share_id.is_empty() {
-        let cookie = global_cache.get_item(&format!("{}-cookie", share_id)).await;
+        let cookie = session_store.get_item(&format!("{}-cookie", share_id)).await;
         if let Some(c) = cookie {
             // 缓存的 cookie 是 Cookie 请求头格式（"a=1; b=2"），需拆分为单个 cookie
             // 再与目标响应自身的 set-cookie 合并，避免覆盖目标站点新设置的 cookie

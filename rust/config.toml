@@ -5,6 +5,7 @@ site = "http://www.webvpn.info"
 num_processes = 1
 cache = false
 cache_dir = "cache"
+sessions_dir = "sessions"
 public_dir = "../public"
 ssl_dir = "../ssl"
 intercept_log = false

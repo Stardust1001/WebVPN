@@ -22,6 +22,9 @@ pub struct Config {
     pub cache: bool,
     /// 缓存文件夹地址
     pub cache_dir: String,
+    /// 会话共享持久化目录（share sessions 的 cookie/authorization/clientCache 落盘于此）
+    /// 多进程下用「写临时文件 → rename」原子替换，无需文件锁；重启不丢会话
+    pub sessions_dir: String,
     /// public 目录路径（前端资源目录，默认 ../public 因为 rust 代码在子目录）
     pub public_dir: String,
     /// ssl 目录路径（证书目录，默认 ../ssl 因为 rust 代码在子目录）
@@ -65,6 +68,7 @@ impl Default for Config {
             num_processes: 4,
             cache: false,
             cache_dir: "cache".to_string(),
+            sessions_dir: "sessions".to_string(),
             public_dir: "../public".to_string(),
             ssl_dir: "../ssl".to_string(),
             intercept_log: false,
@@ -147,6 +151,7 @@ struct ConfigToml {
     num_processes: Option<usize>,
     cache: Option<bool>,
     cache_dir: Option<String>,
+    sessions_dir: Option<String>,
     public_dir: Option<String>,
     ssl_dir: Option<String>,
     intercept_log: Option<bool>,
@@ -170,6 +175,7 @@ impl ConfigToml {
         if let Some(v) = self.num_processes { c.num_processes = v; }
         if let Some(v) = self.cache { c.cache = v; }
         if let Some(v) = &self.cache_dir { c.cache_dir = v.clone(); }
+        if let Some(v) = &self.sessions_dir { c.sessions_dir = v.clone(); }
         if let Some(v) = &self.public_dir { c.public_dir = v.clone(); }
         if let Some(v) = &self.ssl_dir { c.ssl_dir = v.clone(); }
         if let Some(v) = self.intercept_log { c.intercept_log = v; }

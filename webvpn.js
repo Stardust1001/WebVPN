@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import crypto from 'node:crypto'
 import https from 'node:https'
 import http from 'node:http'
 import path from 'node:path'
@@ -26,42 +27,139 @@ function getMagicString () {
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false })
 
-const globalCache = {
-  cache: {},
+// 会话共享持久化存储：把 cookie/authorization/clientCache 落盘到 sessions/ 目录。
+// 每个独立文件，写入用「写临时文件 → rename」原子替换——读者要么看到旧完整文件、要么看到新完整文件，
+// 永远不会读到半截，因此多进程并发无需文件锁。
+// key 形如 "<shareId>-cookie"，shareId 来自客户端，必须 sanitize 防路径穿越。
+const sessionStore = {
+  dir: 'sessions',
   ttl: 30 * 60 * 1000,
-  maxItems: 10000,
-  getItem (key) {
-    const item = globalCache.cache[key]
-    if (!item) return undefined
-    if (item.expires && Date.now() > item.expires) {
-      delete globalCache.cache[key]
+  // 短 TTL 内存读缓存：避免单请求内重复读盘（cookie 在 checkShareSession + initResponseHeaders 各读一次）
+  // 写入时同步刷新，3s 过期后重新读盘
+  readCache: new Map(),
+  readCacheTtl: 3000,
+  readCacheMax: 1000,
+  // shareId 只允许字母数字与 _ -，其余替换为 _，并限制长度，杜绝 ../ 等穿越
+  sanitizeKey (key) {
+    return String(key).replace(/[^\w-]/g, '_').slice(0, 128)
+  },
+  filePath (key) {
+    return path.join(this.dir, this.sanitizeKey(key) + '.json')
+  },
+  async ensureDir () {
+    // best-effort：目录不可创建时静默失败，setItem 后续写入会自行处理。
+    // 对应 Rust 版 ensure_dir 中的 `let _ = fs::create_dir_all(...)`
+    try { await fs.promises.mkdir(this.dir, { recursive: true }) } catch {}
+  },
+  // readCache 防膨胀：超过上限时清理过期条目，仍超限则删最早条目。
+  // 攻击者可生成大量 shareId，每个 miss 都会往 readCache 塞一条；条目虽 3s 后过期
+  // 但不会被主动移出 Map，故需在 getItem/setItem 写入前显式淘汰。
+  evictReadCache () {
+    if (this.readCache.size < this.readCacheMax) return
+    const now = Date.now()
+    for (const [k, v] of this.readCache) {
+      if (now >= v.expires) this.readCache.delete(k)
+    }
+    // 清理后仍超限：删最早的条目（Map 保持插入顺序，首项最旧）
+    while (this.readCache.size >= this.readCacheMax) {
+      const firstKey = this.readCache.keys().next().value
+      if (firstKey === undefined) break
+      this.readCache.delete(firstKey)
+    }
+  },
+  async getItem (key) {
+    // 先查内存读缓存
+    const cached = this.readCache.get(key)
+    if (cached && Date.now() < cached.expires) {
+      return cached.value
+    }
+    const file = this.filePath(key)
+    let text
+    try {
+      text = await fs.promises.readFile(file, 'utf8')
+    } catch {
       return undefined
     }
-    return item.value
-  },
-  setItem (key, value) {
-    // 防止恶意客户端生成大量 shareId 导致内存无限增长：
-    // 超过上限时淘汰最早写入的条目（近似 FIFO，已过期条目优先清理）
-    const cache = globalCache.cache
-    if (Object.keys(cache).length >= globalCache.maxItems) {
-      let oldestKey = null
-      let oldestTime = Infinity
-      for (const k in cache) {
-        const t = cache[k].expires
-        if (t < oldestTime) {
-          oldestTime = t
-          oldestKey = k
-        }
+    try {
+      const item = JSON.parse(text)
+      if (item.expires && Date.now() > item.expires) {
+        // 过期：顺手删文件（失败无妨，cleanup 也会扫）
+        fs.promises.unlink(file).catch(() => {})
+        this.readCache.delete(key)
+        return undefined
       }
-      if (oldestKey) delete cache[oldestKey]
-    }
-    cache[key] = { value, expires: Date.now() + globalCache.ttl }
-    if (!cluster.isMaster) {
-      process.send({ workerId: process.pid, action: 'setCache', key, value })
+      // 填充内存读缓存（先按需淘汰）
+      this.evictReadCache()
+      this.readCache.set(key, { value: item.value, expires: Date.now() + this.readCacheTtl })
+      return item.value
+    } catch {
+      return undefined
     }
   },
-  syncItem (key, value) {
-    globalCache.cache[key] = { value, expires: Date.now() + globalCache.ttl }
+  async setItem (key, value) {
+    await this.ensureDir()
+    const file = this.filePath(key)
+    // 临时文件名：pid + 8 字节密码学随机数，保证同进程并发写入也不冲突
+    // （对应 Rust 版 pid + 线程 id + 纳秒 + AtomicU64 计数器哈希）
+    const tmp = file + '.' + process.pid + '.' + crypto.randomBytes(8).toString('hex') + '.tmp'
+    const payload = JSON.stringify({ value, expires: Date.now() + this.ttl })
+    // 写临时文件失败（磁盘满 / 权限）：best-effort，记日志后直接返回，不抛异常。
+    // 对应 Rust 版 `if fs::write(&tmp, &payload).await.is_err() { return; }`
+    try {
+      await fs.promises.writeFile(tmp, payload, 'utf8')
+    } catch (e) {
+      console.error(chalk.red('[WebVPN] sessionStore.setItem writeFile failed:'), key, e.message)
+      return
+    }
+    // rename 在同卷上原子（POSIX rename(2) / Windows MoveFileExW + REPLACE_EXISTING）。
+    // Windows 上若目标文件恰好被读导致 EBUSY/EPERM，短暂重试即可（文件极小，冲突窗口极短）。
+    for (let i = 0; i < 3; i++) {
+      try {
+        await fs.promises.rename(tmp, file)
+        // 同步刷新内存读缓存（同样先按需淘汰）
+        this.evictReadCache()
+        this.readCache.set(key, { value, expires: Date.now() + this.readCacheTtl })
+        return
+      } catch (e) {
+        if (i < 2 && (e.code === 'EBUSY' || e.code === 'EPERM' || e.code === 'EACCES')) {
+          await new Promise(r => setTimeout(r, 10 * (i + 1)))
+          continue
+        }
+        // 最后一次仍失败或不可重试错误：清理临时文件，本次写入放弃
+        // 会话共享是 best-effort：写失败时读端继续用旧值或返回空，不应让请求本身 500
+        fs.promises.unlink(tmp).catch(() => {})
+        console.error(chalk.red('[WebVPN] sessionStore.setItem failed:'), key, e.message)
+        return
+      }
+    }
+  },
+  // 启动时清理过期文件与残留 .tmp
+  async cleanup () {
+    let entries
+    try {
+      entries = await fs.promises.readdir(this.dir)
+    } catch {
+      return
+    }
+    const now = Date.now()
+    for (const name of entries) {
+      const full = path.join(this.dir, name)
+      if (name.endsWith('.tmp')) {
+        fs.promises.unlink(full).catch(() => {})
+        continue
+      }
+      if (!name.endsWith('.json')) continue
+      try {
+        const text = await fs.promises.readFile(full, 'utf8')
+        const item = JSON.parse(text)
+        if (item.expires && now > item.expires) {
+          fs.promises.unlink(full).catch(() => {})
+        }
+      } catch {
+        // 损坏文件直接删
+        fs.promises.unlink(full).catch(() => {})
+      }
+    }
   }
 }
 
@@ -345,20 +443,17 @@ class WebVPN {
 
   async start () {
     await this._initialized
+    // 会话存储目录初始化与清理（主进程做一次即可，worker 也会各自 ensureDir）
+    sessionStore.dir = this.config.sessionsDir || 'sessions'
+    if (cluster.isMaster) {
+      await sessionStore.ensureDir()
+      await sessionStore.cleanup().catch(e => console.error(chalk.red('session cleanup failed:'), e))
+    }
     if (this.config.numProcesses > 1 && cluster.isMaster) {
       for (let i = 0; i < this.config.numProcesses; i++) {
         cluster.fork()
       }
       cluster.on('listening', (worker, address) => {
-        worker.on('message', ({ action, key, value, workerId }) => {
-          if (action === 'setCache') {
-            const params = { action: 'syncCache', key, value }
-            for (let key in cluster.workers) {
-              if (key === workerId) continue
-              cluster.workers[key].send(params)
-            }
-          }
-        })
         console.log(chalk.green(`listening: worker ${worker.process.pid} - Address: ${address.address}:${address.port}`))
       })
       cluster.on('exit', (worker, code, signal) => {
@@ -367,13 +462,6 @@ class WebVPN {
       })
     } else {
       this.createApp()
-      if (!cluster.isMaster) {
-        process.on('message', ({ action, key, value }) => {
-          if (action === 'syncCache') {
-            globalCache.syncItem(key, value)
-          }
-        })
-      }
     }
   }
 
@@ -389,7 +477,7 @@ class WebVPN {
     } else if (ctx.url.startsWith('/share-sessions')) {
       if (ctx.method === 'POST') {
         const body = await this.calcRequestBody(ctx)
-        await globalCache.setItem(ctx.query.shareId + '-clientCache', body)
+        await sessionStore.setItem(ctx.query.shareId + '-clientCache', body)
       }
       ctx.res.writeHead(200, {
         'access-control-allow-credentials': 'true',
@@ -682,14 +770,14 @@ class WebVPN {
       }
       if (isMainSession) {
         if (ctx.headers['cookie']) {
-          await globalCache.setItem(shareId + '-cookie', ctx.headers['cookie'])
+          await sessionStore.setItem(shareId + '-cookie', ctx.headers['cookie'])
         }
         if (ctx.headers['authorization']) {
-          await globalCache.setItem(shareId + '-authorization', ctx.headers['authorization'])
+          await sessionStore.setItem(shareId + '-authorization', ctx.headers['authorization'])
         }
       } else {
-        const cookie = await globalCache.getItem(shareId + '-cookie')
-        const authorization = await globalCache.getItem(shareId + '-authorization')
+        const cookie = await sessionStore.getItem(shareId + '-cookie')
+        const authorization = await sessionStore.getItem(shareId + '-authorization')
         if (cookie) ctx.headers['cookie'] = cookie
         if (authorization) ctx.headers['authorization'] = authorization
       }
@@ -1137,9 +1225,12 @@ class WebVPN {
       ?
       `<script>
         try {
-          const clientCache = ${JSON.stringify(await globalCache.getItem(shareId + '-clientCache') || '{}')}
+          const clientCache = ${JSON.stringify(await sessionStore.getItem(shareId + '-clientCache') || '{}').replace(/</g, '\\u003c')}
           const { cookie, localStorage: local } = JSON.parse(clientCache)
-          if (cookie) document.cookie += cookie
+          // cookie 是 Cookie 请求头格式（"a=1; b=2"），document.cookie 的 setter
+          // 每次只解析一个 name=value 对（; 后的视为属性），不能直接 += 拼接，
+          // 否则只有第一个 cookie 被设置，其余被当作属性丢弃。
+          if (cookie) cookie.split(';').forEach(c => { if (c.trim()) document.cookie = c.trim() })
           if (local) {
             localStorage.clear()
             for (let key in local) localStorage[key] = local[key]
@@ -1296,7 +1387,7 @@ class WebVPN {
     }
     headers['x-frame-options'] = ['allowall']
     if (!isMainSession && shareId) {
-      const cookie = await globalCache.getItem(shareId + '-cookie')
+      const cookie = await sessionStore.getItem(shareId + '-cookie')
       if (cookie) {
         // 缓存的 cookie 是 Cookie 请求头格式（"a=1; b=2"），需拆分为单个 cookie
         // 再与目标响应自身的 set-cookie 合并，避免覆盖目标站点新设置的 cookie

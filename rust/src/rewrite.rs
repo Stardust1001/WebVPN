@@ -773,7 +773,7 @@ pub async fn append_script(
     codec: &DomainCodec,
     convert_domains_code: &str,
     js_intercept_code: &str,
-    global_cache: &crate::cache::GlobalCache,
+    session_store: &crate::cache::SessionStore,
 ) -> String {
     let https_enabled = config.https_enabled;
     let http_vpn_domain = &config.http_vpn_domain;
@@ -871,14 +871,21 @@ pub async fn append_script(
         code.push_str(&format!("<script src=\"{}/public/share-sessions.js\"></script>\n", prefix));
     }
     if !is_main_session && !share_id.is_empty() {
-        let client_cache = global_cache.get_item(&format!("{}-clientCache", share_id)).await.unwrap_or_else(|| "{}".to_string());
-        let client_cache_json = serde_json::to_string(&client_cache).unwrap_or_else(|_| "\"{}\"".to_string());
+        let client_cache = session_store.get_item(&format!("{}-clientCache", share_id)).await.unwrap_or_else(|| "{}".to_string());
+        // JSON.stringify 不转义 </script>，嵌入 <script> 标签时会提前闭合。
+        // 将 < 替换为 \u003c，阻止标签注入（对应 Node 版 .replace(/</g, '\\u003c')）
+        let client_cache_json = serde_json::to_string(&client_cache)
+            .unwrap_or_else(|_| "\"{}\"".to_string())
+            .replace('<', "\\u003c");
         code.push_str(&format!(
             r#"<script>
         try {{
           const clientCache = {}
           const {{ cookie, localStorage: local }} = JSON.parse(clientCache)
-          if (cookie) document.cookie += cookie
+          // cookie 是 Cookie 请求头格式（"a=1; b=2"），document.cookie 的 setter
+          // 每次只解析一个 name=value 对（; 后的视为属性），不能直接 += 拼接，
+          // 否则只有第一个 cookie 被设置，其余被当作属性丢弃。
+          if (cookie) cookie.split(';').forEach(c => {{ if (c.trim()) document.cookie = c.trim() }})
           if (local) {{
             localStorage.clear()
             for (let key in local) localStorage[key] = local[key]

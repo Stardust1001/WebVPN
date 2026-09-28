@@ -24,7 +24,7 @@ static JSONP_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?-u)^[\w\$_]+\([\{\[]"
 /// 兼容 original（subdomain 含点号）和 underline 两种模式
 static SHARE_SESSION_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"-(main|share)-([^.]+)$").unwrap());
 
-use crate::cache::GlobalCache;
+use crate::cache::SessionStore;
 use crate::charset::convert_charset_data;
 use crate::config::Config;
 use crate::context::Meta;
@@ -123,7 +123,7 @@ pub struct AppState {
     pub codec: DomainCodec,
     pub convert_domains_code: String,
     pub js_intercept_code: String, // public/intercept.js 全文
-    pub global_cache: GlobalCache,
+    pub session_store: SessionStore,
     pub public_files: PublicFiles,
     pub disk_cache: DiskCache,
     pub http_client: reqwest::Client, // 复用连接池（对应 Node 版的 httpsAgent）
@@ -134,7 +134,7 @@ impl AppState {
         let codec = DomainCodec::new(&config.domain_mode, &config.subdomains);
         let convert_domains_code = codec.convert_domains_code(&config.http_vpn_domain, &config.https_vpn_domain);
         let js_intercept_code = std::fs::read_to_string(format!("{}/intercept.js", config.public_dir.trim_end_matches('/'))).unwrap_or_default();
-        let global_cache = GlobalCache::new();
+        let session_store = SessionStore::new(&config.sessions_dir);
         let public_files = PublicFiles::new(&config.public_dir);
         let disk_cache = DiskCache::new(&config);
         // 复用单一 Client：禁用自动重定向（手动处理 3xx）、接受无效证书（对应 NODE_TLS_REJECT_UNAUTHORIZED=0）
@@ -150,7 +150,7 @@ impl AppState {
             .brotli(true)
             .build()
             .expect("failed to build reqwest client");
-        Self { config, codec, convert_domains_code, js_intercept_code, global_cache, public_files, disk_cache, http_client }
+        Self { config, codec, convert_domains_code, js_intercept_code, session_store, public_files, disk_cache, http_client }
     }
 }
 
@@ -323,7 +323,7 @@ pub async fn proxy_route(
             if !meta.is_xhr {
                 // base 仅 appendScript 用到，且需基于改写前的原始 HTML 提取 <base href>
                 meta.base = get_base(&data_str, &meta);
-                new_data = append_script(&new_data, &state.config, &meta, &state.codec, &state.convert_domains_code, &state.js_intercept_code, &state.global_cache).await;
+                new_data = append_script(&new_data, &state.config, &meta, &state.codec, &state.convert_domains_code, &state.js_intercept_code, &state.session_store).await;
             }
         } else if meta.mime == "js" {
             let (rewritten, new_mime) = process_js_scope_code(&new_data, &state.config, &meta, &state.convert_domains_code);
@@ -409,10 +409,10 @@ async fn check_share_session(
 
         if is_main_session {
             if let Some(cookie) = headers.get("cookie").and_then(|v| v.to_str().ok()) {
-                state.global_cache.set_item(&format!("{}-cookie", share_id), cookie.to_string()).await;
+                state.session_store.set_item(&format!("{}-cookie", share_id), cookie.to_string()).await;
             }
             if let Some(auth) = headers.get("authorization").and_then(|v| v.to_str().ok()) {
-                state.global_cache.set_item(&format!("{}-authorization", share_id), auth.to_string()).await;
+                state.session_store.set_item(&format!("{}-authorization", share_id), auth.to_string()).await;
             }
         }
         // share 会话消费者的 cookie 覆盖在 upstream_request 里做（需要改请求头）
@@ -446,7 +446,7 @@ async fn serve_www(
                 .and_then(|u| u.query_pairs().find(|(k, _)| k == "shareId").map(|(_, v)| v.to_string()))
                 .unwrap_or_default();
             let body_str = String::from_utf8_lossy(&body).to_string();
-            state.global_cache.set_item(&format!("{}-clientCache", share_id), body_str).await;
+            state.session_store.set_item(&format!("{}-clientCache", share_id), body_str).await;
         }
         let mut hm = HeaderMap::new();
         let origin = headers.get("origin").and_then(|v| v.to_str().ok()).unwrap_or("*");
@@ -493,10 +493,10 @@ async fn upstream_request(
 
     // 会话消费者：覆盖 cookie/authorization
     if !meta.is_main_session && !meta.share_id.is_empty() {
-        if let Some(cookie) = state.global_cache.get_item(&format!("{}-cookie", meta.share_id)).await {
+        if let Some(cookie) = state.session_store.get_item(&format!("{}-cookie", meta.share_id)).await {
             req_headers.insert("cookie".to_string(), vec![cookie]);
         }
-        if let Some(auth) = state.global_cache.get_item(&format!("{}-authorization", meta.share_id)).await {
+        if let Some(auth) = state.session_store.get_item(&format!("{}-authorization", meta.share_id)).await {
             req_headers.insert("authorization".to_string(), vec![auth]);
         }
     }
@@ -535,7 +535,7 @@ async fn upstream_request(
         .and_then(|v| v.first().cloned())
         .unwrap_or_default();
 
-    let mut headers = init_response_headers(&raw_headers, meta, &state.config, &state.codec, &state.global_cache).await;
+    let mut headers = init_response_headers(&raw_headers, meta, &state.config, &state.codec, &state.session_store).await;
     delete_ignore_headers(&IGNORE_RESPONSE_HEADER_REGEXPS, &mut headers);
 
     // 钩子：initResponseHeaders（对应 main.js 中 .wasm 的 content-type 覆盖）
@@ -644,10 +644,10 @@ async fn respond_pipe(
     set_origin_headers(&mut req_headers, &state.config, &state.codec);
 
     if !meta.is_main_session && !meta.share_id.is_empty() {
-        if let Some(cookie) = state.global_cache.get_item(&format!("{}-cookie", meta.share_id)).await {
+        if let Some(cookie) = state.session_store.get_item(&format!("{}-cookie", meta.share_id)).await {
             req_headers.insert("cookie".to_string(), vec![cookie]);
         }
-        if let Some(auth) = state.global_cache.get_item(&format!("{}-authorization", meta.share_id)).await {
+        if let Some(auth) = state.session_store.get_item(&format!("{}-authorization", meta.share_id)).await {
             req_headers.insert("authorization".to_string(), vec![auth]);
         }
     }
@@ -682,7 +682,7 @@ async fn respond_pipe(
         .and_then(|v| v.first().cloned())
         .unwrap_or_default();
 
-    let mut headers = init_response_headers(&raw_headers, meta, &state.config, &state.codec, &state.global_cache).await;
+    let mut headers = init_response_headers(&raw_headers, meta, &state.config, &state.codec, &state.session_store).await;
     delete_ignore_headers(&IGNORE_RESPONSE_HEADER_REGEXPS, &mut headers);
 
     // 钩子：initResponseHeaders（对应 main.js 中 .wasm 的 content-type 覆盖）

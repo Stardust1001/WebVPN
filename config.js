@@ -15,6 +15,9 @@ export default {
   cache: false,
   // 缓存文件夹地址
   cacheDir: 'cache',
+  // 会话共享持久化目录（share sessions 的 cookie/authorization/clientCache 落盘于此）
+  // 多进程下用「写临时文件 → rename」原子替换，无需文件锁；重启不丢会话
+  sessionsDir: 'sessions',
   // public 资源文件夹地址
   publicDir: 'public',
   // SSL 证书文件夹地址
