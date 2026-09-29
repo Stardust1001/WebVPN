@@ -223,8 +223,8 @@ class WebVPN {
     ]
 
     // 预编译热路径正则表达式，避免每次请求重复编译
-    this.reBase = /\<base\s+href=("|')[^"'']+/i
-    this.reHtmlLinks = /\s(href|src|action|srcset|poster)=("|')?(http\:|https\:|http\%3A|https\%3A|\/\/)[^\s\>]*/gi
+    this.reBase = /<base\s+href=("|')[^"']+/i
+    this.reHtmlLinks = /\s(href|src|action|srcset|poster)=("|')?(http:|https:|http%3A|https%3A|\/\/)[^\s>]*/gi
     this.reCssUrls = /url\(["']?(http|\/\/)[^"')]+/gi
     this.reCssImports = /@import\s["'](http|\/\/)[^"']+/gi
     this.reDomainCheck = /[\w]+\./
@@ -456,9 +456,22 @@ class WebVPN {
       cluster.on('listening', (worker, address) => {
         console.log(chalk.green(`listening: worker ${worker.process.pid} - Address: ${address.address}:${address.port}`))
       })
+      // 退避重启：进程反复崩溃时，连续 fork 会导致 CPU 抖动；用指数退避（最大 30s）压制重启频率。
+      // 记录最近一次 exit 时间，若距上次 fork 不足 1s 则视为崩溃，逐步拉长下次重启间隔。
+      let lastExitTime = 0
+      let restartDelay = 0
       cluster.on('exit', (worker, code, signal) => {
-        console.log(chalk.yellow(`工作进程 ${worker.process.pid} 关闭 ${signal || code}. 重启中...`) + '\n')
-        cluster.fork()
+        const now = Date.now()
+        const sinceLast = now - lastExitTime
+        lastExitTime = now
+        if (sinceLast < 1000) {
+          // 短时间内连续崩溃，退避
+          restartDelay = Math.min(restartDelay === 0 ? 1000 : restartDelay * 2, 30000)
+        } else {
+          restartDelay = 0
+        }
+        console.log(chalk.yellow(`工作进程 ${worker.process.pid} 关闭 ${signal || code}. ${restartDelay ? restartDelay + 'ms 后' : ''}重启中...`))
+        setTimeout(() => cluster.fork(), restartDelay)
       })
     } else {
       this.createApp()
@@ -479,11 +492,16 @@ class WebVPN {
         const body = await this.calcRequestBody(ctx)
         await sessionStore.setItem(ctx.query.shareId + '-clientCache', body)
       }
+      // 仅允许 WebVPN 自身域发起的跨域请求，避免任意第三方站点通过 fetch 携带 cookie
+      // 向 /share-sessions 发起 credentialed 请求（原实现直接回显 Origin 头，存在 CSRF 风险）。
+      const origin = ctx.headers['origin'] || ''
+      const allowedOrigin = this.isAllowedOrigin(origin) ? origin : this.site.origin
       ctx.res.writeHead(200, {
         'access-control-allow-credentials': 'true',
-        'access-control-allow-origin': ctx.headers['origin'] || '*',
+        'access-control-allow-origin': allowedOrigin,
         'access-control-allow-headers': '*',
-        'access-control-allow-methods': '*'
+        'access-control-allow-methods': '*',
+        vary: 'origin'
       })
       ctx.res.end()
     } else {
@@ -922,25 +940,16 @@ class WebVPN {
   }
 
   async calcRequestBody (ctx) {
-    const hasFile = ctx.headers['content-type']?.includes('multipart/form-data; boundary')
-    if (hasFile) {
-      // multipart/form-data 保留原始字节流，直接交给 node-fetch 透传
-      // 之前用 FormData 重建会丢失字段名、文件名、boundary，导致上传数据损坏
-      const chunks = []
-      await new Promise(resolve => {
-        ctx.req.on('data', chunk => chunks.push(chunk))
-        ctx.req.on('end', resolve)
-        ctx.req.on('error', resolve)
-      })
-      return Buffer.concat(chunks)
-    }
-    let body = ''
+    // 统一用 Buffer 收集请求体，避免 `body += chunk` 隐式调用 toString
+    // 导致二进制请求体（protobuf / 图片上传 / application/octet-stream 等）被
+    // utf-8 解码腐蚀。node-fetch 同时接受 string 与 Buffer，统一返回 Buffer 最安全。
+    const chunks = []
     await new Promise(resolve => {
-      ctx.req.on('data', chunk => { body += chunk })
+      ctx.req.on('data', chunk => chunks.push(chunk))
       ctx.req.on('end', resolve)
       ctx.req.on('error', resolve)
     })
-    return body
+    return Buffer.concat(chunks)
   }
 
   async fetchRequest (ctx, options) {
@@ -1319,18 +1328,24 @@ class WebVPN {
     }
     headers['content-type'] = [headers['content-type']?.[0] || 'text/html']
     if (headers['content-security-policy']) {
+      // 旧实现：整条 CSP 中出现 -src/unsafe-/require-trusted-types-for 即清空，
+      // 会误伤非相关指令（frame-ancestors/report-uri 等）。
+      // 改为按分号分指令逐条过滤，frame-ancestors 单独改写为允许 WebVPN 主域。
+      const protocol = (httpsEnabled ? scheme : 'http') + '://'
+      const allowedAncestors = protocol + site.host.replace(/^www\./, '*.')
       headers['content-security-policy'] = headers['content-security-policy'].map(e => {
-        if (
-          e.includes('-src')
-          || e.includes('unsafe-')
-          || e.includes('require-trusted-types-for')
-        ) return ''
-        if (e.indexOf('frame-ancestors') < 0 || e === `frame-ancestors 'none';`) return e
-        const protocol = (httpsEnabled ? scheme : 'http') + '://'
-        return e.replace(
-          'frame-ancestors',
-          'frame-ancestors ' + protocol + site.host.replace(/^www\./, '*.')
+        const directives = e.split(';').map(d => d.trim()).filter(Boolean)
+        const hasFrameAncestors = directives.some(d => d.startsWith('frame-ancestors'))
+        const kept = directives.filter(d =>
+          !d.includes('-src')
+          && !d.includes('unsafe-')
+          && !d.includes('require-trusted-types-for')
+          && !d.includes('trusted-types')
+          && !d.startsWith('frame-ancestors')
         )
+        if (hasFrameAncestors) kept.push('frame-ancestors ' + allowedAncestors)
+        if (httpsEnabled && !kept.includes('upgrade-insecure-requests')) kept.push('upgrade-insecure-requests')
+        return kept.join('; ')
       })
     }
     if (headers['location']) {
@@ -1459,6 +1474,21 @@ class WebVPN {
     host = host.replace(httpsVpnDomain, '').replace(httpVpnDomain, '')
     host = host.replace(/-(main|share)-[^.]+$/, '')
     return decodeHost(host)
+  }
+
+  /// 判断给定的 origin 是否属于 WebVPN 自身域（用于 CORS 白名单）。
+  /// 允许：site.origin、或 host 以 vpnDomain 结尾（含端口后缀）的任意子域。
+  isAllowedOrigin (origin) {
+    if (!origin) return false
+    if (origin === this.site.origin) return true
+    try {
+      const u = new URL(origin)
+      const host = u.host
+      const { httpVpnDomain, httpsVpnDomain, vpnDomain } = this.config
+      return host.endsWith(httpVpnDomain) || host.endsWith(httpsVpnDomain) || host.endsWith(vpnDomain)
+    } catch {
+      return false
+    }
   }
 
   async convertCharsetData (ctx, headers, res) {

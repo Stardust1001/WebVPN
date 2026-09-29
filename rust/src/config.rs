@@ -47,6 +47,8 @@ pub struct Config {
     /// 默认 false：仅用正则改写 with(this) 模式（性能更好）
     /// true：用 oxc 解析全部 JS，拦截任何 this 穿透获得 window 的可能（更安全但更慢）
     pub rewrite_this: bool,
+    /// 上游请求超时（秒），对应 Node 版 requestTimeout || 60000
+    pub request_timeout: u64,
     /// 域名编码模式 original | underline
     pub domain_mode: String,
     /// 单域名代理映射
@@ -79,6 +81,7 @@ impl Default for Config {
             debug: false,
             disable_devtools: true,
             rewrite_this: false,
+            request_timeout: 60,
             domain_mode: "underline".to_string(),
             subdomains: {
                 let mut m = HashMap::new();
@@ -162,6 +165,7 @@ struct ConfigToml {
     debug: Option<bool>,
     disable_devtools: Option<bool>,
     rewrite_this: Option<bool>,
+    request_timeout: Option<u64>,
     domain_mode: Option<String>,
     subdomains: Option<HashMap<String, String>>,
 }
@@ -186,6 +190,7 @@ impl ConfigToml {
         if let Some(v) = self.debug { c.debug = v; }
         if let Some(v) = self.disable_devtools { c.disable_devtools = v; }
         if let Some(v) = self.rewrite_this { c.rewrite_this = v; }
+        if let Some(v) = self.request_timeout { c.request_timeout = v; }
         if let Some(v) = &self.domain_mode { c.domain_mode = v.clone(); }
         if let Some(v) = &self.subdomains { c.subdomains = v.clone(); }
     }

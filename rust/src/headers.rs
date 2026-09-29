@@ -38,12 +38,6 @@ static SHARE_SUFFIX_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"-(main|share)-[^
 /// 对应 Node 版 /;\s*Secure\b/gi
 static SECURE_COOKIE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i);\s*Secure\b").unwrap());
 
-/// 把 header map 里的多值用 ', ' join 成单字符串（用于透传给目标服务器）
-#[allow(dead_code)]
-pub fn header_map_to_single(map: &HashMap<String, Vec<String>>) -> HashMap<String, String> {
-    map.iter().map(|(k, v)| (k.clone(), v.join(", "))).collect()
-}
-
 /// 删除被忽略的 header（请求头或响应头版本，按正则匹配 key）
 pub fn delete_ignore_headers(regexps: &[Regex], headers: &mut HashMap<String, Vec<String>>) {
     let keys: Vec<String> = headers.keys().cloned().collect();
@@ -67,6 +61,25 @@ fn url_host_with_port(u: &url::Url) -> String {
 /// 对应 Node 版 `u.host = convertHost(u.host)`：Node 的 host setter 同时设 host+port，
 /// Rust 的 url crate 须分开设置。
 fn set_url_host(u: &mut url::Url, host_with_port: &str) -> Result<(), ()> {
+    // IPv6 形如 [::1]:8080 —— 必须先识别方括号，否则地址内的冒号会干扰 rfind(':')。
+    if host_with_port.starts_with('[') {
+        if let Some(close) = host_with_port.find(']') {
+            let host = &host_with_port[..=close]; // 含方括号，url crate 要求带 []
+            let rest = &host_with_port[close + 1..];
+            if let Some(port_str) = rest.strip_prefix(':') {
+                if let Ok(port) = port_str.parse::<u16>() {
+                    u.set_host(Some(host)).map_err(|_| ())?;
+                    u.set_port(Some(port)).map_err(|_| ())?;
+                    return Ok(());
+                }
+            }
+            u.set_host(Some(host)).map_err(|_| ())?;
+            return Ok(());
+        }
+        // 方括号未闭合，交给 set_host 报错
+        u.set_host(Some(host_with_port)).map_err(|_| ())?;
+        return Ok(());
+    }
     if let Some(idx) = host_with_port.rfind(':') {
         let host = &host_with_port[..idx];
         if let Ok(port) = host_with_port[idx + 1..].parse::<u16>() {
@@ -100,6 +113,26 @@ pub fn convert_host(host: &str, config: &Config, codec: &DomainCodec) -> String 
         .replacen(&config.http_vpn_domain, "", 1);
     let h = SHARE_SUFFIX_RE.replace_all(&h, "");
     codec.decode_host(&h)
+}
+
+/// 判断给定的 origin 是否属于 WebVPN 自身域（用于 CORS 白名单）。
+/// 对应 Node 版 WebVPN.isAllowedOrigin：site.origin 命中，或 host 以 vpnDomain（含端口后缀）结尾。
+pub fn is_allowed_origin(origin: &str, config: &Config) -> bool {
+    if origin.is_empty() {
+        return false;
+    }
+    if origin == config.site_origin().as_str() {
+        return true;
+    }
+    if let Ok(u) = url::Url::parse(origin) {
+        let host = u.host_str().unwrap_or("");
+        // u.host_str() 不含端口，需额外检查带端口后缀的 vpnDomain 变体
+        let host_with_port = url_host_with_port(&u);
+        return host.ends_with(&config.vpn_domain)
+            || host_with_port.ends_with(&config.http_vpn_domain)
+            || host_with_port.ends_with(&config.https_vpn_domain);
+    }
+    false
 }
 
 /// 对应 setOriginHeaders(ctx, headers)（webvpn.js:1306-1335）
@@ -226,22 +259,42 @@ pub async fn init_response_headers(
     headers.insert("content-type".to_string(), vec![ct]);
 
     // content-security-policy
+    // 旧实现：只要整条 CSP 中出现 "-src" / "unsafe-" / "require-trusted-types-for"，
+    // 就把整条 CSP 清空，这会误伤非相关指令（如 frame-ancestors / report-uri）。
+    // 改为按分号分指令逐条过滤：移除含上述关键字的指令，保留其余指令；
+    // frame-ancestors 单独改写为允许 WebVPN 主域。
     if let Some(vals) = headers.get_mut("content-security-policy") {
         let new_vals: Vec<String> = vals.iter().map(|e| {
-            if e.contains("-src") || e.contains("unsafe-") || e.contains("require-trusted-types-for") {
-                return String::new();
-            }
-            if !e.contains("frame-ancestors") || e == "frame-ancestors 'none';" {
-                return e.clone();
-            }
             let protocol = format!("{}://", if https_enabled { scheme } else { "http" });
-            // site.host.replace(/^www\./, '*.')：仅替换开头的 "www."，不动其余位置
             let site_host = config.site_host();
             let replaced = site_host
                 .strip_prefix("www.")
                 .map(|s| format!("*.{}", s))
                 .unwrap_or_else(|| site_host.clone());
-            e.replacen("frame-ancestors", &format!("frame-ancestors {}{}", protocol, replaced), 1)
+
+            let kept: Vec<&str> = e.split(';').map(|d| d.trim()).filter(|d| {
+                !d.is_empty()
+                    && !d.contains("-src")
+                    && !d.contains("unsafe-")
+                    && !d.contains("require-trusted-types-for")
+                    && !d.contains("trusted-types")
+            }).collect();
+
+            // 检查原始 CSP 是否已有 frame-ancestors 指令
+            let has_fa = e.split(';').any(|d| d.trim().starts_with("frame-ancestors"));
+            let mut result = kept.join("; ");
+            if has_fa {
+                // 已有则替换其值为 WebVPN 主域
+                // 简化处理：直接追加一条新的 frame-ancestors（浏览器以最严格者为准，
+                // 但这里 kept 已剔除原 frame-ancestors，故等价于重写）
+                if !result.is_empty() { result.push_str("; "); }
+                result.push_str(&format!("frame-ancestors {}{}", protocol, replaced));
+            }
+            // https 下追加 upgrade-insecure-requests（对应 Node 版 initResponseHeaders 末尾逻辑）
+            if https_enabled && !result.is_empty() && !result.contains("upgrade-insecure-requests") {
+                result.push_str("; upgrade-insecure-requests");
+            }
+            result
         }).collect();
         *vals = new_vals;
     }

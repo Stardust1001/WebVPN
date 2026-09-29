@@ -78,8 +78,20 @@ async fn main() {
     let app_http = make_router(state.clone(), false);
 
     // 4. HTTP 服务
-    let http_addr: SocketAddr = format!("0.0.0.0:{}", config.port).parse().expect("invalid http port");
-    let http_listener = TcpListener::bind(http_addr).await.expect("bind http failed");
+    let http_addr: SocketAddr = match format!("0.0.0.0:{}", config.port).parse() {
+        Ok(a) => a,
+        Err(e) => {
+            log::error!("invalid http port {}: {}", config.port, e);
+            return;
+        }
+    };
+    let http_listener = match TcpListener::bind(http_addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            log::error!("bind http {} 失败: {}", http_addr, e);
+            return;
+        }
+    };
     log::info!("HTTP 监听 {}", http_addr);
 
     let app_http_svc = app_http.into_make_service_with_connect_info::<SocketAddr>();
@@ -92,11 +104,23 @@ async fn main() {
     // 5. HTTPS 服务（使用自定义 TLS acceptor 包装 axum service）
     if config.https_enabled {
         let https_port = config.https_port;
-        let https_addr: SocketAddr = format!("0.0.0.0:{}", https_port).parse().expect("invalid https port");
+        let https_addr: SocketAddr = match format!("0.0.0.0:{}", https_port).parse() {
+            Ok(a) => a,
+            Err(e) => {
+                log::error!("invalid https port {}: {}", https_port, e);
+                return;
+            }
+        };
 
         match load_tls_config(&config.ssl_dir) {
             Some(tls) => {
-                let listener = TcpListener::bind(https_addr).await.expect("bind https failed");
+                let listener = match TcpListener::bind(https_addr).await {
+                    Ok(l) => l,
+                    Err(e) => {
+                        log::error!("bind https {} 失败: {}", https_addr, e);
+                        return;
+                    }
+                };
                 log::info!("HTTPS 监听 {}", https_addr);
                 let app_https = make_router(state.clone(), true);
                 tokio::spawn(async move {
@@ -109,8 +133,19 @@ async fn main() {
         }
     }
 
-    // 保持主线程存活
-    std::future::pending::<()>().await;
+    // 6. 优雅关闭：收到 SIGTERM/SIGINT 后等待现有连接结束再退出
+    //    对应 Node 版 process.on('SIGTERM'/'SIGINT', shutdown)
+    let shutdown = async move {
+        tokio::signal::ctrl_c().await.ok();
+        log::info!("收到退出信号，正在关闭...");
+    };
+    tokio::select! {
+        _ = shutdown => {
+            log::info!("WebVPN 已停止");
+        }
+        // 兜底：HTTP/HTTPS 任务若全部异常退出也释放主线程
+        _ = std::future::pending::<()>() => {}
+    }
 }
 
 /// 标记当前请求来自 TLS 还是明文 HTTP 连接。

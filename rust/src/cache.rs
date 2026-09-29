@@ -266,9 +266,11 @@ impl SessionStore {
 /// 短暂重试即可（文件极小，冲突窗口极短）。
 fn is_rename_retryable(e: &std::io::Error) -> bool {
     use std::io::ErrorKind;
+    // ErrorKind::ResourceBusy 在 stable Rust 上尚不稳定（nightly-only），
+    // 这里只匹配稳定可用的 ErrorKind 变体，EBUSY 仍通过 raw_os_error() 兜底。
     matches!(
         e.kind(),
-        ErrorKind::PermissionDenied | ErrorKind::ResourceBusy | ErrorKind::WouldBlock
+        ErrorKind::PermissionDenied | ErrorKind::WouldBlock
     ) || e.raw_os_error()
         .map(|code| code == 13 /* EACCES */ || code == 32 /* EBUSY(Windows) */ || code == 1 /* EPERM */)
         .unwrap_or(false)

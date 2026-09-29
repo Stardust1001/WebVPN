@@ -1,67 +1,86 @@
 # WebVPN
 
-### Brief
-WebVPN, fully proxy all websites and support session sharing
+> A web-based intranet penetration & full proxy: run any third-party website fully under your own domain.
 
-### Major Update!!!
-Session sharing is now supported!!! Multiple people can open the same website and use the same session based on a shared ID. One person can open a membership and multiple people can use it together!!!
+English · **[中文](./README-zh.md)**
 
-### Install
+---
+
+## Brief
+
+WebVPN is a deep-rewriting reverse proxy that runs on your primary domain and **fully proxies any third-party website**. It is not a simple reverse proxy — it deeply rewrites the target site's HTML / CSS / JS / DOM / network requests / navigation so the proxied site behaves exactly like the original, but runs under your WebVPN domain.
+
+- **Web-based intranet penetration**: zero-client access to intranet systems from any network, just a browser
+- **Full proxy**: HTML / CSS / JS / DOM / fetch / XHR / WebSocket / Worker / Cookie full-chain rewriting
+- **Session sharing**: multiple people can share one login session via a shared ID
+- **Universal interception**: no per-site rules — all URL access is intercepted at the JS language level
+
+The core idea: encode the target domain as a subdomain of WebVPN.
+
+```
+https://www.example.com/path/page
+        ↓ encode domain
+https://www__example__com.<webvpn-domain>/path/page
+```
+
+## What it can do
+
+- **Remote office / cross-network access**: access intranet systems (OA, Jira, GitLab, BI) from home, no VPN client needed
+- **Perfect website mirror**: the proxied site runs fully functional under your domain
+- **Session sharing**: one person logs in, others reuse the session via a shared link
+- **Cross-geo access**: access region-locked content as if in the same LAN
+
+## Major Update — AST `this` Rewriting
+
+The recently added **AST `this` rewriting** (powered by [oxc](https://github.com/oxc-project/oxc)) solves the long-standing "dynamic `this` penetration" problem in JS scope hijacking. This is the only known general solution — no per-site rules needed.
+
+> ⚠️ **A note on authorship**: The AST feature is newly developed with AI assistance. All prior features (domain encoding, server-side full-chain rewriting, client-side prototype-chain hijacking, session sharing, WebSocket proxy, etc.) are entirely hand-written by the author. The project has been developed intermittently over a long period with limited personal bandwidth. Compatibility has been tested against many real-world websites with very good results.
+
+## Install & Run
+
+```bash
 npm install
-
-### Run
 node main.js
+```
 
-visit [http://www.your_domain.com/](https://www.your_domain.com/)
+Visit [http://www.your_domain.com/](http://www.your_domain.com/)
 
-### Description
-WebVPN can "completely and thoroughly" forward and proxy any third-party website. It is not only a VPN on the Web, but also an advanced intranet penetration tool. It can also be used to make a perfect phishing website (because it perfectly forwards the target website and can also add your own code. But I strongly advise you not to do this. Illegal things are not good. I just want to tell you how awesome this WebVPN is).
+DNS pan-resolution is required, so please use an SSL wildcard certificate. For local deployment, modify local DNS (dnsmasq, etc.) or use the single-domain mode below.
 
-Believe me, WebVPN is worthy of its name. When you really use it, you will find that it can do a lot of things you have never thought of. Although it is not perfect yet, it has the basic functions it should have.
+## Description
 
-If you are interested in this project, please join me to make it better and let more people know about its existence.
+WebVPN can "completely and thoroughly" forward and proxy any third-party website. It is not only a VPN on the Web, but also an advanced intranet penetration tool. It can also be used to make a perfect mirror of any website. **Phishing use is strictly prohibited; all consequences are the sole responsibility of the individual. This tool is for technical research purposes only and assumes no liability.**
 
-If it helps you, you can buy me a cup of milk tea. Thank you very much. I spent thousands of hours and a lot of energy on this. I open source it to facilitate everyone who needs it.
+Believe me, WebVPN lives up to its name. When you actually use it, you'll find it can do many things you never thought of. It's not perfect yet, but the core capabilities are all there.
 
-The WebVPN service runs on a primary domain name, and it will encode the domain name of each target URL as the secondary domain name of the WebVPN website. The suffix of the target URL is directly placed in the suffix of the WebVPN URL.
-DNS pan-resolution is required, so please be sure to use an SSL wildcard certificate. For local deployment, you can modify the local DNS yourself, and you can use tools such as dnsmasq.
+If it helps you, you can buy me a cup of milk tea. Thank you very much — I spent thousands of hours and a lot of energy on this. I open-sourced it to help everyone who needs it.
 
-### Contact
-Email: 2368354416@qq.com
+## Single-Domain Proxy
 
-### 重磅更新！！！
-现已支持会话共享！！！多个人可以根据共享id打开同一个网站，使用同一个会话。一个人开会员，多个人可以一同使用！！！
+If you don't want to deal with dnsmasq / pan-DNS and only need to proxy a few domains, you can use the `subdomains` config:
 
-### 简单介绍
-WebVPN可以“完全彻底”地转发和代理任何第三方网站，它不仅是Web上的VPN，还是高级内网穿透工具。还可以用来制作完美的钓鱼网站（因为它完美地转发了目标网站，同时还可以加入自己的代码。但我强烈建议你不要这么做，违法的事情不好。我只是想告诉你，这个WebVPN有多牛逼）。
-
-相信我，WebVPN名副其实，当你真正使用它时，你会发现它能做很多你从未想过的事情。虽然它还不够完美，但它应该具备的基本功能已经具备了。
-
-如果你对这个项目感兴趣，欢迎加入我，让它变得更好，让更多的人知道它的存在。
-
-如果对你有帮助，可以请我喝一杯奶茶，非常感谢。我为此花了上千个小时，耗费了巨大的精力，把它开源就是为了方便所有需要它的人。
-
-WebVPN 服务运行到一个主域名上，它会把每个目标网址的域名编码后作为 WebVPN 网站的二级域名。目标网址的后缀，则直接放到 WebVPN 网址的后缀。
-DNS泛解析是需要的，所以请务必使用SSL通配符证书。对于本机部署来说，自己修改本地DNS就行，可以使用dnsmasq等工具。
-
-### 单域名代理
-如果你不擅长 dnsmasq 等工具，并且只想要代理某几个域名，可以实现！！！
-
-在 config.js 配置文件里，修改 subdomains 即可，比如：
 ```js
+// config.js
 {
   subdomains: {
-    'baidu': 'www.baidu.com', // webvpn 服务，二级域名 baidu 指向 www.baidu.com
-    'im': 'im.qq.com', // 二级域名 im 指向 im.qq.com
-    'weixin': 'weixin.qq.com' // 二级域名 weixin 指向 weixin.qq.com
+    'baidu': 'www.baidu.com',   // baidu.<your-domain> → www.baidu.com
+    'im': 'im.qq.com',          // im.<your-domain>    → im.qq.com
+    'weixin': 'weixin.qq.com'   // weixin.<your-domain> → weixin.qq.com
   }
 }
 ```
-### Thank you
+
+## Contact
+
+Email: 2368354416@qq.com
+
+## Thank you
+
 <p>
   <img width="200" src="https://raw.githubusercontent.com/Stardust1001/WebVPN/refs/heads/master/alipay.jpg">
   <img width="200" src="https://raw.githubusercontent.com/Stardust1001/WebVPN/refs/heads/master/wxpay.jpg">
 </p>
 
+---
 
-
+*This project is for technical research purposes only. Please ensure it is used within authorized scope and not for any illegal purposes.*

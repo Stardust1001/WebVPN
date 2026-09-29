@@ -32,7 +32,7 @@ use crate::domain::DomainCodec;
 use crate::files::{DiskCache, PublicFiles};
 use crate::headers::{
     convert_host, delete_ignore_headers, init_response_headers,
-    set_origin_headers, IGNORE_REQUEST_HEADER_REGEXPS,
+    is_allowed_origin, set_origin_headers, IGNORE_REQUEST_HEADER_REGEXPS,
     IGNORE_RESPONSE_HEADER_REGEXPS,
 };
 use crate::mime::{
@@ -138,13 +138,17 @@ impl AppState {
         let public_files = PublicFiles::new(&config.public_dir);
         let disk_cache = DiskCache::new(&config);
         // 复用单一 Client：禁用自动重定向（手动处理 3xx）、接受无效证书（对应 NODE_TLS_REJECT_UNAUTHORIZED=0）
+        // 注意：danger_accept_invalid_certs(true) 关闭了目标站点的 TLS 证书校验，
+        // 这是为了兼容自签/证书不匹配的内网目标站点（与 Node 版行为一致），
+        // 但也意味着中间人攻击无法在 TLS 层被检测到。生产环境若代理可信目标站点，
+        // 建议在 config.toml 中无法直接关闭此项（代码硬编码），如需严格校验需修改此处。
         // timeout：对应 Node 版 AbortController（requestTimeout || 60000），超时返回 504
         // gzip/deflate/brotli：reqwest 0.12 中 Cargo.toml feature 仅使方法可用，必须在 builder 上
         // 显式开启才会自动解压。对应 Node 版 node-fetch 对这三种编码的自动解压行为。
         let http_client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .danger_accept_invalid_certs(true)
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(config.request_timeout))
             .gzip(true)
             .deflate(true)
             .brotli(true)
@@ -448,12 +452,17 @@ async fn serve_www(
             let body_str = String::from_utf8_lossy(&body).to_string();
             state.session_store.set_item(&format!("{}-clientCache", share_id), body_str).await;
         }
+        // 仅允许 WebVPN 自身域发起的 credentialed 跨域请求，
+        // 避免任意第三方站点回显 Origin 后向 /share-sessions 发起 CSRF。
+        let origin = headers.get("origin").and_then(|v| v.to_str().ok()).unwrap_or("");
+        let site_origin = state.config.site_origin();
+        let allowed_origin = if is_allowed_origin(origin, &state.config) { origin } else { site_origin.as_str() };
         let mut hm = HeaderMap::new();
-        let origin = headers.get("origin").and_then(|v| v.to_str().ok()).unwrap_or("*");
         hm.insert("access-control-allow-credentials", HeaderValue::from_static("true"));
-        hm.insert("access-control-allow-origin", HeaderValue::from_str(origin).unwrap_or(HeaderValue::from_static("*")));
+        hm.insert("access-control-allow-origin", HeaderValue::from_str(allowed_origin).unwrap_or(HeaderValue::from_static("*")));
         hm.insert("access-control-allow-headers", HeaderValue::from_static("*"));
         hm.insert("access-control-allow-methods", HeaderValue::from_static("*"));
+        hm.insert("vary", HeaderValue::from_static("origin"));
         return Ok(ProxyOutput { status: StatusCode::OK, headers: hm, body: vec![] });
     }
     // 其他 /public/xx
@@ -488,7 +497,7 @@ async fn upstream_request(
 
     // deleteIgnoreHeaders + strip share suffix + setOriginHeaders
     delete_ignore_headers(&IGNORE_REQUEST_HEADER_REGEXPS, &mut req_headers);
-    strip_share_suffix(state, &mut req_headers, meta);
+    strip_share_suffix(&mut req_headers, meta);
     set_origin_headers(&mut req_headers, &state.config, &state.codec);
 
     // 会话消费者：覆盖 cookie/authorization
@@ -610,7 +619,7 @@ async fn upstream_request(
 
 /// 剥离 origin/referer/host 中的 share session 后缀
 /// 对应 checkShareSession 中第一段循环（webvpn.js:657-661）
-fn strip_share_suffix(_state: &Arc<AppState>, headers: &mut HashMap<String, Vec<String>>, meta: &Meta) {
+fn strip_share_suffix(headers: &mut HashMap<String, Vec<String>>, meta: &Meta) {
     if !meta.share_id.is_empty() {
         let share_suffix = format!("-{}-{}", if meta.is_main_session { "main" } else { "share" }, meta.share_id);
         for key in &["host", "origin", "referer"] {
@@ -640,7 +649,7 @@ async fn respond_pipe(
     let mut req_headers = headermap_to_hashmap(headers);
     // 与 upstream_request 保持一致的顺序：deleteIgnoreHeaders + strip share suffix + setOriginHeaders
     delete_ignore_headers(&IGNORE_REQUEST_HEADER_REGEXPS, &mut req_headers);
-    strip_share_suffix(state, &mut req_headers, meta);
+    strip_share_suffix(&mut req_headers, meta);
     set_origin_headers(&mut req_headers, &state.config, &state.codec);
 
     if !meta.is_main_session && !meta.share_id.is_empty() {

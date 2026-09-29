@@ -568,27 +568,27 @@ mod tests {
 /// 对应 replaceUrls(ctx, res)：抽取匹配 + 替换
 /// 返回新的 data
 pub fn replace_urls(data: &str, mime: &str, config: &Config, meta: &Meta, codec: &DomainCodec) -> String {
+    // 用 HashSet 去重，避免 O(n) 的 Vec.contains 查找在大页面上成为热点。
+    use std::collections::HashSet;
+    let mut seen: HashSet<&str> = HashSet::new();
     let mut matches: Vec<String> = Vec::new();
 
     if mime == "html" {
         for m in HTML_ATTR_RE.find_iter(data) {
-            let s = m.as_str().to_string();
-            if !matches.contains(&s) {
-                matches.push(s);
+            if seen.insert(m.as_str()) {
+                matches.push(m.as_str().to_string());
             }
         }
     }
     if mime == "html" || mime == "css" {
         for m in CSS_URL_RE.find_iter(data) {
-            let s = m.as_str().to_string();
-            if !matches.contains(&s) {
-                matches.push(s);
+            if seen.insert(m.as_str()) {
+                matches.push(m.as_str().to_string());
             }
         }
         for m in CSS_IMPORT_RE.find_iter(data) {
-            let s = m.as_str().to_string();
-            if !matches.contains(&s) {
-                matches.push(s);
+            if seen.insert(m.as_str()) {
+                matches.push(m.as_str().to_string());
             }
         }
     }

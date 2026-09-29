@@ -1,7 +1,7 @@
 // 下面都可以改，这是我自己做的示例
 
 export default {
-  // WebVPN 域名是否支持 https
+  // 域名是否支持 https
   httpsEnabled: true,
   // WebVPN 服务端口
   port: 80,

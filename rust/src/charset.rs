@@ -40,11 +40,21 @@ pub fn convert_charset_data(
     // 先按 utf-8 解一次
     let (text, _, _) = UTF_8.decode(&decoded_bytes);
 
-    // 解析 charset
+    // 解析 charset（content-type 头中可能带引号，如 charset="gbk"，需去除引号与分号后的多余参数）
     let mut charset = content_type
         .split("charset=")
         .nth(1)
-        .map(|s| s.to_lowercase());
+        .map(|s| {
+            s.trim()
+                .trim_matches('"')
+                .trim_matches('\'')
+                .split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_lowercase()
+        })
+        .filter(|s| !s.is_empty());
     // charset 是否来自 meta 标签（而非 content-type 头）
     let mut charset_from_meta = false;
 
