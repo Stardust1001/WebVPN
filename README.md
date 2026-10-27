@@ -36,6 +36,16 @@ The recently added **AST `this` rewriting** (powered by [oxc](https://github.com
 
 > ⚠️ **A note on authorship**: The AST feature is newly developed with AI assistance. All prior features (domain encoding, server-side full-chain rewriting, client-side prototype-chain hijacking, session sharing, WebSocket proxy, etc.) are entirely hand-written by the author. The project has been developed intermittently over a long period with limited personal bandwidth. Compatibility has been tested against many real-world websites with very good results.
 
+## Rust Version
+
+A server-side rewrite in Rust lives under `rust/`, with feature parity to the Node.js version: domain encoding (original / underline modes, single-domain proxy), server-side full-chain rewriting (reusing `public/intercept.js`), session sharing, WebSocket proxy, local caching, non-UTF-8 charset decoding, zstd decompression, upstream timeouts, etc. Built on axum + tokio + reqwest (rustls TLS); the AST `this` rewriting is powered by oxc (enabled with `rewrite_this = true`; build `public/rewrite.wasm` via `rust/build-wasm.sh` for browser-side eval/Function rewriting). Configuration lives in `rust/config.toml`, fully independent of the Node version's `config.js`.
+
+```bash
+cd rust && cargo run --release
+```
+
+> ⚠️ **The Rust version was implemented entirely by AI**: with limited personal bandwidth, the server-side Rust rewrite was done by AI (the Node.js version remains hand-written by the author) and is continuously being tested and improved against real-world websites.
+
 ## Install & Run
 
 ```bash

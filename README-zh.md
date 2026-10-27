@@ -36,6 +36,16 @@ https://www__example__com.<webvpn主域名>/path/page
 
 > ⚠️ **关于作者参与度**：AST 这个新功能在开发过程中有 AI 的参与。**前面的所有功能**（域名编码、服务端全链路改写、客户端原型链劫持、会话共享、WebSocket 代理等）都是作者本人完全手写的。项目断断续续历时很久，个人精力有限，但已在很多真实网站上测试过兼容性，效果很不错。
 
+## Rust 版本
+
+`rust/` 目录提供了服务端的 Rust 重写版本，功能与 Node.js 版对齐：域名编码（original / underline 模式、单域名代理）、服务端全链路改写（复用 `public/intercept.js`）、会话共享、WebSocket 代理、本地缓存、非 UTF-8 字符集与 zstd 解压、上游超时等。技术栈为 axum + tokio + reqwest（rustls TLS）；AST `this` 重写基于 oxc（`rewrite_this = true` 时启用，用 `rust/build-wasm.sh` 构建 `public/rewrite.wasm`，供浏览器端改写 eval/Function）。配置见 `rust/config.toml`，与 Node 版的 `config.js` 相互独立、互不影响。
+
+```bash
+cd rust && cargo run --release
+```
+
+> ⚠️ **Rust 版本由 AI 完整实现**：受个人精力所限，服务端的 Rust 重写交由 AI 完成（Node.js 版仍为作者手写），并已在真实网站上持续测试改进。
+
 ## 安装与运行
 
 ```bash
