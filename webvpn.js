@@ -46,10 +46,8 @@ const sessionStore = {
   filePath (key) {
     return path.join(this.dir, this.sanitizeKey(key) + '.json')
   },
-  async ensureDir () {
-    // best-effort：目录不可创建时静默失败，setItem 后续写入会自行处理。
-    // 对应 Rust 版 ensure_dir 中的 `let _ = fs::create_dir_all(...)`
-    try { await fs.promises.mkdir(this.dir, { recursive: true }) } catch {}
+  ensureDir () {
+    return fsUtils.mkdir(this.dir)
   },
   // readCache 防膨胀：超过上限时清理过期条目，仍超限则删最早条目。
   // 攻击者可生成大量 shareId，每个 miss 都会往 readCache 塞一条；条目虽 3s 后过期
@@ -74,17 +72,12 @@ const sessionStore = {
       return cached.value
     }
     const file = this.filePath(key)
-    let text
-    try {
-      text = await fs.promises.readFile(file, 'utf8')
-    } catch {
-      return undefined
-    }
+    const text = await fsUtils.read(file)
+    if (text == null) return undefined
     try {
       const item = JSON.parse(text)
       if (item.expires && Date.now() > item.expires) {
-        // 过期：顺手删文件（失败无妨，cleanup 也会扫）
-        fs.promises.unlink(file).catch(() => {})
+        fsUtils.remove(file)
         this.readCache.delete(key)
         return undefined
       }
@@ -105,59 +98,53 @@ const sessionStore = {
     const payload = JSON.stringify({ value, expires: Date.now() + this.ttl })
     // 写临时文件失败（磁盘满 / 权限）：best-effort，记日志后直接返回，不抛异常。
     // 对应 Rust 版 `if fs::write(&tmp, &payload).await.is_err() { return; }`
-    try {
-      await fs.promises.writeFile(tmp, payload, 'utf8')
-    } catch (e) {
-      console.error(chalk.red('[WebVPN] sessionStore.setItem writeFile failed:'), key, e.message)
+    const writeErr = await fsUtils.write(tmp, payload)
+    if (writeErr) {
+      console.error(chalk.red('[WebVPN] sessionStore.setItem writeFile failed:'), key, writeErr.message)
       return
     }
     // rename 在同卷上原子（POSIX rename(2) / Windows MoveFileExW + REPLACE_EXISTING）。
     // Windows 上若目标文件恰好被读导致 EBUSY/EPERM，短暂重试即可（文件极小，冲突窗口极短）。
     for (let i = 0; i < 3; i++) {
-      try {
-        await fs.promises.rename(tmp, file)
+      const err = await fsUtils.rename(tmp, file)
+      if (!err) {
         // 同步刷新内存读缓存（同样先按需淘汰）
         this.evictReadCache()
         this.readCache.set(key, { value, expires: Date.now() + this.readCacheTtl })
         return
-      } catch (e) {
-        if (i < 2 && (e.code === 'EBUSY' || e.code === 'EPERM' || e.code === 'EACCES')) {
-          await new Promise(r => setTimeout(r, 10 * (i + 1)))
-          continue
-        }
-        // 最后一次仍失败或不可重试错误：清理临时文件，本次写入放弃
-        // 会话共享是 best-effort：写失败时读端继续用旧值或返回空，不应让请求本身 500
-        fs.promises.unlink(tmp).catch(() => {})
-        console.error(chalk.red('[WebVPN] sessionStore.setItem failed:'), key, e.message)
-        return
       }
+      if (i < 2 && (err.code === 'EBUSY' || err.code === 'EPERM' || err.code === 'EACCES')) {
+        await new Promise(r => setTimeout(r, 10 * (i + 1)))
+        continue
+      }
+      // 最后一次仍失败或不可重试错误：清理临时文件，本次写入放弃
+      // 会话共享是 best-effort：写失败时读端继续用旧值或返回空，不应让请求本身 500
+      fsUtils.remove(tmp)
+      console.error(chalk.red('[WebVPN] sessionStore.setItem failed:'), key, err.message)
+      return
     }
   },
   // 启动时清理过期文件与残留 .tmp
   async cleanup () {
-    let entries
-    try {
-      entries = await fs.promises.readdir(this.dir)
-    } catch {
-      return
-    }
+    // listDir 目录不存在时返回 []，无需捕获
+    const entries = await fsUtils.listDir(this.dir)
     const now = Date.now()
     for (const name of entries) {
       const full = path.join(this.dir, name)
       if (name.endsWith('.tmp')) {
-        fs.promises.unlink(full).catch(() => {})
+        fsUtils.remove(full)
         continue
       }
       if (!name.endsWith('.json')) continue
       try {
-        const text = await fs.promises.readFile(full, 'utf8')
-        const item = JSON.parse(text)
+        // 读失败返回 null → JSON.parse(null) 为 null → 取 expires 抛 TypeError → 当损坏文件删
+        const item = JSON.parse(await fsUtils.read(full))
         if (item.expires && now > item.expires) {
-          fs.promises.unlink(full).catch(() => {})
+          fsUtils.remove(full)
         }
       } catch {
         // 损坏文件直接删
-        fs.promises.unlink(full).catch(() => {})
+        fsUtils.remove(full)
       }
     }
   }
@@ -246,7 +233,7 @@ class WebVPN {
     this.publicDir = config.publicDir || 'public'
     this.sslDir = config.sslDir || 'ssl'
 
-    this.jsInterceptCode = fs.readFileSync(path.join(this.publicDir, 'intercept.js'))
+    // jsInterceptCode 在 start() 里经 fsUtils 异步读入（Buffer），监听端口前必定就绪
 
     // rewriteThis 开启时预加载 acorn + magic-string，并缓存解析后的 AST 改写器
     this.rewriteThis = !!config.rewriteThis
@@ -443,6 +430,11 @@ class WebVPN {
 
   async start () {
     await this._initialized
+    // 拦截脚本全文会注入每个 HTML 响应，监听端口前读入（Buffer，appendScript 处再 toString）
+    this.jsInterceptCode = await fsUtils.read(path.join(this.publicDir, 'intercept.js'), null)
+    if (!this.jsInterceptCode) {
+      throw new Error(`[WebVPN] 读取 ${path.join(this.publicDir, 'intercept.js')} 失败`)
+    }
     // 会话存储目录初始化与清理（主进程做一次即可，worker 也会各自 ensureDir）
     sessionStore.dir = this.config.sessionsDir || 'sessions'
     if (cluster.isMaster) {
@@ -474,7 +466,7 @@ class WebVPN {
         setTimeout(() => cluster.fork(), restartDelay)
       })
     } else {
-      this.createApp()
+      await this.createApp()
     }
   }
 
@@ -549,7 +541,7 @@ class WebVPN {
     await fsUtils.write(path.join(dir, encodeURIComponent(pathname)), res.data)
   }
 
-  createApp () {
+  async createApp () {
     const { config } = this
     const app = new Koa()
     app.use(this.proxyRoute.bind(this))
@@ -567,10 +559,12 @@ class WebVPN {
     server.listen(config.port)
 
     if (config.httpsEnabled) {
-      const options = {
-        key: fs.readFileSync(path.join(this.sslDir, 'server.key')),
-        cert: fs.readFileSync(path.join(this.sslDir, 'server.pem'))
-      }
+      // fsUtils.read 传 null 编码返回 Buffer，与 createReadStream/createServer 的期望一致
+      const [key, cert] = await Promise.all([
+        fsUtils.read(path.join(this.sslDir, 'server.key'), null),
+        fsUtils.read(path.join(this.sslDir, 'server.pem'), null)
+      ])
+      const options = { key, cert }
       const httpsServer = https.createServer(options, app.callback())
       httpsServer.on('upgrade', (request, socket, head) => {
         this.wsServer.handleUpgrade(request, socket, head, client => {
