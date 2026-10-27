@@ -28,6 +28,7 @@ use axum::{
     routing::any,
 };
 use tokio::net::TcpListener;
+use tokio::signal::unix::{signal, SignalKind};
 use tokio_rustls::TlsAcceptor;
 
 use crate::config::Config;
@@ -136,7 +137,13 @@ async fn main() {
     // 6. 优雅关闭：收到 SIGTERM/SIGINT 后等待现有连接结束再退出
     //    对应 Node 版 process.on('SIGTERM'/'SIGINT', shutdown)
     let shutdown = async move {
-        tokio::signal::ctrl_c().await.ok();
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = async {
+                // kill 命令默认发 SIGTERM；不捕获的话进程会静默退出、来不及打日志
+                signal(SignalKind::terminate()).expect("register SIGTERM handler").recv().await
+            } => {}
+        }
         log::info!("收到退出信号，正在关闭...");
     };
     tokio::select! {
@@ -162,7 +169,13 @@ fn make_router(state: Arc<AppState>, is_tls: bool) -> Router {
         .route("/{*path}", any(root_handler))
         .layer(middleware::from_fn(move |mut req: Request, next: Next| async move {
             req.extensions_mut().insert(SchemeFlag(is_tls));
-            next.run(req).await
+            // 每请求一行日志：方法、路径、状态码、耗时（对应 Node 版每请求的终端输出）
+            let method = req.method().clone();
+            let uri = req.uri().clone();
+            let start = std::time::Instant::now();
+            let resp = next.run(req).await;
+            log::info!("{} {} -> {} ({} ms)", method, uri, resp.status(), start.elapsed().as_millis());
+            resp
         }))
         .with_state(state)
 }
@@ -212,7 +225,9 @@ async fn root_handler(
         }
     };
 
-    match proxy_route(&state, &method, uri.path(), &full_url, &headers, body).await {
+    // 传 path+query（对应 Node 版 ctx.url 含查询串）；只传 path 会丢失 ?query
+    let path_and_query = uri.path_and_query().map(|p| p.as_str()).unwrap_or("/");
+    match proxy_route(&state, &method, path_and_query, &full_url, &headers, body).await {
         Ok(Some(out)) => {
             let mut resp = Response::builder().status(out.status);
             for (k, v) in out.headers.iter() {

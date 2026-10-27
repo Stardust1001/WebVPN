@@ -5,6 +5,12 @@
   const ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:']
   const globalCons = ['window', 'document', 'globalThis', 'parent', 'self', 'top']
   const locationAttrs = ['hash', 'host', 'hostname', 'href', 'origin', 'pathname', 'port', 'protocol', 'search']
+  /* 本脚本包装过、经 document 原型链可达的方法：快照恢复（heal）必须跳过它们，
+     否则每次属性读取都会把包装还原成原生方法，拦截失效。 */
+  const ownWrappedMethods = [
+    'write', 'writeln', 'addEventListener', 'removeEventListener',
+    'appendChild', 'insertBefore', 'replaceChild', 'createTreeWalker'
+  ]
 
   const siteU = new URL(webvpn.siteUrl)
   const sourceU = new URL(webvpn.sourceUrl)
@@ -62,6 +68,56 @@
   const interceptLog = webvpn.interceptLog
   const disableJump = webvpn.disableJump
   const confirmJump = webvpn.confirmJump
+
+  /* AST 模式（rewriteThis=true）：同步加载 WASM AST 改写模块。
+     旧模式（rewriteThis=false）不加载，行为完全不变。
+     方案 C：同步 XHR + 同步 WebAssembly 实例化，避免异步竞态。 */
+  let __wasmRewrite = null
+  if (webvpn.rewriteThis) {
+    try {
+      const xhr = new XMLHttpRequest()
+      // 同源加载：从当前代理子域请求 /public/rewrite.wasm（checkPublic 在所有子域生效）。
+      // 若用 siteU.origin（www 主域）会跨子域，浏览器因无 CORS 头阻止 XHR。
+      xhr.open('GET', '/public/rewrite.wasm', false)
+      // 同步 XHR 禁止设置 responseType（会抛 InvalidAccessError），改用
+      // x-user-defined 字符集按字节透传：byte < 0x80 → 同码位，
+      // byte >= 0x80 → U+F780+(byte-0x80)，charCodeAt(i) & 0xff 可无损还原字节。
+      xhr.overrideMimeType('text/plain; charset=x-user-defined')
+      xhr.send()
+      if (xhr.status === 200 && xhr.responseText) {
+        const raw = xhr.responseText
+        const wasmBytes = new Uint8Array(raw.length)
+        for (let i = 0; i < raw.length; i++) wasmBytes[i] = raw.charCodeAt(i) & 0xff
+        const wasmModule = new WebAssembly.Module(wasmBytes)
+        const wasmInstance = new WebAssembly.Instance(wasmModule)
+        const wasmExports = wasmInstance.exports
+        const wasmMemory = wasmExports.memory
+        const decoder = new TextDecoder()
+        const encoder = new TextEncoder()
+        __wasmRewrite = {
+          rewrite (code) {
+            if (!code || typeof code !== 'string') return code
+            const bytes = encoder.encode(code)
+            const ptr = wasmExports.alloc_input(bytes.length)
+            if (!ptr) return code
+            new Uint8Array(wasmMemory.buffer, ptr, bytes.length).set(bytes)
+            const result = wasmExports.rewrite_js(ptr, bytes.length)
+            // rewrite_js 返回 u64，JS 侧收到 BigInt（WASM i64 映射）。
+            // 0n 表示解析失败。
+            if (result === 0n) return null
+            const resultPtr = Number(result & 0xFFFFFFFFn)
+            const resultLen = Number(result >> 32n)
+            if (resultLen === 0) return ''
+            const output = decoder.decode(new Uint8Array(wasmMemory.buffer, resultPtr, resultLen))
+            wasmExports.free_wasm(resultPtr, resultLen)
+            return output
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[WebVPN] WASM rewrite module failed to load:', e)
+    }
+  }
 
   const linkTags = ['a', 'img', 'script', 'link', 'video', 'audio', 'source', 'iframe', 'form', 'embed', 'object']
   const urlAttrs = ['href', 'src', 'srcset', 'poster', 'action', 'data', 'codebase']
@@ -181,10 +237,16 @@
         try {
           JSON.parse(node.textContent)
         } catch {
-          // 此前直接把 textContent 拼进模板字符串，若内容含反引号 / `${` / 反斜杠会破坏注入代码甚至注入任意脚本。
-          // 改用 JSON.stringify 安全编码：运行时 JSON.parse 还原原始脚本文本，再交给 Function 在 __context__ 作用域运行。
-          const encoded = JSON.stringify(node.textContent)
-          node.textContent = `new Function("with(self.__context__){"+JSON.parse(${encoded})+"}").call(self.__context__)()`
+          if (webvpn.rewriteThis && __wasmRewrite) {
+            // AST 模式：WASM 改写后直接作为脚本内容（服务端已做过一次 AST 改写，这里是 DOM 动态插入的兜底）
+            const rewritten = __wasmRewrite.rewrite(node.textContent)
+            if (rewritten !== null) node.textContent = rewritten
+          } else {
+            // 旧模式：with 包裹，在 __context__ 作用域运行
+            // 改用 JSON.stringify 安全编码：运行时 JSON.parse 还原原始脚本文本，再交给 Function 在 __context__ 作用域运行。
+            const encoded = JSON.stringify(node.textContent)
+            node.textContent = `new Function("with(self.__context__){"+JSON.parse(${encoded})+"}").call(self.__context__)()`
+          }
         }
       }
     }
@@ -279,7 +341,8 @@
   const replaceNodesUrls = (root) => {
     const type = root ? undefined : 'custom'
     root = root || document.documentElement
-    if (root.nodeType !== 1) return 
+    // document.open() 重置文档 / 文档销毁的瞬间 documentElement 为 null，而 window 定时器仍在运行
+    if (!root || root.nodeType !== 1) return
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false)
     const all = []
     let n = null
@@ -389,49 +452,90 @@
     return target
   }
 
-  /* Function 拦截 */
+  /* Function 拦截
+     AST 模式（rewriteThis=true）：用 WASM 对 code 做 AST 改写，不包裹 with、不 bind。
+       改写后的代码直接用 __location__/__window__ 等全局标识符（由 redefineGlobals
+       定义在 window 上），Function 作用域可访问。this 由 AST 改写为
+       (this === self ? __self__ : this)，不需 bind。
+     旧模式：with(__self__.__context__) 包裹 + bind(__context__)，与原版完全一致。 */
   const _Function = window.Function
-  window.Function = new Proxy(_Function, {
-    construct (target, props) {
-      let isWithThis = false
-      if (props.length) {
-        const code = props[props.length - 1]
-        isWithThis = code.includes('with(this === self ? __self__ : this)') || /[\s\{\}\;]?with\s*\(\s*this\s*\)/.test(code)
-        if (isWithThis) {
-          props[props.length - 1] = code.replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(this === self ? __self__ : this)')
-        } else {
-          props[props.length - 1] = `with (__self__.__context__) { ${code || ''} }`
+  if (webvpn.rewriteThis && __wasmRewrite) {
+    window.Function = new Proxy(_Function, {
+      construct (target, props) {
+        if (props.length) {
+          const code = props[props.length - 1]
+          if (typeof code === 'string') {
+            const rewritten = __wasmRewrite.rewrite(code)
+            if (rewritten !== null) props[props.length - 1] = rewritten
+          }
         }
-      }
-      const func = new _Function(...props)
-      return isWithThis ? func : func.bind(__context__)
-    },
-    apply (target, thisArg, props) {
-      let isWithThis = false
-      if (props.length) {
-        const code = props[props.length - 1]
-        isWithThis = code.includes('with(this === self ? __self__ : this)') || /[\s\{\}\;]?with\s*\(\s*this\s*\)/.test(code)
-        if (isWithThis) {
-          props[props.length - 1] = code.replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(this === self ? __self__ : this)')
-        } else {
-          props[props.length - 1] = `with (__self__.__context__) { ${code || ''} }`
+        return new _Function(...props)
+      },
+      apply (target, thisArg, props) {
+        if (props.length) {
+          const code = props[props.length - 1]
+          if (typeof code === 'string') {
+            const rewritten = __wasmRewrite.rewrite(code)
+            if (rewritten !== null) props[props.length - 1] = rewritten
+          }
         }
+        return new _Function(...props)
       }
-      const func = new _Function(...props)
-      return isWithThis ? func : func.bind(__context__)
-    }
-  })
+    })
+  } else {
+    window.Function = new Proxy(_Function, {
+      construct (target, props) {
+        let isWithThis = false
+        if (props.length) {
+          const code = props[props.length - 1]
+          isWithThis = code.includes('with(this === self ? __self__ : this)') || /[\s\{\}\;]?with\s*\(\s*this\s*\)/.test(code)
+          if (isWithThis) {
+            props[props.length - 1] = code.replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(this === self ? __self__ : this)')
+          } else {
+            props[props.length - 1] = `with (__self__.__context__) { ${code || ''} }`
+          }
+        }
+        const func = new _Function(...props)
+        return isWithThis ? func : func.bind(__context__)
+      },
+      apply (target, thisArg, props) {
+        let isWithThis = false
+        if (props.length) {
+          const code = props[props.length - 1]
+          isWithThis = code.includes('with(this === self ? __self__ : this)') || /[\s\{\}\;]?with\s*\(\s*this\s*\)/.test(code)
+          if (isWithThis) {
+            props[props.length - 1] = code.replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(this === self ? __self__ : this)')
+          } else {
+            props[props.length - 1] = `with (__self__.__context__) { ${code || ''} }`
+          }
+        }
+        const func = new _Function(...props)
+        return isWithThis ? func : func.bind(__context__)
+      }
+    })
+  }
 
-  /*
-    eval 不能拦截，Function 作用于全局，可以拦截，eval 在代码运行作用域起作用，要访问局部变量，eval 方法读不到那些局部变量
-    eval 拦截
+  /* eval 拦截：仅 AST 模式（rewriteThis=true）。
+     旧模式下 eval 不拦截——with(__context_proxy__) 在运行时拦截裸标识符，
+     且 eval 在调用者作用域执行，with 作用域对 eval 内的代码生效。
+     AST 模式取消了 with，eval 代码里的 location/window 等裸标识符拿不到代理值。
+     用 WASM 对 eval 代码做 AST 改写后交给原始 eval 执行。
+
+     已知限制：_eval.call(window, code) 是间接 eval，在全局作用域执行，
+     不保留直接 eval 的调用者作用域语义（无法访问局部变量）。
+     这是拦截 eval 的固有限制——无法既拦截 eval 又保留直接 eval 作用域。
+     this 不受影响——eval 继承调用者的 this，已由外层 AST 改写。 */
+  if (webvpn.rewriteThis && __wasmRewrite) {
     const _eval = window.eval
     window.eval = function eval (code) {
-      const isDefineVars = /^\s*(var|let|const)/.test(code)
-      code = `new Function(\`with (self.__context__) { ${(isDefineVars ? '' : 'return ') + code} }\`).bind(self.__context__)()`
-      return _eval(code)
+      if (typeof code === 'string' && __wasmRewrite) {
+        const rewritten = __wasmRewrite.rewrite(code)
+        if (rewritten !== null) code = rewritten
+        /* 解析失败（返回 null）时原样执行，不破坏功能 */
+      }
+      return _eval.call(window, code)
     }
-  */
+  }
 
   /* EventSource 拦截 */
   const _EventSource = window.EventSource
@@ -681,6 +785,7 @@
       '%c_navigate 拦截 : ' + url,
       'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
     )
+    if (isBlankNav(url)) return false
     if (!canJump(url)) return false
     url = transformUrl(url)
     return window.navigate(url)
@@ -693,6 +798,7 @@
       '%clocation 操作 拦截 _assign : ' + url,
       'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
     )
+    if (isBlankNav(url)) return false
     if (!canJump(url)) return false
     url = transformUrl(url)
     return window.location.assign(url)
@@ -705,6 +811,7 @@
       '%clocation 操作 拦截 _replace : ' + url,
       'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
     )
+    if (isBlankNav(url)) return false
     if (!canJump(url)) return false
     url = transformUrl(url)
     return window.location.replace(url)
@@ -751,13 +858,14 @@
             if (u && attr in u) return u[attr]
             return webvpn.target[attr] || location[attr]
           },
-          set (value) {
-            if (attr === 'href') {
-              console.log(
-                '%c__location__ 拦截 href : ' + value,
-                'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
-              )
-              if (!canJump(value)) return false
+            set (value) {
+              if (attr === 'href') {
+                console.log(
+                  '%c__location__ 拦截 href : ' + value,
+                  'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
+                )
+                if (isBlankNav(value)) return false
+                if (!canJump(value)) return false
               value = transformUrl(value)
               win.location.href = value
             } else {
@@ -772,6 +880,86 @@
       win.__location__[key] = win.location['_' + key]
       win.__location__['__' + key + '__'] = win.location['_' + key]
     }
+
+    /* 启动时快照原生方法。站点代码全部经 __document__ 代理读写，这里按「形态」区分两类替换：
+       - masked 包装（Proxy / bind 结果，Function.prototype.toString 被 V8 掩饰为 [native code]）：
+         反调试典型手法，apply trap 常丢弃 this，调用即抛 Illegal invocation → 恢复原生；
+       - 源码可见的普通函数包装（function () { return orig.apply(this, arguments) }）：
+         站点合法 monkey-patch 的常见形态 → 放行（仅修正 this），否则站点自己的补丁被吞、功能损坏。
+       每个窗口各自快照，保证 iframe 场景绑定正确的 document。遍历整条原型链取全部函数值属性
+       （覆盖 createScript 等全部工厂/查询方法），仅跳过本脚本包装过的方法（ownWrappedMethods，
+       恢复它们等于拆除自身拦截）。用描述符判断而不直接读取属性，避免触发 getter。 */
+    const nativeMethods = new Map()
+    const boundMethods = new Map()
+    try {
+      /* 只从原型链取（document 自身属性在 init 时只有存取器，且可能已被抢先污染） */
+      let docProto = Object.getPrototypeOf(win.document)
+      while (docProto && docProto !== Object.prototype) {
+        for (const key of Object.getOwnPropertyNames(docProto)) {
+          try {
+            if (ownWrappedMethods.includes(key) || nativeMethods.has(key)) continue
+            const desc = Object.getOwnPropertyDescriptor(docProto, key)
+            const fn = desc && desc.value
+            if (typeof fn === 'function' && !fn.prototype) {
+              nativeMethods.set(key, fn)
+              /* 预绑定 + 还原 name：原生 DOM 方法有品牌检查（receiver 必须是真实 document），
+                 经代理调用必须 bind；缓存同一副本保证每次 get 返回值恒定，name 不带 "bound " 前缀 */
+              const bound = fn.bind(win.document)
+              try { Object.defineProperty(bound, 'name', { value: fn.name }) } catch {}
+              boundMethods.set(key, bound)
+            }
+          } catch {}
+        }
+        docProto = Object.getPrototypeOf(docProto)
+      }
+    } catch {}
+
+    /* window 侧快照：__window__/__parent__/__top__ 代理与 __document__ 共用 get trap，
+       但不能用 document 的方法映射——window 与 document 存在大量同名方法（open/close/
+       dispatchEvent…），语义完全不同，混用会把 __window__.open 劫持成 document.open
+       （1 参调用按 HTML 规范直接清空当前文档，站点弹窗全部失效且页面变空白）。
+       Window 的 WebIDL 成员在 Chrome 是实例自有属性（Window.prototype 上没有 open），
+       因此自有属性与原型链都要快照。快照时本脚本已安装的 window 包装（fetch/open 等）
+       一并捕获，代理返回它们的绑定副本恰好保持拦截语义。 */
+    const winNativeMethods = new Map()
+    const winBoundMethods = new Map()
+    try {
+      const sources = [win]
+      let winProto = Object.getPrototypeOf(win)
+      while (winProto && winProto !== Object.prototype) {
+        sources.push(winProto)
+        winProto = Object.getPrototypeOf(winProto)
+      }
+      for (const src of sources) {
+        for (const key of Object.getOwnPropertyNames(src)) {
+          try {
+            if (ownWrappedMethods.includes(key) || winNativeMethods.has(key)) continue
+            const desc = Object.getOwnPropertyDescriptor(src, key)
+            const fn = desc && desc.value
+            if (typeof fn === 'function' && !fn.prototype) {
+              winNativeMethods.set(key, fn)
+              const bound = fn.bind(win)
+              try { Object.defineProperty(bound, 'name', { value: fn.name }) } catch {}
+              winBoundMethods.set(key, bound)
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+
+    /* 初始化清扫：若有脚本抢在注入块之前（raw 路径，如 eval / CDP 预注入）把方法槽位替换成
+       masked 包装，这里一次性还原为绑定原生，raw 直读路径同样安全；
+       源码可见的普通函数包装视为站点合法 patch，保留不动。 */
+    try {
+      for (const [key, fn] of nativeMethods) {
+        const desc = Object.getOwnPropertyDescriptor(win.document, key)
+        if (!desc || !desc.configurable || desc.get || desc.value === fn) continue
+        if (typeof desc.value !== 'function') continue
+        let masked = true
+        try { masked = Function.prototype.toString.call(desc.value).includes('[native code]') } catch {}
+        if (masked) Object.defineProperty(win.document, key, { value: boundMethods.get(key), writable: true, configurable: true })
+      }
+    } catch {}
 
     for (const con of globalCons) {
       if (
@@ -790,9 +978,34 @@
             return w['__' + property + '__']
           }
           const value = obj[property]
-          /* 如果 value 是 function，不一定是真的函数，也可能是 Promise 这种，Promise 有 prototype */
-          if (typeof value === 'function' && !value.prototype) {
+          if (typeof value === 'function') {
             if (property === 'fetch') return window.fetch
+            // Proxy 不变量：target 自身不可配置且不可写的数据属性必须原样返回，返回 bind 副本会抛
+            // "'get' on proxy: property 'xxx' is a read-only and non-configurable data property…" TypeError
+            try {
+              const desc = Object.getOwnPropertyDescriptor(obj, property)
+              if (desc && desc.configurable === false && desc.writable === false) return value
+            } catch {}
+            // window 与 document 各用各的方法快照：open/close/dispatchEvent 等同名方法在
+            // 两边语义不同，__window__ 用 document 的映射会把 open 劫持成 document.open
+            const isWinObj = obj === obj.window
+            const nativeMap = isWinObj ? winNativeMethods : nativeMethods
+            const boundMap = isWinObj ? winBoundMethods : boundMethods
+            const native = nativeMap.get(property)
+            if (native !== undefined) {
+              // document 方法槽位：未篡改 → 返回预绑定副本（this 恒为真实 document）
+              if (native === value) return boundMap.get(property)
+              // 被替换过：toString 为 [native code] 的是 Proxy/bind 包装（反调试形态，apply trap
+              // 常丢弃 this）→ 恢复原生；源码可见的普通函数包装是站点合法 monkey-patch →
+              // 放行并修正 this，不能吞掉站点的补丁
+              let masked = true
+              try { masked = Function.prototype.toString.call(value).includes('[native code]') } catch {}
+              if (masked) return boundMap.get(property)
+              return value.bind(obj)
+            }
+            // 非方法槽位：带 prototype 的值是构造器/类（如 Promise、站点自定义类），bind 会丢
+            // 静态属性，原样返回；其余（箭头函数等）bind 修正 this
+            if (value.prototype) return value
             return value.bind(obj)
           }
           return value
@@ -800,6 +1013,7 @@
         set (obj, property, value) {
           if (property === 'window') return false
           if (property === 'location') {
+            if (isBlankNav(value)) return true
             const url = transformUrl(value)
             if (obj === parent || obj === top) {
               obj.location = url
@@ -812,11 +1026,40 @@
             if (!canJump(value)) return true
             win.location.href = url
           }
+          // document 方法槽位的函数赋值：masked 包装（Proxy/bind，toString 为 [native code]，
+          // 反调试手法）替换为绑定原生再落库，raw 直读路径不被污染；源码可见的普通函数包装
+          // 是站点合法 monkey-patch，原样放行
+          if (obj === win.document && typeof value === 'function') {
+            const native = nativeMethods.get(property)
+            if (native !== undefined && native !== value) {
+              let masked = true
+              try { masked = Function.prototype.toString.call(value).includes('[native code]') } catch {}
+              if (masked) value = boundMethods.get(property)
+            }
+          }
           obj[property] = value
           return true
         }
       })
     }
+    /* 统一 document 身份：站点可见的 document 恒为 __document__ 代理（伪造 document.location
+       所必需），而节点的 ownerDocument 仍指向真实 document，两份身份并存会让按 document 对象
+       做身份比较 / 内部缓存的站点库（jQuery/Sizzle 等）在两者间反复重置内部状态，委托事件、
+       选择器匹配随之失效。这里把节点树上指向真实 document 的 ownerDocument 一律映射到同一代理
+       （document 自身仍为 null，iframe、DOMParser 等其他 document 不受影响），
+       站点侧从此只存在一个 document 对象。 */
+    try {
+      const docProxy = win.__document__
+      const rawOwnerDocument = Object.getOwnPropertyDescriptor(win.Node.prototype, 'ownerDocument').get
+      Object.defineProperty(win.Node.prototype, 'ownerDocument', {
+        get () {
+          const doc = rawOwnerDocument.call(this)
+          return doc === win.document ? docProxy : doc
+        },
+        configurable: true
+      })
+    } catch {}
+
     win.__context__ = {
       self: win.__self__,
       window: win.__window__,
@@ -834,6 +1077,8 @@
         return prop in target ? target[prop] : win[prop]
       },
       set (target, prop, value) {
+        // with 作用域内的 location = 'xxx' 会落到 win.location 触发立即导航，同样拦截 about:blank
+        if (prop === 'location' && isBlankNav(value)) return true
         win[prop] = value
         return true
       }
@@ -842,6 +1087,49 @@
   }
 
   redefineGlobals(window)
+
+  /* 目标网站的反调试常用 Object.defineProperty(document, 'createElement', { writable: false, configurable: false })
+     锁定原生方法。一旦锁定，__document__ 代理的 get trap 无法再返回 bind 副本（Proxy 不变量要求
+     非 writable 且非 configurable 的自有数据属性必须原样返回，否则抛
+     "'get' on proxy: property 'createElement' is a read-only and non-configurable data property…"），
+     整站脚本随之崩溃。这里把针对 document / window 自身的数据属性锁强制改为 configurable，
+     使锁失效；属性值不变，不感知锁存在的正常网站不受影响。Document.prototype 上的锁（如 cookie）不在此列。 */
+  const rawDefineProperty = Object.defineProperty
+  const keepConfigurable = (target, desc) => {
+    try {
+      if ((target === document || target === window) && desc && typeof desc === 'object' && desc.configurable === false) {
+        // document 槽位不预绑定：站点经 defineProperty 安装的函数值可能是合法 patch，
+        // 保留原值，交给 __document__ get trap 按形态判定（masked 恢复原生 / 可见包装放行）；
+        // 若在这里 bind，值被掩饰成 native 形态，get trap 会把它当反调试包装恢复掉，补丁失效
+        if (target === document) {
+          desc = Object.assign({}, desc, { configurable: true })
+        } else if (typeof desc.value === 'function' && !desc.value.prototype) {
+          // window 函数值预绑定为真实对象：即使包装值被写入（如经其他 realm 的 defineProperty），
+          // 调用时 this 也是真实对象，不会抛 Illegal invocation
+          const bound = desc.value.bind(target)
+          try { Object.defineProperty(bound, 'name', { value: desc.value.name }) } catch {}
+          desc = Object.assign({}, desc, { configurable: true, value: bound })
+        } else {
+          desc = Object.assign({}, desc, { configurable: true })
+        }
+      }
+    } catch {}
+    return desc
+  }
+  Object.defineProperty = function (target, key, desc) {
+    return rawDefineProperty.call(Object, target, key, keepConfigurable(target, desc))
+  }
+  if (window.Reflect && Reflect.defineProperty) {
+    const rawReflectDefineProperty = Reflect.defineProperty
+    Reflect.defineProperty = function (target, key, desc) {
+      return rawReflectDefineProperty.call(Reflect, target, key, keepConfigurable(target, desc))
+    }
+  }
+
+  /* 不做「预绑定 + 不可写/不可配置」硬锁定：站点的合法 monkey-patch（替换 document 方法）
+     必须能落地，锁死会让这类网站直接 TypeError 坏掉。防线改为按形态拦截——
+     masked 包装（Proxy/bind，toString 为 [native code]，反调试手法）在快照清扫、
+     set trap、get trap 三处被还原为原生；源码可见的普通函数包装一律放行。 */
 
   // 此前对 window 上所有函数属性执行 window[key] = window[key].bind(window)：
   // 1) for...in 会遍历继承属性；2) bind 后函数 name 变为 "bound xxx"，破坏依赖 fn.name 的代码；
@@ -853,6 +1141,13 @@
       if (!desc || !desc.writable || desc.get || desc.set) continue
       const fn = window[key]
       if (typeof fn !== 'function' || fn.name.startsWith('bound ')) continue
+      // 只 bind 原生方法（修正 detach 调用的 this）。源码可见的普通函数（本脚本或站点装的
+      // 包装）不需要 this 修正，而 bind 会把它掩饰成 [native code] 形态，污染 get/set trap
+      // 的 masked 判定——window.open 包装曾被这里 bind 成 masked，随后 __window__.open 被
+      // 误判为反调试包装劫持成 document.open，弹窗全失效。
+      let masked = true
+      try { masked = Function.prototype.toString.call(fn).includes('[native code]') } catch {}
+      if (!masked) continue
       const bound = fn.bind(window)
       // 尽量保留原 name，减少对依赖 fn.name 的代码的破坏
       try { Object.defineProperty(bound, 'name', { value: fn.name }) } catch {}
@@ -965,6 +1260,11 @@
     }
     return true
   }
+
+  // 顶层导航到 about:blank 会立刻摧毁代理会话，常见于目标网站反调试的惩罚跳转
+  // （如检测到开发者工具后 location.href = 'about:blank'），正常业务几乎不会这样做，默认拦截。
+  // 只拦顶层导航路径，不拦 window.open('about:blank')（创建空白弹窗是合法用法）。
+  const isBlankNav = (url) => typeof url === 'string' && url.trim() === 'about:blank'
 
   nodeAttrSetters.forEach((item) => {
     let descriptor = Object.getOwnPropertyDescriptor(item[0].prototype, item[2])
@@ -1107,6 +1407,14 @@
     },
     set (html) {
       html = (html || '').toString()
+      // 拒绝清空整个文档的写入（如反调试脚本的惩罚逻辑），保护代理会话
+      if (this === document.documentElement) {
+        console.log(
+          '%cDOM 操作 拦截 documentElement.innerHTML 清屏 : ' + (html.length > 100 ? (html.slice(0, 100) + '...') : html),
+          'color: #606666;background-color: lightblue;padding: 5px 10px;'
+        )
+        return
+      }
       const self = this instanceof HTMLTemplateElement ? this.content : this
       const childs = html2dom(html, self)
       console.log(

@@ -12,6 +12,9 @@ pub static IGNORE_REQUEST_HEADER_REGEXPS: Lazy<Vec<Regex>> = Lazy::new(|| {
     vec![
         Regex::new(r"(?i)^x-(forwarded|requested|csrf|content|frame)").unwrap(),
         Regex::new(r"(?i)upgrade-insecure-requests").unwrap(),
+        // hop-by-hop 逐跳头不能透传：请求体已被完整缓冲，reqwest 会按实际大小设置
+        // content-length，转发 transfer-encoding: chunked 会导致 hyper 客户端报错
+        Regex::new(r"(?i)^(transfer-encoding|connection|keep-alive|upgrade)$").unwrap(),
     ]
 });
 
@@ -26,6 +29,12 @@ pub static IGNORE_RESPONSE_HEADER_REGEXPS: Lazy<Vec<Regex>> = Lazy::new(|| {
         Regex::new(r"(?i)cross-origin-opener-policy").unwrap(),
         Regex::new(r"(?i)cross-origin-embedder-policy").unwrap(),
         Regex::new(r"(?i)content-security-policy-report-only").unwrap(),
+        // hop-by-hop 逐跳头不能透传：响应体是完整缓冲的 Bytes，hyper 自己决定分帧
+        // （自动补 content-length）。透传上游的 transfer-encoding: chunked 会触发
+        // hyper "user sent unexpected header"，连接被无响应直接关闭
+        // （浏览器表现为 ERR_EMPTY_RESPONSE）。
+        // Node 版不需要：node:http 自行管理 transfer-encoding，透传无碍。
+        Regex::new(r"(?i)^(transfer-encoding|connection|keep-alive|upgrade)$").unwrap(),
     ]
 });
 
@@ -414,4 +423,62 @@ pub fn transform_url(url: &str, config: &Config, codec: &DomainCodec, _meta: &Me
     // 注意 JS 这里 u.host 是 host+port（无端口时仅 host）
     // JS String.replace(str, str) 只替换第一个匹配；Rust str::replace 替换全部
     url.replacen(&host, &format!("{}{}", encoded, vpn_domain), 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn h() -> HashMap<String, Vec<String>> {
+        let mut m = HashMap::new();
+        m.insert("content-type".to_string(), vec!["text/html".to_string()]);
+        m
+    }
+
+    /// 上游 transfer-encoding: chunked 必须被剥掉：hyper 会自行管理分帧，
+    /// 透传会触发 "user sent unexpected header"，连接无响应直接关闭
+    /// （浏览器表现为 ERR_EMPTY_RESPONSE）。
+    #[test]
+    fn test_response_strips_transfer_encoding() {
+        let mut headers = h();
+        headers.insert("transfer-encoding".to_string(), vec!["chunked".to_string()]);
+        delete_ignore_headers(&IGNORE_RESPONSE_HEADER_REGEXPS, &mut headers);
+        assert!(!headers.contains_key("transfer-encoding"));
+        assert!(headers.contains_key("content-type"));
+    }
+
+    /// hop-by-hop 头（connection/keep-alive/upgrade）也不应透传到下游响应
+    #[test]
+    fn test_response_strips_hop_by_hop() {
+        let mut headers = h();
+        headers.insert("connection".to_string(), vec!["keep-alive".to_string()]);
+        headers.insert("keep-alive".to_string(), vec!["timeout=5".to_string()]);
+        headers.insert("upgrade".to_string(), vec!["h2c".to_string()]);
+        delete_ignore_headers(&IGNORE_RESPONSE_HEADER_REGEXPS, &mut headers);
+        assert!(!headers.contains_key("connection"));
+        assert!(!headers.contains_key("keep-alive"));
+        assert!(!headers.contains_key("upgrade"));
+        // content-length 原有忽略逻辑不受影响（子串匹配，忽略大小写）
+        headers.insert("Content-Length".to_string(), vec!["123".to_string()]);
+        delete_ignore_headers(&IGNORE_RESPONSE_HEADER_REGEXPS, &mut headers);
+        assert!(!headers.contains_key("Content-Length"));
+    }
+
+    /// 请求侧同样剥离 hop-by-hop 头；且不能误伤业务头
+    /// （如 x-custom-request 含 connection 子串时应保留——新规则是全词锚定匹配）
+    #[test]
+    fn test_request_strips_hop_by_hop() {
+        let mut headers = h();
+        headers.insert("transfer-encoding".to_string(), vec!["chunked".to_string()]);
+        headers.insert("connection".to_string(), vec!["close".to_string()]);
+        headers.insert("x-custom-connection-info".to_string(), vec!["v".to_string()]);
+        delete_ignore_headers(&IGNORE_REQUEST_HEADER_REGEXPS, &mut headers);
+        assert!(!headers.contains_key("transfer-encoding"));
+        assert!(!headers.contains_key("connection"));
+        assert!(headers.contains_key("x-custom-connection-info"));
+        // 原有规则不受影响
+        headers.insert("x-forwarded-for".to_string(), vec!["1.2.3.4".to_string()]);
+        delete_ignore_headers(&IGNORE_REQUEST_HEADER_REGEXPS, &mut headers);
+        assert!(!headers.contains_key("x-forwarded-for"));
+    }
 }

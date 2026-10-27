@@ -72,12 +72,28 @@ pub fn convert_charset_data(
 
     let charset = match charset {
         Some(c) => c,
-        None => return (text.into_owned(), content_type.to_string()),
+        None => {
+            // 未声明 charset（头和 meta 都没有）：正文已按 utf-8 解码，必须显式声明。
+            // 否则浏览器对响应做编码嗅探 —— 注入代码里 UTF-8 中文注释密度高时，
+            // Chrome 会误判为 GBK，多字节错位吞掉字符串里的 ASCII 引号/反斜杠，
+            // 导致注入块 SyntaxError（webvpn 未定义），进而全站脚本连锁报错
+            // （如 echartsjs 首页 (index):22:34642）。Node 版同场景同样不声明，
+            // 依赖 Koa 后续行为，存在同款隐患；这里比 Node 更进一步，头声明兜底。
+            let default_ct = if mime == "html" { "text/html" } else { "application/javascript" };
+            let base = if content_type.is_empty() { default_ct } else { content_type };
+            return (text.into_owned(), format!("{}; charset=utf-8", base));
+        }
     };
 
     if charset == "utf-8" || charset == "utf8" {
         // Node: utf-8 时不修改 content-type 头，直接 return text。
-        // 即使 charset 来自 meta 标签，也保持原始 content-type 不变。
+        // 但 charset 仅来自 meta 标签时，注入块位于原 <head> 之前，浏览器解析到
+        // meta 之前就已开始嗅探并可能误判编码（同上述 GBK 误判链），因此把
+        // charset=utf-8 补进 content-type 头；charset 来自头时原本就有，保持不变。
+        if charset_from_meta && !content_type.contains("charset=") {
+            let base = if content_type.is_empty() { "text/html" } else { content_type };
+            return (text.into_owned(), format!("{}; charset=utf-8", base));
+        }
         return (text.into_owned(), content_type.to_string());
     }
 

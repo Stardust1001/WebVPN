@@ -1,5 +1,7 @@
-// 配置模块：对应 Node.js 版的 config.js
-// 运行时可由 config.toml（同级目录或上级目录）覆盖默认值
+// 配置模块：Rust 版独立配置（根目录 rust/config.toml）
+// 与 Node 版的根目录 config.js 相互独立：两者互不读取、修改互不影响。
+// 本文件的 Config::default() 仅是兜底默认值；运行时优先用 config.toml 覆盖
+// （查找顺序：rust/config.toml → config.toml → 默认值）。
 
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
@@ -49,6 +51,9 @@ pub struct Config {
     pub rewrite_this: bool,
     /// 上游请求超时（秒），对应 Node 版 requestTimeout || 60000
     pub request_timeout: u64,
+    /// 上游 TCP 连接超时（秒）。对端 SYN 黑洞时内核默认要等 keepinit（macOS 75s）才报错，
+    /// 有此超时可在连接阶段快速失败并让重试逻辑换新连接重来
+    pub connect_timeout: u64,
     /// 域名编码模式 original | underline
     pub domain_mode: String,
     /// 单域名代理映射
@@ -82,7 +87,9 @@ impl Default for Config {
             disable_devtools: true,
             rewrite_this: false,
             request_timeout: 60,
+            connect_timeout: 10,
             domain_mode: "underline".to_string(),
+            // 兜底默认映射（正式配置以 rust/config.toml 的 [subdomains] 为准）
             subdomains: {
                 let mut m = HashMap::new();
                 m.insert("baidu".to_string(), "www.baidu.com".to_string());
@@ -166,6 +173,7 @@ struct ConfigToml {
     disable_devtools: Option<bool>,
     rewrite_this: Option<bool>,
     request_timeout: Option<u64>,
+    connect_timeout: Option<u64>,
     domain_mode: Option<String>,
     subdomains: Option<HashMap<String, String>>,
 }
@@ -191,7 +199,45 @@ impl ConfigToml {
         if let Some(v) = self.disable_devtools { c.disable_devtools = v; }
         if let Some(v) = self.rewrite_this { c.rewrite_this = v; }
         if let Some(v) = self.request_timeout { c.request_timeout = v; }
+        if let Some(v) = self.connect_timeout { c.connect_timeout = v; }
         if let Some(v) = &self.domain_mode { c.domain_mode = v.clone(); }
         if let Some(v) = &self.subdomains { c.subdomains = v.clone(); }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// rust/config.toml 必须能完整加载：所有字段显式列出（含 [subdomains]），
+    /// 不依赖 Config::default() 的隐藏值。用 CARGO_MANIFEST_DIR 定位，不依赖运行目录。
+    #[test]
+    fn test_config_toml_loads_with_subdomains() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/config.toml");
+        let c = Config::load_file(path);
+        assert_eq!(c.subdomains.get("baidu").map(String::as_str), Some("www.baidu.com"));
+        assert_eq!(c.subdomains.get("im").map(String::as_str), Some("im.qq.com"));
+        assert_eq!(c.port, 80);
+        assert!(c.https_enabled);
+        assert_eq!(c.https_port, 443);
+        // num_processes 不断言具体值：Rust 版此字段无效（tokio 多线程），
+        // 用户可随意设 1/4，不影响任何行为
+        assert_eq!(c.domain_mode, "underline");
+        assert_eq!(c.request_timeout, 60);
+        assert_eq!(c.vpn_domain, ".webvpn.info");
+    }
+
+    /// 缺失字段回退默认值：空 TOML 加载后 subdomains 仍是 default 中的兜底映射
+    #[test]
+    fn test_config_toml_missing_fields_fallback() {
+        let dir = std::env::temp_dir().join("webvpn-config-test");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("empty.toml");
+        std::fs::write(&path, "port = 19999\n").unwrap();
+        let c = Config::load_file(path.to_str().unwrap());
+        assert_eq!(c.port, 19999);
+        // 未写 [subdomains] → 用 default 兜底
+        assert!(c.subdomains.contains_key("baidu"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -35,7 +35,7 @@ export default {
   // 是否开启调试（当前是VConsole）
   debug: false,
   // 是否禁用 devtools
-  disableDevtools: true,
+  disableDevtools: false,
   // 是否启用 this 完整改写（acorn AST 解析，把每个 this 替换为 (this === self ? __self__ : this)）
   // 默认 false：仅用正则改写 with(this) 模式（性能更好）
   // true：用 acorn 解析全部 JS，拦截任何 this 穿透获得 window 的可能（更安全但更慢）

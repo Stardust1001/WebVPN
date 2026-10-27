@@ -149,6 +149,8 @@ impl AppState {
             .redirect(reqwest::redirect::Policy::none())
             .danger_accept_invalid_certs(true)
             .timeout(Duration::from_secs(config.request_timeout))
+            // connect_timeout：TCP 连接阶段单独计时，对端 SYN 黑洞时不至于拖满整个总超时
+            .connect_timeout(Duration::from_secs(config.connect_timeout))
             .gzip(true)
             .deflate(true)
             .brotli(true)
@@ -485,6 +487,43 @@ pub struct UpstreamResponse {
     pub mime: Option<String>, // 上游检测出的 mime（用于覆盖 meta.mime）
 }
 
+/// 上游 send：对幂等方法（GET/HEAD）失败时换新连接重试。
+/// 部分目标站（如 CDN/S3 边缘节点）会间歇性在 TLS 握手中途掐断或静默丢包，
+/// 单次失败率高（实测约 20-30%），但重开连接几乎必成——这是反向代理该兜底的网络层抖动，
+/// 直接透传会让浏览器收到 502 "error sending request for url (...)"。
+/// builder 在每次 send 前先 try_clone 出下一份（body 均为缓冲数据，可克隆）；
+/// 全部尝试失败后沿用原语义：超时 -> 504，其他 -> 502。
+async fn send_upstream(
+    builder: reqwest::RequestBuilder,
+    method: &Method,
+) -> Result<reqwest::Response, UpstreamError> {
+    let max_attempts = if method == Method::GET || method == Method::HEAD { 3 } else { 1 };
+    let mut next = Some(builder);
+    let mut last_err: Option<reqwest::Error> = None;
+    for attempt in 0..max_attempts {
+        if attempt > 0 {
+            tokio::time::sleep(Duration::from_millis(100 * attempt as u64)).await;
+        }
+        let b = next.take().expect("builder consumed before final attempt");
+        // 先克隆出下一次尝试用的副本再消费当前 builder（body 不可克隆时提前结束重试）
+        next = b.try_clone();
+        match b.send().await {
+            Ok(resp) => return Ok(resp),
+            Err(e) => {
+                last_err = Some(e);
+                if next.is_none() {
+                    break;
+                }
+            }
+        }
+    }
+    let e = last_err.expect("at least one send attempt");
+    if e.is_timeout() {
+        return Err(UpstreamError::Timeout);
+    }
+    Err(UpstreamError::BadGateway(e.to_string()))
+}
+
 /// 对应 request(ctx) + fetchRequest(ctx, options)
 async fn upstream_request(
     state: &Arc<AppState>,
@@ -499,6 +538,17 @@ async fn upstream_request(
     delete_ignore_headers(&IGNORE_REQUEST_HEADER_REGEXPS, &mut req_headers);
     strip_share_suffix(&mut req_headers, meta);
     set_origin_headers(&mut req_headers, &state.config, &state.codec);
+
+    // 改写候选 mime 的请求剥掉条件请求头：响应侧会剥离 etag/last-modified（见下方
+    // fall-through 返回处），但浏览器在升级前缓存的旧条目仍持有上游 etag，若把
+    // If-None-Match / If-Modified-Since 透传，上游会 304，浏览器继续沿用旧版改写
+    // 缓存体，永远拿不到新的注入/包装代码。剥掉条件头强制上游回 200 全量。
+    // 仅限 fetch（缓冲改写）路径；respondPipe 流式路径不动，Range/If-Range 照常。
+    if matches!(meta.mime.as_str(), "html" | "text" | "js") {
+        for key in ["if-none-match", "if-modified-since", "if-unmodified-since"] {
+            req_headers.remove(key);
+        }
+    }
 
     // 会话消费者：覆盖 cookie/authorization
     if !meta.is_main_session && !meta.share_id.is_empty() {
@@ -524,15 +574,7 @@ async fn upstream_request(
         builder = builder.body(body);
     }
 
-    let resp = match builder.send().await {
-        Ok(r) => r,
-        Err(e) => {
-            if e.is_timeout() {
-                return Err(UpstreamError::Timeout);
-            }
-            return Err(UpstreamError::BadGateway(e.to_string()));
-        }
-    };
+    let resp = send_upstream(builder, method).await?;
     let status = resp.status();
 
     let raw_headers = headermap_to_hashmap(resp.headers());
@@ -614,7 +656,21 @@ async fn upstream_request(
         }
     }
 
-    Ok(UpstreamResponse { status, headers, data: Some(text.into_bytes()), is_done: false, mime: None })
+    // 对应 Node 版 webvpn.js:966 的无条件回写 meta.mime：
+    // 无扩展名 HTML（如百度 /s?wd=xx）按 URL 判定为 text，若不把响应头校正结果
+    // 带回给 proxyRoute 覆盖 meta.mime，改写门控（mime == "html"）不成立，
+    // 页面会完全不替换 URL、不注入拦截脚本
+    // 本分支是改写候选响应（proxyRoute 将对其做 replaceUrls + 注入/包装）：
+    // 改写体依赖服务端代码版本，上游 etag/last-modified 对它毫无意义。若原样透传，
+    // 浏览器会把旧版改写结果按上游验证器缓存，之后每次条件请求都命中
+    // 304，服务端更新后旧注入代码仍被执行（feature.html "Illegal invocation /
+    // newHandler" 报错的根因）。故剥离验证器并强制 no-cache，使浏览器每次
+    // 导航都取全量最新改写。noTransform / JSONP / JSON / 3xx 分支不经此处，缓存语义不变。
+    for key in ["etag", "last-modified", "expires"] {
+        headers.remove(key);
+    }
+    headers.insert("cache-control".to_string(), vec!["no-cache".to_string()]);
+    Ok(UpstreamResponse { status, headers, data: Some(text.into_bytes()), is_done: false, mime: Some(mime) })
 }
 
 /// 剥离 origin/referer/host 中的 share session 后缀
@@ -675,15 +731,7 @@ async fn respond_pipe(
         builder = builder.body(body);
     }
 
-    let resp = match builder.send().await {
-        Ok(r) => r,
-        Err(e) => {
-            if e.is_timeout() {
-                return Err(UpstreamError::Timeout);
-            }
-            return Err(UpstreamError::BadGateway(e.to_string()));
-        }
-    };
+    let resp = send_upstream(builder, method).await?;
     let status = resp.status();
 
     let raw_headers = headermap_to_hashmap(resp.headers());

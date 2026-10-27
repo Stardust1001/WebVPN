@@ -1,19 +1,58 @@
-https_enabled = false
-port = 18080
-https_port = 18443
+# Rust 版 WebVPN 配置（独立于 Node 版的根目录 config.js，两者互不读取、互不影响）
+# 字段为 snake_case；给前端的配置 JSON 才是 camelCase（由代码自动转换）
+# 未列出的字段会用 src/config.rs 中 Config::default() 的默认值，建议显式写全以便排查
+
+# 是否启用 HTTPS 服务（需提供 ssl/server.key 与 ssl/server.pem）
+https_enabled = true
+# HTTP 服务端口
+port = 80
+# HTTPS 服务端口
+https_port = 443
+# WebVPN 主站地址，访问其他网站都从这个网址进行转换
+# （本地测试配 hosts：127.0.0.1 www.webvpn.info）
 site = "http://www.webvpn.info"
+# 工作进程数（与 Node 版 numProcesses 保持一致；Rust 版用 tokio 多线程，此字段仅保留兼容，实际无效）
 num_processes = 1
+# 是否启用缓存，把静态资源缓存到本地文件夹以加速后续访问
 cache = false
+# 缓存文件夹地址
 cache_dir = "cache"
+# 会话共享持久化目录（share sessions 的 cookie/authorization/clientCache 落盘于此）
 sessions_dir = "sessions"
+# public 前端资源目录（rust 目录运行时相对上级）
 public_dir = "../public"
+# SSL 证书目录
 ssl_dir = "../ssl"
+# 是否在浏览器控制台打印拦截操作日志
 intercept_log = false
+# 是否禁止一切跳转
 disable_jump = false
+# 是否在跳转前询问用户
 confirm_jump = false
+# 是否抹掉 sourceMappingURL
 disable_source_map = true
+# 是否启用插件（public/plugins.js 媒体下载等）
 enable_plugins = true
+# 是否开启调试（注入 vConsole）
 debug = false
-disable_devtools = true
+# 是否禁用浏览器开发者工具
+# 注意：disable-devtool 库在 CDP 驱动的浏览器（Webot、headless 自动化）下会误判并清空页面跳 about:blank
+disable_devtools = false
+# AST 改写模式（rewriteThis）：
+#   false = 旧模式：with(__context_proxy__) 包裹 + 正则替换（禁用 ESM/use strict）
+#   true  = AST 模式：oxc 解析 JS，精准改写 this 与 7 个作用域标识符，
+#           保留 ESM/严格模式；浏览器端同步加载 public/rewrite.wasm 改写 eval/Function
 rewrite_this = false
+# 上游请求超时（秒）
+request_timeout = 60
+# 上游 TCP 连接超时（秒）：对端 SYN 黑洞时避免等内核 keepinit（macOS 默认 75s）才报错
+connect_timeout = 10
+# 域名编码模式 original（多级子域名，支持 cookie domain=）| underline（压平单段，不支持）
 domain_mode = "underline"
+
+# 单域名代理映射：无法配置泛解析 DNS 时，用固定二级域名代理指定网站
+# 访问 http://baidu.webvpn.info/ 即代理 www.baidu.com
+# 注意：被代理网站若引用第三方资源域名，第三方域名也要在此登记
+[subdomains]
+baidu = "www.baidu.com"
+im = "im.qq.com"

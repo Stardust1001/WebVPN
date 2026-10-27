@@ -1515,18 +1515,34 @@ class WebVPN {
     }
     let contentType = headers['content-type']?.[0] || ''
     let charset = contentType.split('charset=')[1]?.toLowerCase()
+    let charsetFromMeta = false
     if (!charset) {
       let match = text.match(this.reMetaCharset)
       if (!match) {
         match = text.match(this.reMetaContentType)
       }
       if (!match) {
+        // 未声明 charset（头和 meta 都没有）：正文已按 utf-8 解码，必须显式声明。
+        // 否则浏览器对响应做编码嗅探 —— 注入代码里 UTF-8 中文注释密度高时，
+        // Chrome 会误判为 GBK，多字节错位吞掉注入字符串里的引号/反斜杠，
+        // 导致注入块 SyntaxError（webvpn 未定义），进而全站脚本连锁报错
+        // （如 echartsjs 首页）。Koa 对字符串 body 不会自动补 charset，需手动写头。
+        const base = contentType || (ctx.meta.mime === 'html' ? 'text/html' : 'application/javascript')
+        headers['content-type'] = [base + '; charset=utf-8']
         return text
       }
       charset = match[0].split('charset=')[1].replaceAll('"', '').toLowerCase()
       contentType = 'text/html; charset=' + charset
+      charsetFromMeta = true
     }
     if (charset === 'utf-8' || charset === 'utf8') {
+      // charset 仅来自 meta 标签时，注入块位于原 <head> 之前，浏览器解析到 meta
+      // 之前就可能嗅探误判编码，把 charset=utf-8 补进 content-type 头兜底
+      // （charset 来自响应头时原本就有，无需改动）。
+      if (charsetFromMeta) {
+        const original = headers['content-type']?.[0] || 'text/html'
+        headers['content-type'] = [original + '; charset=utf-8']
+      }
       return text
     }
     headers['content-type'] = [contentType.replace(charset, 'utf-8')]

@@ -14,7 +14,6 @@
       !window.eval.name
       || !console.clear.name
       || !RegExp.toString.toString().includes('toString')
-      || !history.pushState.toString.toString().includes('toString')
     ) {
       onDevtools(true)
     }

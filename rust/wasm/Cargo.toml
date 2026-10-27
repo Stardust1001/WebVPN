@@ -1,0 +1,23 @@
+[package]
+name = "webvpn-rewrite-wasm"
+version = "0.1.0"
+edition = "2024"
+description = "WASM build of the AST rewrite logic for browser-side eval/Function interception"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+oxc_allocator = "0.151"
+oxc_parser = "0.151"
+oxc_ast = "0.151"
+oxc_span = "0.151"
+oxc_ast_visit = "0.151"
+oxc_semantic = "0.151"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
