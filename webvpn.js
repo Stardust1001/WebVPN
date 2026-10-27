@@ -159,6 +159,7 @@ class WebVPN {
     config.httpsVpnDomain = config.vpnDomain + (httpsPort === 443 ? '' : `:${httpsPort}`)
 
     this.config = config
+    this.site = site
     this.mimes = ['json', 'js', 'css', 'html', 'image', 'video', 'audio']
     this.mimeRegs = [
       [/\.json(?:$|#)/i, 'json'],
