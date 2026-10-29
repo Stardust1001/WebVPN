@@ -39,7 +39,7 @@ node main.js
 
 Visit [http://www.your_domain.com/](http://www.your_domain.com/)
 
-DNS pan-resolution is required, so please use an SSL wildcard certificate. For local deployment, modify local DNS (dnsmasq, etc.) or use the single-domain mode below.
+DNS pan-resolution is recommended (together with an SSL wildcard certificate, so any website can be proxied). If pan-resolution is inconvenient, use the single-domain mode below instead; for local debugging, dnsmasq or similar tools can emulate local DNS.
 
 ## Description
 
