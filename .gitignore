@@ -5,7 +5,10 @@ sessions/
 yarn.lock
 shared-sessions.json
 reports.json
+rust/.cargo/
+rust/sessions/
 rust/target/
 rust/vendor/
 rust/wasm/target/
+rust/*.log
 articles/
