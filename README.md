@@ -6,7 +6,7 @@ English · **[中文](./README-zh.md)**
 
 ---
 
-
+<img src="https://raw.githubusercontent.com/Stardust1001/WebVPN/refs/heads/master/screenshot.jpg">
 
 ## Brief
 

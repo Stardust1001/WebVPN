@@ -6,7 +6,7 @@
 
 ---
 
-
+<img src="https://raw.githubusercontent.com/Stardust1001/WebVPN/refs/heads/master/screenshot.jpg">
 
 ## 简单介绍
 
