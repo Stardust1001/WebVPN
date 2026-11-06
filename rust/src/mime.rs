@@ -43,9 +43,9 @@ pub fn mime_dict(mime: &str) -> Option<&'static str> {
         "json" => Some("application/json"),
         "video" => Some("video/mp4, application/vnd.apple.mpegurl"),
         "audio" => Some("audio/webm, audio/mpeg"),
-        "pdf-office" => Some("application/pdf"),
+        "pdf-office" => Some("application/pdf, text/csv, application/csv, application/excel, application/x-excel, application/x-msexcel, application/vnd.ms-excel, application/vnd.ms-powerpoint, application/powerpoint, application/x-powerpoint, application/msword, application/rtf, application/vnd.openxmlformats-officedocument"),
         "font" => Some("font/woff, font/woff2, font/ttf, font/otf, font/collection, application/vnd.ms-fontobject, application/x-font-ttf, application/font-woff, application/x-font-woff"),
-        "stream" => Some("application/octet-stream, application/protobuffer, application/grpc, application/x-protobuf, application/zip, application/x-gzip, application/x-7z-compressed, application/x-rar-compressed, application/msword, application/vnd.openxmlformats-officedocument, application/rtf, application/x-shockwave-flash"),
+        "stream" => Some("application/octet-stream, application/protobuffer, application/grpc, application/x-protobuf, application/zip, application/x-gzip, application/x-7z-compressed, application/x-rar-compressed, application/x-shockwave-flash"),
         "event-stream" => Some("text/event-stream"),
         _ => None,
     }

@@ -182,9 +182,9 @@ class WebVPN {
       'json': 'application/json',
       'video': 'video/mp4, application/vnd.apple.mpegurl',
       'audio': 'audio/webm, audio/mpeg',
-      'pdf-office': 'application/pdf',
+      'pdf-office': 'application/pdf, text/csv, application/csv, application/excel, application/x-excel, application/x-msexcel, application/vnd.ms-excel, application/vnd.ms-powerpoint, application/powerpoint, application/x-powerpoint, application/msword, application/rtf, application/vnd.openxmlformats-officedocument',
       'font': 'font/woff, font/woff2, font/ttf, font/otf, font/collection, application/vnd.ms-fontobject, application/x-font-ttf, application/font-woff, application/x-font-woff',
-      'stream': 'application/octet-stream, application/protobuffer, application/grpc, application/x-protobuf, application/zip, application/x-gzip, application/x-7z-compressed, application/x-rar-compressed, application/msword, application/vnd.openxmlformats-officedocument, application/rtf, application/x-shockwave-flash',
+      'stream': 'application/octet-stream, application/protobuffer, application/grpc, application/x-protobuf, application/zip, application/x-gzip, application/x-7z-compressed, application/x-rar-compressed, application/x-shockwave-flash',
       'event-stream': 'text/event-stream'
     }
     this.jsKeywords = [
