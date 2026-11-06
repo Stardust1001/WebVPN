@@ -473,8 +473,16 @@
        (this === self ? __self__ : this)，不需 bind。
      旧模式：with(__self__.__context__) 包裹 + bind(__context__)，与原版完全一致。 */
   const _Function = window.Function
+  const functionProxyGet = (target, prop, receiver) => {
+    if (prop === 'toString' && receiver !== target) {
+      const v = Reflect.get(target, prop, target)
+      return typeof v === 'function' ? v.bind(target) : v
+    }
+    return Reflect.get(target, prop, receiver)
+  }
   if (webvpn.rewriteThis && __wasmRewrite) {
     window.Function = new Proxy(_Function, {
+      get: functionProxyGet,
       construct (target, props) {
         if (props.length) {
           const code = props[props.length - 1]
@@ -498,6 +506,7 @@
     })
   } else {
     window.Function = new Proxy(_Function, {
+      get: functionProxyGet,
       construct (target, props) {
         let isWithThis = false
         if (props.length) {
