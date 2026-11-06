@@ -755,8 +755,9 @@
   }
 
   /* console.createTask 仅在 DevTools 打开时存在，导致网站开/关控制台行为不一致；
-    统一抹平为 undefined，保证异步堆栈归属逻辑走同一分支。 */
-  delete Console.prototype.createTask
+    统一抹平为 undefined，保证异步堆栈归属逻辑走同一分支。
+    注意 Console 构造器在 window 环境不是全局变量（Worker 里才有），用原型链定位 */
+  delete Object.getPrototypeOf(console).createTask
 
   /* document.referrer */
   const _referrer = decodeUrl(document.referrer.includes(webvpn.siteUrl) ? (location.origin + '/') : document.referrer)
