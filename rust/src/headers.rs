@@ -299,10 +299,6 @@ pub async fn init_response_headers(
                 if !result.is_empty() { result.push_str("; "); }
                 result.push_str(&format!("frame-ancestors {}{}", protocol, replaced));
             }
-            // https 下追加 upgrade-insecure-requests（对应 Node 版 initResponseHeaders 末尾逻辑）
-            if https_enabled && !result.is_empty() && !result.contains("upgrade-insecure-requests") {
-                result.push_str("; upgrade-insecure-requests");
-            }
             result
         }).collect();
         *vals = new_vals;
@@ -365,12 +361,6 @@ pub async fn init_response_headers(
     // 默认 access-control-allow-origin: *
     if !headers.contains_key("access-control-allow-origin") {
         headers.insert("access-control-allow-origin".to_string(), vec!["*".to_string()]);
-    }
-
-    // https 下追加 upgrade-insecure-requests
-    if https_enabled && scheme == "https" {
-        let entry = headers.entry("content-security-policy".to_string()).or_insert_with(Vec::new);
-        entry.push("upgrade-insecure-requests".to_string());
     }
 
     // x-frame-options: allowall

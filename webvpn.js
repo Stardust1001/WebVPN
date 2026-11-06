@@ -1390,12 +1390,6 @@ class WebVPN {
     if (!headers['access-control-allow-origin']) {
       headers['access-control-allow-origin'] = ['*']
     }
-    if (this.config.httpsEnabled && scheme === 'https') {
-      if (!headers['content-security-policy']) {
-        headers['content-security-policy'] = []
-      }
-      headers['content-security-policy'].push('upgrade-insecure-requests')
-    }
     headers['x-frame-options'] = ['allowall']
     if (!isMainSession && shareId) {
       const cookie = await sessionStore.getItem(shareId + '-cookie')
