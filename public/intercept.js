@@ -65,7 +65,7 @@
   const domUrls = []
   const blobs = {}
 
-  const interceptLog = webvpn.interceptLog
+  const debugLog = webvpn.debugLog
   const disableJump = webvpn.disableJump
   const confirmJump = webvpn.confirmJump
 
@@ -423,7 +423,7 @@
   const domLog = (node, funcName) => {
     const link = getNodeUrl(node)[0]
     if (link) {
-      console.log(
+      log(
         '%cDOM 操作 拦截 ' + funcName + ' : ' + node.nodeName.toLowerCase() + ' - ' + link,
         'color: #606666;background-color: yellow;padding: 5px 10px;'
       )
@@ -432,7 +432,7 @@
   }
 
   const srcLog = (tag, urlAttr, url) => {
-    console.log(
+    log(
       '%cDOM 操作 拦截 ' + tag + ' ' + urlAttr + ' : ' + url,
       'color: #606666;background-color: lime;padding: 5px 10px;'
     )
@@ -542,7 +542,7 @@
   window.EventSource = new Proxy(_EventSource, {
     construct (target, [url, configuration]) {
       url = transformUrl(url)
-      console.log('%cEventSource 请求 拦截 : ' + url, 'color: white;background-color: orange;padding: 5px 10px;')
+      log('%cEventSource 请求 拦截 : ' + url, 'color: white;background-color: orange;padding: 5px 10px;')
       return new _EventSource(url, configuration)
     }
   })
@@ -551,7 +551,7 @@
   const xhrOpen = XMLHttpRequest.prototype.open
   XMLHttpRequest.prototype.open = function (method, url, async = true, user, password) {
     const newUrl = transformUrl(url)
-    console.log('%cAJAX 请求 拦截 : ' + url, 'color: white;background-color: orange;padding: 5px 10px;')
+    log('%cAJAX 请求 拦截 : ' + url, 'color: white;background-color: orange;padding: 5px 10px;')
     ajaxUrls.push(url)
     return xhrOpen.bind(this)(method, newUrl, async, user, password)
   }
@@ -563,7 +563,7 @@
     const isInputUrl = typeof input === 'string'
     const url = isInputUrl ? input : input.url
     const newUrl = transformUrl(url)
-    console.log('%cfetch 请求 拦截 : ' + url, 'color: white;background-color: orange;padding: 5px 10px;')
+    log('%cfetch 请求 拦截 : ' + url, 'color: white;background-color: orange;padding: 5px 10px;')
     fetchUrls.push(url)
     if (isInputUrl) {
       input = newUrl
@@ -583,12 +583,12 @@
   const _WebSocket = window.WebSocket
   window.WebSocket = new Proxy(_WebSocket, {
     construct (target, props) {
-      console.log('%cWebSocket 拦截 : ' + props[0], 'color: white;background-color: orange;padding: 5px 10px;')
+      log('%cWebSocket 拦截 : ' + props[0], 'color: white;background-color: orange;padding: 5px 10px;')
       props[0] = transformUrl(props[0])
       return new _WebSocket(...props)
     },
     apply (target, thisArg, props) {
-      console.log('%cWebSocket 拦截 : ' + props[0], 'color: white;background-color: orange;padding: 5px 10px;')
+      log('%cWebSocket 拦截 : ' + props[0], 'color: white;background-color: orange;padding: 5px 10px;')
       props[0] = transformUrl(props[0])
       return new _WebSocket(...props)
     }
@@ -655,7 +655,7 @@
   const setAttribute = Element.prototype.setAttribute
   Element.prototype.setAttribute = function (attr, value, type) {
     if (type !== 'custom' && urlAttrs.includes(attr)) {
-      console.log(
+      log(
         '%cDOM 操作 拦截 setAttribute : ' + this.nodeName.toLowerCase() + ' - ' + attr + ' - ' + value,
         'color: #606666;background-color: lime;padding: 5px 10px;'
       )
@@ -667,7 +667,7 @@
   /* insertAdjacentHTML 拦截 */
   function insertAdjacentHTML_wrap (func) {
     return function (position, html) {
-      console.log(
+      log(
         '%cDOM 操作 拦截 insertAdjacentHTML : ' + html,
         'color: #606666;background-color: lime;padding: 5px 10px;'
       )
@@ -681,7 +681,7 @@
   /* insertAdjacentElement 拦截 */
   function insertAdjacentElement_wrap (func) {
     return function (position, node) {
-      console.log(
+      log(
         '%cDOM 操作 拦截 insertAdjacentElement : ',
         'color: #606666;background-color: lime;padding: 5px 10px;'
       )
@@ -695,7 +695,7 @@
   /* a 元素 click 拦截 */
   const aOnClick = HTMLAnchorElement.prototype.click
   HTMLAnchorElement.prototype.click = function () {
-    console.log(
+    log(
       '%cDOM History 操作 拦截 a click : ' + this.href,
       'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
     )
@@ -716,7 +716,7 @@
       return webvpn.target.hostname
     },
     set (value) {
-      console.log('%cset document.domain: ' + value, 'background-color: red; color: white; padding: 5px 10px;')
+      log('%cset document.domain: ' + value, 'background-color: red; color: white; padding: 5px 10px;')
     }
   })
 
@@ -755,7 +755,7 @@
   /* open 拦截 */
   const open = window.open
   window.open = function (url, name, specs, replace) {
-    console.log(
+    log(
       '%copen 拦截 : ' + url,
       'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
     )
@@ -769,7 +769,7 @@
   History.prototype.go = function (value) {
     // parseInt('100px')===100 会误判为数字索引；改用严格整数字符串判断
     if (!/^-?\d+$/.test(value + '')) {
-      console.log(
+      log(
         '%cHistory 操作 拦截 go : ' + value,
         'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
       )
@@ -781,7 +781,7 @@
 
   /* _navigate 拦截 */
   window.location._navigate = function (url) {
-    console.log(
+    log(
       '%c_navigate 拦截 : ' + url,
       'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
     )
@@ -794,7 +794,7 @@
 
   /* location _assign 拦截 */
   window.location._assign = function (url) {
-    console.log(
+    log(
       '%clocation 操作 拦截 _assign : ' + url,
       'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
     )
@@ -807,7 +807,7 @@
 
   /* location _replace 拦截 */
   window.location._replace = function (url) {
-    console.log(
+    log(
       '%clocation 操作 拦截 _replace : ' + url,
       'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
     )
@@ -860,7 +860,7 @@
           },
             set (value) {
               if (attr === 'href') {
-                console.log(
+                log(
                   '%c__location__ 拦截 href : ' + value,
                   'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
                 )
@@ -1019,7 +1019,7 @@
               obj.location = url
               return true
             }
-            console.log(
+            log(
               '%clocation 操作 拦截 location = : ' + value,
               'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
             )
@@ -1194,7 +1194,7 @@
     item[0].prototype.getAttribute = function (attr, type) {
       let value = getAttribute.bind(this)(attr)
       if (value && (value.startsWith('http') || value.startsWith('//')) && type !== 'custom' && item[2].includes(attr)) {
-        console.log(
+        log(
           '%cDOM 操作 拦截 getAttribute : ' + item[1] + ' - ' + attr + ' ' + value,
           'color: #606666;background-color: lime;padding: 5px 10px;'
         )
@@ -1207,7 +1207,7 @@
   /* Worker 创建拦截 */
   const _Worker = window.Worker
   window.Worker = function (url, options) {
-    console.log(
+    log(
       '%cnew 拦截 Worker : ' + url,
       'color: #606666;background-color: lime;padding: 5px 10px;'
     )
@@ -1228,7 +1228,7 @@
   if (window.ServiceWorkerContainer) {
     const register = window.ServiceWorkerContainer.prototype.register
     window.ServiceWorkerContainer.prototype.register = function (url, options) {
-      console.log(
+      log(
         '%cServiceWorkerContainer 操作 拦截 register : ' + url,
         'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
       )
@@ -1241,7 +1241,7 @@
   Array.from(['pushState', 'replaceState']).forEach((name) => {
     const origin = History.prototype[name]
     History.prototype[name] = function (state, title, url) {
-      console.log(
+      log(
         '%cHistory 操作 拦截 ' + name + ' : ' + url,
         'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
       )
@@ -1275,7 +1275,7 @@
     Object.defineProperty(item[0].prototype, item[2], {
       get () {
         const value = descriptor.get.call(this) || ''
-        console.log(
+        log(
           '%cDOM 操作 拦截 ' + item[1] + ' ' + item[2] + ' getter : ' + value,
           'color: #606666;background-color: lime;padding: 5px 10px;'
         )
@@ -1294,7 +1294,7 @@
   aUrlAttrs.forEach((attr) => {
     Object.defineProperty(HTMLAnchorElement.prototype, attr, {
       get () {
-        console.log(
+        log(
           '%cDOM 操作 拦截 a ' + attr + ' getter',
           'color: #606666;background-color: lime;padding: 5px 10px;'
         )
@@ -1333,7 +1333,7 @@
               const url = text.replace(reCssUrlStrip, '')
               return text.replace(url, () => transformUrl(url))
             })
-            console.log(
+            log(
               '%cstyle 操作 拦截 ' + property + ' : ' + value,
               'color: #606666;background-color: lime;padding: 5px 10px;'
             )
@@ -1355,7 +1355,7 @@
         const url = text.replace(reCssUrlStrip, '')
         return text.replace(url, () => transformUrl(url))
       })
-      hasUrl && console.log(
+      hasUrl && log(
         '%cstyle 操作 拦截 cssText : ' + value,
         'color: #606666;background-color: lime;padding: 5px 10px;'
       )
@@ -1370,7 +1370,7 @@
     for (const html of arguments) {
       htmls.push(transformHtml(html, document.body))
     }
-    console.log(
+    log(
       '%cDOM 操作 拦截 document.write : ' + htmls,
       'color: #606666;background-color: lightblue;padding: 5px 10px;'
     )
@@ -1384,7 +1384,7 @@
     for (const html of arguments) {
       htmls.push(transformHtml(html, document.body))
     }
-    console.log(
+    log(
       '%cDOM 操作 拦截 document.writeln : ' + htmls,
       'color: #606666;background-color: lightblue;padding: 5px 10px;'
     )
@@ -1409,7 +1409,7 @@
       html = (html || '').toString()
       // 拒绝清空整个文档的写入（如反调试脚本的惩罚逻辑），保护代理会话
       if (this === document.documentElement) {
-        console.log(
+        log(
           '%cDOM 操作 拦截 documentElement.innerHTML 清屏 : ' + (html.length > 100 ? (html.slice(0, 100) + '...') : html),
           'color: #606666;background-color: lightblue;padding: 5px 10px;'
         )
@@ -1417,7 +1417,7 @@
       }
       const self = this instanceof HTMLTemplateElement ? this.content : this
       const childs = html2dom(html, self)
-      console.log(
+      log(
         '%cDOM 操作 拦截 innerHTML : ' + (html.length > 100 ? (html.slice(0, 100) + '...') : html),
         'color: #606666;background-color: lightblue;padding: 5px 10px;'
       )
@@ -1441,7 +1441,7 @@
     set (html) {
       html = (html || '').toString()
       const childs = html2dom(html, this)
-      console.log(
+      log(
         '%cDOM 操作 拦截 outerHTML : ' + (html.length > 100 ? (html.slice(0, 100) + '...') : html),
         'color: #606666;background-color: lightblue;padding: 5px 10px;'
       )
@@ -1594,27 +1594,23 @@
     return url
   }
 
-  const logger = console.log
-  console.log = function log () {
-    const isCustom = arguments[0] === 'custom'
-    const ignore = isCustom || typeof arguments[0] !== 'string'
-
-    let title = ''
+  // 独立日志函数：不覆盖目标网站的 console.log，避免污染目标站输出
+  // %c 形式按标题归档进 webvpn.logs（plugins.js 媒体下载依赖），
+  // 仅当 debugLog（config 开关）开启时才输出到浏览器控制台
+  const logger = console.log.bind(console)
+  const log = function () {
+    let title = arguments[0].split(':')[0]
+    title = title.indexOf('拦截') < 0 ? '' : title
     let shouldLog = true
-    if (!ignore && arguments.length === 2) {
-      title = arguments[0].split(':')[0]
-      title = title.indexOf('拦截') < 0 ? '' : title
-      if (title) {
-        shouldLog = logTypes.some((type) => title.indexOf(type) >= 0)
-      }
+    if (title) {
+      shouldLog = logTypes.some((type) => title.indexOf(type) >= 0)
     }
-    // 仅在需要时归档日志：interceptLog 关闭且无插件消费 logs 时，跳过 groupLogs 避免无谓开销与内存增长
-    if (title && (interceptLog || webvpn.medias || webvpn.download)) {
+    // 仅在需要时归档日志：debugLog 关闭且无插件消费 logs 时，跳过 groupLogs 避免无谓开销与内存增长
+    if (title && (debugLog || webvpn.medias || webvpn.download)) {
       groupLogs(title, arguments)
-      if (!interceptLog || !shouldLog) return
     }
 
-    logger.apply(console, arguments)
+    if (debugLog && shouldLog) logger.apply(console, arguments)
   }
 
   const logs = webvpn.logs = {
@@ -1658,7 +1654,7 @@
   Object.assign(webvpn, {
     transformUrl,
     decodeUrl,
-    log: logger,
+    log,
     ajaxUrls,
     fetchUrls,
     domUrls,

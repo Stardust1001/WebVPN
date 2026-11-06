@@ -663,8 +663,6 @@ async fn upstream_request(
     // 本分支是改写候选响应（proxyRoute 将对其做 replaceUrls + 注入/包装）：
     // 改写体依赖服务端代码版本，上游 etag/last-modified 对它毫无意义。若原样透传，
     // 浏览器会把旧版改写结果按上游验证器缓存，之后每次条件请求都命中
-    // 304，服务端更新后旧注入代码仍被执行（feature.html "Illegal invocation /
-    // newHandler" 报错的根因）。故剥离验证器并强制 no-cache，使浏览器每次
     // 导航都取全量最新改写。noTransform / JSONP / JSON / 3xx 分支不经此处，缓存语义不变。
     for key in ["etag", "last-modified", "expires"] {
         headers.remove(key);

@@ -1566,7 +1566,7 @@ pub async fn append_script(
     let https_enabled = config.https_enabled;
     let http_vpn_domain = &config.http_vpn_domain;
     let https_vpn_domain = &config.https_vpn_domain;
-    let intercept_log = config.intercept_log;
+    let debug_log = config.debug_log;
     let enable_plugins = config.enable_plugins;
     let debug = config.debug;
     let disable_devtools = config.disable_devtools;
@@ -1629,7 +1629,7 @@ pub async fn append_script(
         httpVpnDomain: {},
         httpsVpnDomain: {},
         base: {},
-        interceptLog: {},
+        debugLog: {},
         disableJump: {},
         confirmJump: {},
         isMainSession: {},
@@ -1646,7 +1646,7 @@ pub async fn append_script(
     "#,
         site_url_json, protocol_json, source_url_json, page_url_json, hostname_json,
         http_vpn_json, https_vpn_json, base_json,
-        intercept_log, disable_jump, confirm_jump, is_main_session, share_id_json,
+        debug_log, disable_jump, confirm_jump, is_main_session, share_id_json,
         config.rewrite_this,
         convert_domains_json,
         custom_code,

@@ -1166,7 +1166,7 @@ class WebVPN {
   async appendScript (ctx, res) {
     const {
       httpsEnabled, httpVpnDomain, httpsVpnDomain,
-      interceptLog, enablePlugins, debug, disableDevtools
+      enablePlugins, debug, disableDevtools, debugLog
     } = this.config
     const { disableJump = this.config.disableJump, confirmJump = this.config.confirmJump } = ctx.meta
     const { base, scheme, target, isMainSession, shareId, customCode } = ctx.meta
@@ -1185,7 +1185,7 @@ class WebVPN {
         httpVpnDomain: ${JSON.stringify(httpVpnDomain)},
         httpsVpnDomain: ${JSON.stringify(httpsVpnDomain)},
         base: ${JSON.stringify(base)},
-        interceptLog: ${interceptLog},
+        debugLog: ${debugLog},
         disableJump: ${disableJump},
         confirmJump: ${confirmJump},
         isMainSession: ${isMainSession},

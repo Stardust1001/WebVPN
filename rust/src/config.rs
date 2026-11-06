@@ -31,8 +31,8 @@ pub struct Config {
     pub public_dir: String,
     /// ssl 目录路径（证书目录，默认 ../ssl 因为 rust 代码在子目录）
     pub ssl_dir: String,
-    /// 是否在浏览器控制台打印拦截操作的日志
-    pub intercept_log: bool,
+    /// 是否把 intercept.js 内部 log 日志输出到浏览器控制台（默认关闭，避免污染目标网站的 console）
+    pub debug_log: bool,
     /// 是否禁止跳转
     pub disable_jump: bool,
     /// 跳转前是否询问用户
@@ -78,7 +78,7 @@ impl Default for Config {
             sessions_dir: "sessions".to_string(),
             public_dir: "../public".to_string(),
             ssl_dir: "../ssl".to_string(),
-            intercept_log: false,
+            debug_log: false,
             disable_jump: false,
             confirm_jump: false,
             disable_source_map: true,
@@ -164,7 +164,7 @@ struct ConfigToml {
     sessions_dir: Option<String>,
     public_dir: Option<String>,
     ssl_dir: Option<String>,
-    intercept_log: Option<bool>,
+    debug_log: Option<bool>,
     disable_jump: Option<bool>,
     confirm_jump: Option<bool>,
     disable_source_map: Option<bool>,
@@ -190,7 +190,7 @@ impl ConfigToml {
         if let Some(v) = &self.sessions_dir { c.sessions_dir = v.clone(); }
         if let Some(v) = &self.public_dir { c.public_dir = v.clone(); }
         if let Some(v) = &self.ssl_dir { c.ssl_dir = v.clone(); }
-        if let Some(v) = self.intercept_log { c.intercept_log = v; }
+        if let Some(v) = self.debug_log { c.debug_log = v; }
         if let Some(v) = self.disable_jump { c.disable_jump = v; }
         if let Some(v) = self.confirm_jump { c.confirm_jump = v; }
         if let Some(v) = self.disable_source_map { c.disable_source_map = v; }

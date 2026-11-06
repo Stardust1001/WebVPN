@@ -23,8 +23,8 @@ sessions_dir = "sessions"
 public_dir = "../public"
 # SSL 证书目录
 ssl_dir = "../ssl"
-# 是否在浏览器控制台打印拦截操作日志
-intercept_log = false
+# 是否把 intercept.js 内部 log 日志输出到浏览器控制台（默认关闭，避免污染目标网站的 console）
+debug_log = false
 # 是否禁止一切跳转
 disable_jump = false
 # 是否在跳转前询问用户

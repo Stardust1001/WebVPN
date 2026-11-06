@@ -22,8 +22,8 @@ export default {
   publicDir: 'public',
   // SSL 证书文件夹地址
   sslDir: 'ssl',
-  // 是否在浏览器控制台打印拦截操作的日志
-  interceptLog: false,
+  // 是否把 intercept.js 内部 log 日志输出到浏览器控制台（默认关闭，避免污染目标网站的 console）
+  debugLog: false,
   // 是否禁止跳转
   disableJump: false,
   // 是否在页面跳转前询问用户，由用户决定是否允许网页跳转
