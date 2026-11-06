@@ -313,9 +313,8 @@
   }
 
   const decodeUrlInHtml = (html) => {
-    /* TODO 先不管 srcset data codebase 之类的 */
     const urls = new Set()
-    Array.from(html.matchAll(/(href|src|poster|action)="([^"]*)"/g)).forEach(match => {
+    Array.from(html.matchAll(/(href|src|poster|action|data|codebase)="([^"]*)"/g)).forEach(match => {
       if (match[2].includes(httpVpnDomain) || match[2].includes(httpsVpnDomain)) urls.add(match[2])
     })
     if (urls.size) {
@@ -323,6 +322,21 @@
         html = html.replaceAll(url, () => decodeUrl(url))
       })
     }
+    html = html.replace(/(srcset|archive)="([^"]*)"/g, (m, attr, value) => {
+      let decoded
+      if (attr === 'srcset') {
+        decoded = value.split(/(\n|,|\s+)/g).map(part => {
+          if (!part || /^\d+(x|w)$/.test(part.trim()) || /^(\n|,|\s+)$/.test(part)) return part
+          return (part.trim().includes(httpVpnDomain) || part.trim().includes(httpsVpnDomain)) ? (decodeUrl(part.trim()) || part) : part
+        }).join('')
+      } else {
+        decoded = value.split(/(\s+)/g).map(part => {
+          if (/^\s*$/.test(part)) return part
+          return (part.includes(httpVpnDomain) || part.includes(httpsVpnDomain)) ? (decodeUrl(part) || part) : part
+        }).join('')
+      }
+      return `${attr}="${decoded}"`
+    })
     return html
   }
 
@@ -740,9 +754,9 @@
     Object.defineProperty(HTMLDocument.prototype, 'cookie', { configurable: false })
   }
 
-  /* TODO TODO createTask 有问题？？？ */
-  const _createTask = console.createTask
-  delete console.createTask
+  /* console.createTask 仅在 DevTools 打开时存在，导致网站开/关控制台行为不一致；
+    统一抹平为 undefined，保证异步堆栈归属逻辑走同一分支。 */
+  delete Console.prototype.createTask
 
   /* document.referrer */
   const _referrer = decodeUrl(document.referrer.includes(webvpn.siteUrl) ? (location.origin + '/') : document.referrer)
