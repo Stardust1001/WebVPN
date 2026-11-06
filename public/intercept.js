@@ -2,7 +2,7 @@
   if (window.webvpn.transformUrl) return
 
   const logTypes = ['AJAX', 'fetch', 'History']
-  const ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:']
+  const ignoredPrefixes = ['mailto:', 'sms:', 'tel:', 'javascript:', 'data:', 'blob:', 'about:']
   const globalCons = ['window', 'document', 'globalThis', 'parent', 'self', 'top']
   const locationAttrs = ['hash', 'host', 'hostname', 'href', 'origin', 'pathname', 'port', 'protocol', 'search']
   /* 本脚本包装过、经 document 原型链可达的方法：快照恢复（heal）必须跳过它们，
@@ -45,6 +45,9 @@
       currentHref: {
         get () {
           let url = decodeUrl(location.href)
+          /* about:srcdoc / about:blank 等 iframe 场景没有可代理的 href，
+             回退到注入时提供的 pageUrl（即父页面的 vpn URL） */
+          if (!/^https?:/.test(url)) url = webvpn.pageUrl
           if (!url.startsWith(webvpn.protocol)) {
             url = url.replace(webvpn.protocol === 'https:' ? 'http:' : 'https:', webvpn.protocol)
           }
@@ -424,6 +427,8 @@
   }
 
   const urljoin = (url, path) => {
+    /* about:srcdoc / about:blank 等场景无 base URL，回退到 webvpn.pageUrl */
+    if (!url || !/^https?:/.test(url)) url = webvpn.pageUrl
     const { origin, pathname } = new URL(url)
     if (path[0] === '/') return origin + path
     if (url.endsWith('/')) return url + path
@@ -1541,6 +1546,49 @@
       }
     }
   })
+
+  const srcdocDescriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'srcdoc')
+  const injectSrcdoc = (value) => {
+    if (typeof value === 'string' && value && !value.includes('self.webvpn')) {
+      // <\/script> 转义：本文件被 JSON 序列化后嵌在主页面注入块的脚本标签里，
+      // 字面闭合标签会提前截断外层块。运行时输出前拼接还原为真实标签。
+      const config = {
+        siteUrl: webvpn.siteUrl,
+        protocol: webvpn.protocol,
+        sourceUrl: webvpn.sourceUrl,
+        pageUrl: webvpn.pageUrl,
+        hostname: webvpn.hostname,
+        httpVpnDomain: webvpn.httpVpnDomain,
+        httpsVpnDomain: webvpn.httpsVpnDomain,
+        base: webvpn.base,
+        debugLog: webvpn.debugLog,
+        disableJump: webvpn.disableJump,
+        confirmJump: webvpn.confirmJump,
+        isMainSession: false,
+        shareId: '',
+        rewriteThis: !!webvpn.rewriteThis
+      }
+      value = '<scr' + 'ipt>self.webvpn = ' + JSON.stringify(config) + ';'
+        + 'new Function(' + JSON.stringify(webvpn.convertDomainsCode || '') + ')();'
+        + 'eval(' + JSON.stringify(webvpn.intercept_code) + ')<\/scr' + 'ipt>' + value
+    }
+    return value
+  }
+  Object.defineProperty(HTMLIFrameElement.prototype, 'srcdoc', {
+    get () {
+      return srcdocDescriptor.get.call(this)
+    },
+    set (value) {
+      return srcdocDescriptor.set.call(this, injectSrcdoc(value))
+    }
+  })
+  const setAttrDescriptor = Element.prototype.setAttribute
+  Element.prototype.setAttribute = function (name, value) {
+    if (String(name).toLowerCase() === 'srcdoc') {
+      value = injectSrcdoc(value)
+    }
+    return setAttrDescriptor.call(this, name, value)
+  }
 
   const parser = new DOMParser()
   const html2dom = (html, root) => {

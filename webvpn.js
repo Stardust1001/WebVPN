@@ -1199,6 +1199,7 @@ class WebVPN {
       };
       const convertDomainsCode = ${JSON.stringify(this.convertDomainsCode)}
       ;new Function(convertDomainsCode)()
+      webvpn.convertDomainsCode = convertDomainsCode
       ${customCode || ''}
       webvpn.intercept_code = ${JSON.stringify(this.jsInterceptCode.toString())}
       eval(webvpn.intercept_code)

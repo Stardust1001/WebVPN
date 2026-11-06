@@ -1638,6 +1638,7 @@ pub async fn append_script(
       }};
       const convertDomainsCode = {}
       ;new Function(convertDomainsCode)()
+      webvpn.convertDomainsCode = convertDomainsCode
       {}
       webvpn.intercept_code = {}
       eval(webvpn.intercept_code)
