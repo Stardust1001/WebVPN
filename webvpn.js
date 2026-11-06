@@ -183,8 +183,8 @@ class WebVPN {
       'video': 'video/mp4, application/vnd.apple.mpegurl',
       'audio': 'audio/webm, audio/mpeg',
       'pdf-office': 'application/pdf',
-      'font': 'font/woff, font/woff2, font/ttf, application/vnd.ms-fontobject, application/x-font-ttf',
-      'stream': 'application/octet-stream, application/protobuffer',
+      'font': 'font/woff, font/woff2, font/ttf, font/otf, font/collection, application/vnd.ms-fontobject, application/x-font-ttf, application/font-woff, application/x-font-woff',
+      'stream': 'application/octet-stream, application/protobuffer, application/grpc, application/x-protobuf, application/zip, application/x-gzip, application/x-7z-compressed, application/x-rar-compressed, application/msword, application/vnd.openxmlformats-officedocument, application/rtf, application/x-shockwave-flash',
       'event-stream': 'text/event-stream'
     }
     this.jsKeywords = [
@@ -1420,8 +1420,14 @@ class WebVPN {
         return contentType.split(';')[0].indexOf(part) >= 0
       })
     })
-    if (!mime && contentType.startsWith('image/')) {
-      return 'image'
+    if (!mime) {
+      // 前缀兜底：URL 无扩展名（扩展名在 query 里）时，靠 content-type 前缀识别二进制类型，
+      // 避免二进制 body 走文本路径被 UTF-8 替换字符损坏
+      if (contentType.startsWith('image/')) return 'image'
+      if (contentType.startsWith('video/')) return 'video'
+      if (contentType.startsWith('audio/')) return 'audio'
+      if (contentType.startsWith('font/')) return 'font'
+      if (contentType === 'application/wasm') return 'wasm'
     }
     return mime
   }

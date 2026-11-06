@@ -44,8 +44,8 @@ pub fn mime_dict(mime: &str) -> Option<&'static str> {
         "video" => Some("video/mp4, application/vnd.apple.mpegurl"),
         "audio" => Some("audio/webm, audio/mpeg"),
         "pdf-office" => Some("application/pdf"),
-        "font" => Some("font/woff, font/woff2, font/ttf, application/vnd.ms-fontobject, application/x-font-ttf"),
-        "stream" => Some("application/octet-stream, application/protobuffer"),
+        "font" => Some("font/woff, font/woff2, font/ttf, font/otf, font/collection, application/vnd.ms-fontobject, application/x-font-ttf, application/font-woff, application/x-font-woff"),
+        "stream" => Some("application/octet-stream, application/protobuffer, application/grpc, application/x-protobuf, application/zip, application/x-gzip, application/x-7z-compressed, application/x-rar-compressed, application/msword, application/vnd.openxmlformats-officedocument, application/rtf, application/x-shockwave-flash"),
         "event-stream" => Some("text/event-stream"),
         _ => None,
     }
@@ -97,9 +97,22 @@ pub fn get_mime_by_response_headers(content_type: &str) -> Option<String> {
             }
         }
     }
-    // !mime && contentType.startsWith('image/') -> image
+    // !mime 时按 content-type 前缀兜底：URL 无扩展名（扩展名在 query 里）时，
+    // 靠前缀识别二进制类型，避免二进制 body 走文本路径被 UTF-8 替换字符损坏
     if ct.starts_with("image/") {
         return Some("image".to_string());
+    }
+    if ct.starts_with("video/") {
+        return Some("video".to_string());
+    }
+    if ct.starts_with("audio/") {
+        return Some("audio".to_string());
+    }
+    if ct.starts_with("font/") {
+        return Some("font".to_string());
+    }
+    if ct == "application/wasm" {
+        return Some("wasm".to_string());
     }
     None
 }
