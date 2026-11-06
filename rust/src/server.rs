@@ -861,7 +861,10 @@ fn headermap_to_hashmap(headers: &HeaderMap) -> HashMap<String, Vec<String>> {
     let mut map: HashMap<String, Vec<String>> = HashMap::new();
     for (k, v) in headers.iter() {
         let key = k.as_str().to_lowercase();
-        let val = v.to_str().unwrap_or("").to_string();
+        let val = match v.to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => v.as_bytes().iter().map(|&b| b as char).collect::<String>(),
+        };
         map.entry(key).or_default().push(val);
     }
     map
@@ -873,7 +876,14 @@ fn headermap_from(headers: &HashMap<String, Vec<String>>) -> HeaderMap {
     for (k, vals) in headers {
         if let Ok(name) = HeaderName::from_bytes(k.as_bytes()) {
             for v in vals {
-                if let Ok(val) = HeaderValue::from_str(v) {
+                let is_latin1 = v.chars().any(|c| c as u32 > 0x7f);
+                let val = if is_latin1 {
+                    let bytes: Vec<u8> = v.chars().map(|c| c as u8).collect();
+                    HeaderValue::from_bytes(&bytes)
+                } else {
+                    HeaderValue::from_str(v)
+                };
+                if let Ok(val) = val {
                     hm.append(&name, val);
                 }
             }
