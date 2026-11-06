@@ -687,7 +687,8 @@ class WebVPN {
       res = await this.request(ctx)
     } catch (err) {
       console.log(chalk.red('proxyRoute request error: ' + err.toString()))
-      try { ctx.res.writeHead(502); ctx.res.end('Bad Gateway') } catch {}
+      // 透明代理语义：上游无响应，直接断开连接（不伪造 502）
+      ctx.res.socket && ctx.res.socket.destroy()
       ctx.meta.done = true
       return
     }
@@ -875,7 +876,8 @@ class WebVPN {
         const cleanup = () => { res.destroy(); req.destroy(); finish() }
         res.on('end', finish)
         res.on('error', () => {
-          try { ctx.res.writeHead(500); ctx.res.end('Internal Server Error') } catch {}
+          // 透明代理语义：上游响应流中断，直接断开连接（不伪造 500）
+          ctx.res.socket && ctx.res.socket.destroy()
           finish()
         })
         ctx.res.on('error', cleanup)
@@ -884,12 +886,14 @@ class WebVPN {
       req.on('error', err => {
         const msg = 'pipe request failed: ' + ctx.meta.url + ' - ' + err.toString()
         console.log(chalk.red(msg))
-        try { ctx.res.writeHead(502); ctx.res.end('Bad Gateway') } catch {}
+        // 透明代理语义：上游连不上，直接断开连接（不伪造 502）
+        ctx.res.socket && ctx.res.socket.destroy()
         finish()
       })
       req.setTimeout(this.config.requestTimeout || 60000, () => {
         req.destroy()
-        try { ctx.res.writeHead(504); ctx.res.end('Gateway Timeout') } catch {}
+        // 透明代理语义：上游超时无响应，直接断开连接（不伪造 504）
+        ctx.res.socket && ctx.res.socket.destroy()
         finish()
       })
       req.end()
@@ -926,12 +930,13 @@ class WebVPN {
       const msg = 'request failed: ' + ctx.meta.url + '\n' + err.toString()
       console.log(chalk.red(msg) + '\n')
       if (err.name === 'AbortError') {
-        try { ctx.res.writeHead(504); ctx.res.end('Gateway Timeout') } catch {}
+        // 透明代理语义：上游超时/无响应，直接断开连接（不伪造 504）
       } else {
-        try { ctx.res.writeHead(502); ctx.res.end('Bad Gateway') } catch {}
+        // 透明代理语义：上游连不上，直接断开连接（不伪造 502）
       }
+      ctx.res.socket && ctx.res.socket.destroy()
       ctx.meta.done = true
-      return { status: 502, data: '', headers: {} }
+      return true
     }
   }
 

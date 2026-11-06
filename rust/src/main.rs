@@ -237,6 +237,10 @@ async fn root_handler(
                 .unwrap_or_else(|_| (StatusCode::INTERNAL_SERVER_ERROR, "build response failed").into_response())
         }
         Ok(None) => (StatusCode::NOT_FOUND, "not found").into_response(),
+        Err(e) if e == crate::server::DROP_CONNECTION => {
+            log::error!("upstream unreachable, dropping connection: {}", full_url);
+            panic!("drop connection");
+        }
         Err(e) => {
             log::error!("proxy error: {}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, e).into_response()

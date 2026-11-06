@@ -99,6 +99,9 @@ pub enum UpstreamError {
     BadGateway(String),
 }
 
+/// 特殊错误标记：直接断开连接（不返回任何 HTTP 响应），透明代理语义
+pub const DROP_CONNECTION: &str = "__drop_connection__";
+
 impl fmt::Display for UpstreamError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -243,19 +246,14 @@ pub async fn proxy_route(
             Ok(output) => Ok(Some(output)),
             Err(UpstreamError::Timeout) => {
                 log::error!("pipe timeout: {}", meta.url);
-                Ok(Some(ProxyOutput {
-                    status: StatusCode::GATEWAY_TIMEOUT,
-                    headers: HeaderMap::new(),
-                    body: b"Gateway Timeout".to_vec(),
-                }))
+                // 透明代理语义：上游无响应，直接断开连接（不伪造 504）
+                Err(DROP_CONNECTION.to_string())
             }
             Err(UpstreamError::BadGateway(e)) => {
                 log::error!("pipe failed: {} \n{}", meta.url, e);
-                Ok(Some(ProxyOutput {
-                    status: StatusCode::BAD_GATEWAY,
-                    headers: HeaderMap::new(),
-                    body: e.into_bytes(),
-                }))
+                // 透明代理语义：上游连不上就直接断开连接（不伪造 502/404 响应），
+                // 让浏览器看到网络层失败（如 HTTPS-Upgrades 可正常回退 http）
+                Err(DROP_CONNECTION.to_string())
             }
         };
     }
@@ -265,19 +263,14 @@ pub async fn proxy_route(
         Ok(r) => r,
         Err(UpstreamError::Timeout) => {
             log::error!("request timeout: {}", meta.url);
-            return Ok(Some(ProxyOutput {
-                status: StatusCode::GATEWAY_TIMEOUT,
-                headers: HeaderMap::new(),
-                body: b"Gateway Timeout".to_vec(),
-            }));
+            // 透明代理语义：上游无响应，直接断开连接（不伪造 504）
+            return Err(DROP_CONNECTION.to_string());
         }
         Err(UpstreamError::BadGateway(e)) => {
             log::error!("request failed: {} \n{}", meta.url, e);
-            return Ok(Some(ProxyOutput {
-                status: StatusCode::BAD_GATEWAY,
-                headers: HeaderMap::new(),
-                body: e.into_bytes(),
-            }));
+            // 透明代理语义：上游连不上就直接断开连接（不伪造 502/404 响应），
+            // 让浏览器看到网络层失败（如 HTTPS-Upgrades 可正常回退 http）
+            return Err(DROP_CONNECTION.to_string());
         }
     };
 
@@ -571,7 +564,7 @@ async fn upstream_request(
         }
     }
     if method == Method::POST || method == Method::PUT || method == Method::PATCH {
-        builder = builder.body(body);
+        builder = builder.body(body.clone());
     }
 
     let resp = send_upstream(builder, method).await?;
