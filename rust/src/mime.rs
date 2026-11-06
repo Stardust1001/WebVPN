@@ -44,6 +44,7 @@ pub fn mime_dict(mime: &str) -> Option<&'static str> {
         "video" => Some("video/mp4, application/vnd.apple.mpegurl"),
         "audio" => Some("audio/webm, audio/mpeg"),
         "pdf-office" => Some("application/pdf"),
+        "font" => Some("font/woff, font/woff2, font/ttf, application/vnd.ms-fontobject, application/x-font-ttf"),
         "stream" => Some("application/octet-stream, application/protobuffer"),
         "event-stream" => Some("text/event-stream"),
         _ => None,
@@ -83,7 +84,7 @@ pub fn get_mime_by_response_headers(content_type: &str) -> Option<String> {
     let ct = content_type.split(';').next().unwrap_or("").trim();
     // 遍历 mimeDict 找匹配
     let all_mimes = [
-        "html", "text", "js", "css", "image", "json", "video", "audio", "pdf-office", "stream", "event-stream",
+        "html", "text", "js", "css", "image", "json", "video", "audio", "pdf-office", "stream", "event-stream", "font",
     ];
     for mime in all_mimes.iter() {
         if let Some(parts) = mime_dict(mime) {

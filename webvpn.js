@@ -183,6 +183,7 @@ class WebVPN {
       'video': 'video/mp4, application/vnd.apple.mpegurl',
       'audio': 'audio/webm, audio/mpeg',
       'pdf-office': 'application/pdf',
+      'font': 'font/woff, font/woff2, font/ttf, application/vnd.ms-fontobject, application/x-font-ttf',
       'stream': 'application/octet-stream, application/protobuffer',
       'event-stream': 'text/event-stream'
     }
