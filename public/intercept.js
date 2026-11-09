@@ -479,9 +479,8 @@
      旧模式：with(__self__.__context__) 包裹 + bind(__context__)，与原版完全一致。 */
   const _Function = window.Function
   const functionProxyGet = (target, prop, receiver) => {
-    if (prop === 'toString' && receiver !== target) {
-      const v = Reflect.get(target, prop, target)
-      return typeof v === 'function' ? v.bind(target) : v
+    if (prop === 'toString') {
+      return Reflect.get(target, prop, target)
     }
     return Reflect.get(target, prop, receiver)
   }
@@ -510,6 +509,32 @@
       }
     })
   } else {
+    const contextExcluding = (names) => new Proxy(__self__.__context__, {
+      has (target, prop) {
+        return !names.includes(prop) && (prop in target || prop in self)
+      },
+      get (target, prop) {
+        return prop in target ? target[prop] : self[prop]
+      },
+      get (target, prop) {
+        return prop in target ? target[prop] : self[prop]
+      },
+      set (target, prop, value) {
+        if (prop === 'location' && isBlankNav(value)) return true
+        self[prop] = value
+        return true
+      }
+    })
+    const wrapCode = (code, props) => {
+      const argNames = props.slice(0, -1).map(name => String(name)).filter(name => /^[A-Za-z_$][\w$]*$/.test(name))
+      if (!argNames.length) return `with (__self__.__context__) { ${code || ''} }`
+      try { __self__.__context__.__contextExcluding__ = contextExcluding } catch {}
+      const excluding = '__context__.__contextExcluding__(' + JSON.stringify(argNames) + ')'
+      const wrapped = `with (__self__.__context__) { ${code || ''} }`
+        .replace('__context__', excluding)
+        .replace(/with \((?:self|window)\.__context_proxy__\) \{/g, 'with (self.__context__.' + excluding.replace('__context__.', '') + ') {')
+      return wrapped
+    }
     window.Function = new Proxy(_Function, {
       get: functionProxyGet,
       construct (target, props) {
@@ -520,7 +545,7 @@
           if (isWithThis) {
             props[props.length - 1] = code.replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(this === self ? __self__ : this)')
           } else {
-            props[props.length - 1] = `with (__self__.__context__) { ${code || ''} }`
+            props[props.length - 1] = wrapCode(code || '', props)
           }
         }
         const func = new _Function(...props)
@@ -534,7 +559,7 @@
           if (isWithThis) {
             props[props.length - 1] = code.replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(this === self ? __self__ : this)')
           } else {
-            props[props.length - 1] = `with (__self__.__context__) { ${code || ''} }`
+            props[props.length - 1] = wrapCode(code || '', props)
           }
         }
         const func = new _Function(...props)
@@ -1106,7 +1131,6 @@
         return prop in target ? target[prop] : win[prop]
       },
       set (target, prop, value) {
-        // with 作用域内的 location = 'xxx' 会落到 win.location 触发立即导航，同样拦截 about:blank
         if (prop === 'location' && isBlankNav(value)) return true
         win[prop] = value
         return true
