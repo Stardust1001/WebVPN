@@ -1205,31 +1205,32 @@ class WebVPN {
       webvpn.intercept_code = ${JSON.stringify(this.jsInterceptCode.toString())}
       eval(webvpn.intercept_code)
       webvpn.worker_wrapper_code = convertDomainsCode + ${JSON.stringify('\n' + this.jsWorkerContextCode.replace('#siteUrl#', siteUrl) + '\n' + this.jsScopePrefixCode + '\n  #CODE#\n}\n' + this.jsScopeSuffixCode + '\n')}
+      document.currentScript && document.currentScript.remove()
     </script>
     ${
       enablePlugins
       ?
-      `<script src="${prefix}/public/plugins.js"></script>`
+      `<script src="${prefix}/public/plugins.js" onload="this.remove()"></script>`
       : ''
     }
     ${
       debug && !disableDevtools
       ? `
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/vConsole/3.15.1/vconsole.min.js"></script>
-        <script>new VConsole()</script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/vConsole/3.15.1/vconsole.min.js" onload="this.remove()"></script>
+        <script>new VConsole(); document.currentScript && document.currentScript.remove()</script>
       `
       : ''
     }
     ${
       disableDevtools
       ?
-      `<script src="${prefix}/public/disable-devtools.js"></script>`
+      `<script src="${prefix}/public/disable-devtools.js" onload="this.remove()"></script>`
       : ''
     }
     ${
       isMainSession
       ?
-      `<script src="${prefix}/public/share-sessions.js"></script>`
+      `<script src="${prefix}/public/share-sessions.js" onload="this.remove()"></script>`
       : ''
     }
     ${
@@ -1248,13 +1249,10 @@ class WebVPN {
             for (let key in local) localStorage[key] = local[key]
           }
         } catch (e) { console.warn('webvpn session restore failed:', e) }
+        document.currentScript && document.currentScript.remove()
       </script>`
       : ''
     }
-    <script>
-      const ss = Array.from(document.querySelectorAll('script'));
-      ss.forEach(script => script.remove());
-    </script>
     `
     const hasDoctype = /^\s*?\<\!DOCTYPE html\>/i.test(res.data)
     return (hasDoctype ? '<!DOCTYPE html>\n' : '') + code + data

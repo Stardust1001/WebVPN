@@ -1643,6 +1643,7 @@ pub async fn append_script(
       webvpn.intercept_code = {}
       eval(webvpn.intercept_code)
       webvpn.worker_wrapper_code = convertDomainsCode + {}
+      document.currentScript && document.currentScript.remove()
     </script>
     "#,
         site_url_json, protocol_json, source_url_json, page_url_json, hostname_json,
@@ -1656,16 +1657,16 @@ pub async fn append_script(
     );
 
     if enable_plugins {
-        code.push_str(&format!("<script src=\"{}/public/plugins.js\"></script>\n", prefix));
+        code.push_str(&format!("<script src=\"{}/public/plugins.js\" onload=\"this.remove()\"></script>\n", prefix));
     }
     if debug && !disable_devtools {
-        code.push_str("<script src=\"https://cdnjs.cloudflare.com/ajax/libs/vConsole/3.15.1/vconsole.min.js\"></script>\n<script>new VConsole()</script>\n");
+        code.push_str("<script src=\"https://cdnjs.cloudflare.com/ajax/libs/vConsole/3.15.1/vconsole.min.js\" onload=\"this.remove()\"></script>\n<script>new VConsole(); document.currentScript && document.currentScript.remove()</script>\n");
     }
     if disable_devtools {
-        code.push_str(&format!("<script src=\"{}/public/disable-devtools.js\"></script>\n", prefix));
+        code.push_str(&format!("<script src=\"{}/public/disable-devtools.js\" onload=\"this.remove()\"></script>\n", prefix));
     }
     if is_main_session {
-        code.push_str(&format!("<script src=\"{}/public/share-sessions.js\"></script>\n", prefix));
+        code.push_str(&format!("<script src=\"{}/public/share-sessions.js\" onload=\"this.remove()\"></script>\n", prefix));
     }
     if !is_main_session && !share_id.is_empty() {
         let client_cache = session_store.get_item(&format!("{}-clientCache", share_id)).await.unwrap_or_else(|| "{}".to_string());
@@ -1688,11 +1689,11 @@ pub async fn append_script(
             for (let key in local) localStorage[key] = local[key]
           }}
         }} catch (e) {{ console.warn('webvpn session restore failed:', e) }}
+        document.currentScript && document.currentScript.remove()
       </script>"#,
             client_cache_json
         ));
     }
-    code.push_str("<script>\n      const ss = Array.from(document.querySelectorAll('script'));\n      ss.forEach(script => script.remove());\n    </script>\n");
 
     let has_doctype = DOCTYPE_RE.is_match(data);
     let _ = codec;
