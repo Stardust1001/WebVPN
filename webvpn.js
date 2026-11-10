@@ -1196,6 +1196,7 @@ class WebVPN {
         confirmJump: ${confirmJump},
         isMainSession: ${isMainSession},
         shareId: ${JSON.stringify(shareId)},
+        rewriteThis: ${this.rewriteThis},
       };
       const convertDomainsCode = ${JSON.stringify(this.convertDomainsCode)}
       ;new Function(convertDomainsCode)()

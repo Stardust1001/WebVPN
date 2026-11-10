@@ -220,6 +220,17 @@
     }
   }
 
+  // script type="module" 转换：运行时动态注入的 module script 服务端改不到
+  // （customResponse 只处理静态 HTML 文本），而旧模式（rewriteThis=false）服务端包裹的
+  // js 含 with 语句（严格模式禁用），module 的强制严格模式下直接 SyntaxError，
+  // 需转为普通脚本执行（与服务端 customResponse 的 module→mod 语义对齐）。
+  // AST 模式（rewriteThis=true）服务端不用 with 包裹、保留 ESM，不转换。
+  // 非 module 值原样返回。
+  const convertScriptModuleType = (value) => {
+    if (webvpn.rewriteThis || !/^(?:no)?module$/i.test(value || '')) return value
+    return String(value).toLowerCase() === 'module' ? 'mod' : 'nomod'
+  }
+
   const transformNode = (node) => {
     const tag = getNodeName(node)
     if (linkTags.includes(tag)) {
@@ -232,6 +243,7 @@
     replaceNodesUrls(node)
     if (node.nodeName === 'SCRIPT') {
       node.removeAttribute('integrity')
+      node.type = convertScriptModuleType(node.type)
     } else if (node.nodeName === 'STYLE') {
       transformStyleNode(node)
     }
@@ -371,6 +383,10 @@
       }
     }
     all.forEach((node) => {
+      // 兜底：动态注入绕过 appendChild 等拦截的 module script（type 仍是 module），需补做 module→mod
+      if (node.node_name === 'script') {
+        node.setAttribute('type', convertScriptModuleType(node.getAttribute('type') || ''), type)
+      }
       const attrs = nodeNameAttrsMap[node.node_name]
       if (!attrs) {
         replaceNodeUrl(root, node, null, type)
@@ -713,6 +729,10 @@
         'color: #606666;background-color: lime;padding: 5px 10px;'
       )
       value = transformUrl(value)
+    }
+    // script type="module" 转换（convertScriptModuleType 含 rewriteThis 门控与注释）
+    if (this.nodeName === 'SCRIPT' && attr === 'type') {
+      value = convertScriptModuleType(value)
     }
     return setAttribute.bind(this)(attr, value)
   }
@@ -1340,6 +1360,18 @@
         descriptor.set.call(this, transformUrl(url))
       }
     })
+  })
+
+  /* script 的 type 属性 拦截：旧模式（rewriteThis=false）下 module 会强制严格模式，
+     与服务端 with 包裹的代码冲突；AST 模式保留 ESM，不转换 */
+  const scriptTypeDescriptor = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'type')
+  Object.defineProperty(HTMLScriptElement.prototype, 'type', {
+    get () {
+      return scriptTypeDescriptor.get.call(this)
+    },
+    set (value) {
+      scriptTypeDescriptor.set.call(this, convertScriptModuleType(value))
+    }
   })
 
   /* a 元素的 host 等 URL 属性 拦截, href 在上面的 get 函数里拦截了 */
