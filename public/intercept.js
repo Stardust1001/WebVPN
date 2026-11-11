@@ -184,6 +184,20 @@
     return url.replace(u.host, subdomain + vpnDomain)
   }
 
+  const transformTargetOrigin = (targetOrigin) => {
+    if (typeof targetOrigin !== 'string' || !/^https?:\/\//.test(targetOrigin)) {
+      return targetOrigin
+    }
+    try {
+      const u = new URL(targetOrigin)
+      const vpnDomain = u.protocol === 'https:' ? httpsVpnDomain : httpVpnDomain
+      if (u.host.endsWith(vpnDomain)) return targetOrigin
+      return u.origin.replace(u.host, encodeHost(u.host) + vpnDomain)
+    } catch {
+      return targetOrigin
+    }
+  }
+
   const decodeUrl = (url) => {
     url = (url || '').trim()
     if (!url) return url
@@ -854,7 +868,9 @@
   }
 
   function defineLocationWrappers (win) {
-    if (win.location._navigate && win.location.__navigate__) return
+    try {
+      if (win.location._navigate && win.location.__navigate__) return
+    } catch { return }
     /* _navigate 拦截 */
     win.location._navigate = function (url) {
       log(
@@ -1059,31 +1075,30 @@
           const value = obj[property]
           if (typeof value === 'function') {
             if (property === 'fetch') return window.fetch
-            // Proxy 不变量：target 自身不可配置且不可写的数据属性必须原样返回，返回 bind 副本会抛
-            // "'get' on proxy: property 'xxx' is a read-only and non-configurable data property…" TypeError
             try {
               const desc = Object.getOwnPropertyDescriptor(obj, property)
               if (desc && desc.configurable === false && desc.writable === false) return value
             } catch {}
-            // window 与 document 各用各的方法快照：open/close/dispatchEvent 等同名方法在
-            // 两边语义不同，__window__ 用 document 的映射会把 open 劫持成 document.open
             const isWinObj = obj === obj.window
+            if (obj !== win) {
+              if (property === 'postMessage') {
+                const bound = value.bind(obj)
+                return function postMessage (message, targetOrigin, transfer) {
+                  return bound(message, transformTargetOrigin(targetOrigin), transfer)
+                }
+              }
+              return value.bind(obj)
+            }
             const nativeMap = isWinObj ? winNativeMethods : nativeMethods
             const boundMap = isWinObj ? winBoundMethods : boundMethods
             const native = nativeMap.get(property)
             if (native !== undefined) {
-              // document 方法槽位：未篡改 → 返回预绑定副本（this 恒为真实 document）
               if (native === value) return boundMap.get(property)
-              // 被替换过：toString 为 [native code] 的是 Proxy/bind 包装（反调试形态，apply trap
-              // 常丢弃 this）→ 恢复原生；源码可见的普通函数包装是站点合法 monkey-patch →
-              // 放行并修正 this，不能吞掉站点的补丁
               let masked = true
               try { masked = Function.prototype.toString.call(value).includes('[native code]') } catch {}
               if (masked) return boundMap.get(property)
               return value.bind(obj)
             }
-            // 非方法槽位：带 prototype 的值是构造器/类（如 Promise、站点自定义类），bind 会丢
-            // 静态属性，原样返回；其余（箭头函数等）bind 修正 this
             if (value.prototype) return value
             return value.bind(obj)
           }
@@ -1105,9 +1120,6 @@
             if (!canJump(value)) return true
             win.location.href = url
           }
-          // document 方法槽位的函数赋值：masked 包装（Proxy/bind，toString 为 [native code]，
-          // 反调试手法）替换为绑定原生再落库，raw 直读路径不被污染；源码可见的普通函数包装
-          // 是站点合法 monkey-patch，原样放行
           if (obj === win.document && typeof value === 'function') {
             const native = nativeMethods.get(property)
             if (native !== undefined && native !== value) {
@@ -1121,12 +1133,6 @@
         }
       })
     }
-    /* 统一 document 身份：站点可见的 document 恒为 __document__ 代理（伪造 document.location
-       所必需），而节点的 ownerDocument 仍指向真实 document，两份身份并存会让按 document 对象
-       做身份比较 / 内部缓存的站点库（jQuery/Sizzle 等）在两者间反复重置内部状态，委托事件、
-       选择器匹配随之失效。这里把节点树上指向真实 document 的 ownerDocument 一律映射到同一代理
-       （document 自身仍为 null，iframe、DOMParser 等其他 document 不受影响），
-       站点侧从此只存在一个 document 对象。 */
     try {
       const docProxy = win.__document__
       const rawOwnerDocument = Object.getOwnPropertyDescriptor(win.Node.prototype, 'ownerDocument').get
@@ -1166,24 +1172,13 @@
 
   redefineGlobals(window)
 
-  /* 目标网站的反调试常用 Object.defineProperty(document, 'createElement', { writable: false, configurable: false })
-     锁定原生方法。一旦锁定，__document__ 代理的 get trap 无法再返回 bind 副本（Proxy 不变量要求
-     非 writable 且非 configurable 的自有数据属性必须原样返回，否则抛
-     "'get' on proxy: property 'createElement' is a read-only and non-configurable data property…"），
-     整站脚本随之崩溃。这里把针对 document / window 自身的数据属性锁强制改为 configurable，
-     使锁失效；属性值不变，不感知锁存在的正常网站不受影响。Document.prototype 上的锁（如 cookie）不在此列。 */
   const rawDefineProperty = Object.defineProperty
   const keepConfigurable = (target, desc) => {
     try {
       if ((target === document || target === window) && desc && typeof desc === 'object' && desc.configurable === false) {
-        // document 槽位不预绑定：站点经 defineProperty 安装的函数值可能是合法 patch，
-        // 保留原值，交给 __document__ get trap 按形态判定（masked 恢复原生 / 可见包装放行）；
-        // 若在这里 bind，值被掩饰成 native 形态，get trap 会把它当反调试包装恢复掉，补丁失效
         if (target === document) {
           desc = Object.assign({}, desc, { configurable: true })
         } else if (typeof desc.value === 'function' && !desc.value.prototype) {
-          // window 函数值预绑定为真实对象：即使包装值被写入（如经其他 realm 的 defineProperty），
-          // 调用时 this 也是真实对象，不会抛 Illegal invocation
           const bound = desc.value.bind(target)
           try { Object.defineProperty(bound, 'name', { value: desc.value.name }) } catch {}
           desc = Object.assign({}, desc, { configurable: true, value: bound })
@@ -1204,37 +1199,21 @@
     }
   }
 
-  /* 不做「预绑定 + 不可写/不可配置」硬锁定：站点的合法 monkey-patch（替换 document 方法）
-     必须能落地，锁死会让这类网站直接 TypeError 坏掉。防线改为按形态拦截——
-     masked 包装（Proxy/bind，toString 为 [native code]，反调试手法）在快照清扫、
-     set trap、get trap 三处被还原为原生；源码可见的普通函数包装一律放行。 */
-
-  // 此前对 window 上所有函数属性执行 window[key] = window[key].bind(window)：
-  // 1) for...in 会遍历继承属性；2) bind 后函数 name 变为 "bound xxx"，破坏依赖 fn.name 的代码；
-  // 3) 不可写 / 不可配置的属性（如 eval、alert 等很多原生方法）赋值会静默失败或严格模式抛错。
-  // 改为：用 Object.keys 仅遍历自身可枚举属性，检查描述符可写后再赋值。
   for (const key of Object.keys(window)) {
     try {
       const desc = Object.getOwnPropertyDescriptor(window, key)
       if (!desc || !desc.writable || desc.get || desc.set) continue
       const fn = window[key]
       if (typeof fn !== 'function' || fn.name.startsWith('bound ')) continue
-      // 只 bind 原生方法（修正 detach 调用的 this）。源码可见的普通函数（本脚本或站点装的
-      // 包装）不需要 this 修正，而 bind 会把它掩饰成 [native code] 形态，污染 get/set trap
-      // 的 masked 判定——window.open 包装曾被这里 bind 成 masked，随后 __window__.open 被
-      // 误判为反调试包装劫持成 document.open，弹窗全失效。
       let masked = true
       try { masked = Function.prototype.toString.call(fn).includes('[native code]') } catch {}
       if (!masked) continue
       const bound = fn.bind(window)
-      // 尽量保留原 name，减少对依赖 fn.name 的代码的破坏
       try { Object.defineProperty(bound, 'name', { value: fn.name }) } catch {}
       window[key] = bound
     } catch {}
   }
 
-  // 检查 __context__.location 是否被赋值为字符串（导航意图），是则执行跳转。
-  // 与 scheduleScan 一样做成 visibility-aware：页面隐藏时降频，卸载时停止，避免空转耗电。
   let locTimer = null
   let locStopped = false
   let locDelay = 500
@@ -1559,36 +1538,85 @@
   })
 
   const cwDescriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow')
+  const iframeWinWraps = new WeakMap()
+  const rawWinToWrap = new WeakMap()
+  const makeIframeWinWrap = (iframe) => {
+    return new Proxy(cwDescriptor.get.apply(iframe, []) || {}, {
+      get (obj, property, receiver) {
+        /* 每次访问重新解析 live 窗口：导航前后 raw window 不同，但包装对象不变 */
+        let live = null
+        try { live = cwDescriptor.get.apply(iframe, []) } catch {}
+        if (!live) return undefined
+        try { rawWinToWrap.set(live, receiver) } catch {}
+        let value
+        try { value = live[property] } catch { return undefined }
+        if (property === 'postMessage' && typeof value === 'function') {
+          return (message, targetOrigin, transfer) => {
+            return value.apply(live, [message, transformTargetOrigin(targetOrigin), transfer])
+          }
+        }
+        return value
+      }
+    })
+  }
+  const wrapIframeWin = (iframe) => {
+    let wrapped = iframeWinWraps.get(iframe)
+    if (!wrapped) {
+      wrapped = makeIframeWinWrap(iframe)
+      try { iframeWinWraps.set(iframe, wrapped) } catch {}
+    }
+    try {
+      const cw = cwDescriptor.get.apply(iframe, [])
+      if (cw) rawWinToWrap.set(cw, wrapped)
+    } catch {}
+    return wrapped
+  }
   Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
     get () {
       const cw = cwDescriptor.get.apply(this, [])
       if (!cw) return cw
-      if (!redefineGlobals(cw)) return cw
-      if (!cw.__win__) {
-        cw.webvpn = {
-          siteUrl: webvpn.siteUrl,
-          protocol: webvpn.protocol,
-          sourceUrl: webvpn.sourceUrl,
-          pageUrl: webvpn.pageUrl,
-          hostname: webvpn.hostname,
-          base: webvpn.base,
-          _js_injected__: false
-        }
-        cw.__win__ = new Proxy(cw, {
-          get (obj, property, receiver) {
-            let value = cw.__context__[property]
-            if (!value) {
-              value = cw[property]
-              if (typeof value === 'function') {
-                return (...props) => value.apply(cw, props)
-              }
-            }
-            return value
-          }
-        })
+      if (!redefineGlobals(cw)) {
+        return wrapIframeWin(this)
       }
-      return cw.__win__
+      redefineGlobals(cw)
+      return wrapIframeWin(this)
     }
+  })
+
+  const meOriginDescriptor = Object.getOwnPropertyDescriptor(MessageEvent.prototype, 'origin')
+  Object.defineProperty(MessageEvent.prototype, 'origin', {
+    get () {
+      const origin = meOriginDescriptor.get.call(this)
+      try {
+        if (typeof origin === 'string' && /^https?:\/\//.test(origin)) {
+          const u = new URL(origin)
+          const vpnDomain = u.protocol === 'https:' ? httpsVpnDomain : httpVpnDomain
+          if (u.host.endsWith(vpnDomain)) {
+            let host = u.host.slice(0, -vpnDomain.length)
+            const m = host.match(/-(?:main|share)-[^.]+$/)
+            if (m) host = host.slice(0, -m[0].length)
+            const decoded = decodeHost(host)
+            return u.origin.replace(u.host, decoded)
+          }
+        }
+      } catch {}
+      return origin
+    },
+    configurable: true
+  })
+
+  const meSourceDescriptor = Object.getOwnPropertyDescriptor(MessageEvent.prototype, 'source')
+  Object.defineProperty(MessageEvent.prototype, 'source', {
+    get () {
+      const src = meSourceDescriptor.get.call(this)
+      try {
+        if (src && typeof src === 'object' && src !== window && src !== parent && src !== top) {
+          if (rawWinToWrap.has(src)) return rawWinToWrap.get(src)
+        }
+      } catch {}
+      return src
+    },
+    configurable: true
   })
 
   const cdDescriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentDocument')
@@ -1598,9 +1626,6 @@
         const doc = this.contentWindow.__document__
         const win = this.contentWindow.window
         if (!win.webvpn._js_injected__) {
-          // 跨域 iframe 注入路径：先执行 convertDomainsCode 定义 encodeHost/decodeHost，
-          // 否则 intercept_code 里的 transformUrl 引用 encodeHost 直接 ReferenceError
-          // （srcdoc 注入路径自带这段，此处对齐）。
           try { win.eval(webvpn.convertDomainsCode || '') } catch {}
           win.eval(webvpn.intercept_code)
           win.webvpn._js_injected__ = true
@@ -1615,24 +1640,8 @@
   const srcdocDescriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'srcdoc')
   const injectSrcdoc = (value) => {
     if (typeof value === 'string' && value && !value.includes('self.webvpn')) {
-      // <\/script> 转义：本文件被 JSON 序列化后嵌在主页面注入块的脚本标签里，
-      // 字面闭合标签会提前截断外层块。运行时输出前拼接还原为真实标签。
-      const config = {
-        siteUrl: webvpn.siteUrl,
-        protocol: webvpn.protocol,
-        sourceUrl: webvpn.sourceUrl,
-        pageUrl: webvpn.pageUrl,
-        hostname: webvpn.hostname,
-        httpVpnDomain: webvpn.httpVpnDomain,
-        httpsVpnDomain: webvpn.httpsVpnDomain,
-        base: webvpn.base,
-        debugLog: webvpn.debugLog,
-        disableJump: webvpn.disableJump,
-        confirmJump: webvpn.confirmJump,
-        isMainSession: false,
-        shareId: '',
-        rewriteThis: !!webvpn.rewriteThis
-      }
+      const config = { ...webvpn, isMainSession: false, shareId: '' }
+      for (const k of ['intercept_code', 'convertDomainsCode', 'worker_wrapper_code', 'logs']) delete config[k]
       value = '<scr' + 'ipt>self.webvpn = ' + JSON.stringify(config) + ';'
         + 'new Function(' + JSON.stringify(webvpn.convertDomainsCode || '') + ')();'
         + 'eval(' + JSON.stringify(webvpn.intercept_code) + ')<\/scr' + 'ipt>' + value

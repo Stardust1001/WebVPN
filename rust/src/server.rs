@@ -593,7 +593,10 @@ async fn upstream_request(
     }
 
     // mime 校正
-    let new_mime = get_mime_by_response_headers(&content_type);
+    let mut new_mime = get_mime_by_response_headers(&content_type);
+    if new_mime.as_deref() == Some("html") && matches!(meta.mime.as_str(), "js" | "css") {
+        new_mime = None;
+    }
     let mime = new_mime.unwrap_or_else(|| meta.mime.clone());
 
     if NO_TRANSFORM_MIMES.contains(&mime.as_str()) {

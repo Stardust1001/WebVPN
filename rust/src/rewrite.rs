@@ -1547,7 +1547,26 @@ pub fn get_base(data: &str, meta: &Meta) -> String {
 pub fn process_others(data: &str, mime: &str, disable_source_map: bool) -> String {
     let mut data = data.to_string();
     if disable_source_map && (mime == "html" || mime == "js") {
-        data = data.replace("sourceMappingURL", "");
+        let mut search_from = 0;
+        while let Some(rel) = data[search_from..].find("sourceMappingURL=") {
+            let pos = search_from + rel;
+            let line_start = match data[..pos].rfind('\n') {
+                Some(nl) => nl + 1,
+                None => 0,
+            };
+            let prefix = &data[line_start..pos];
+            let is_comment = {
+                let trimmed = prefix.trim_start();
+                trimmed.starts_with("//") || trimmed.starts_with("/*")
+            };
+            if !is_comment {
+                search_from = pos + 17;
+                continue;
+            }
+            let end = data[pos..].find('\n').map(|n| pos + n).unwrap_or(data.len());
+            data.replace_range(line_start..end, "");
+            search_from = line_start;
+        }
     }
     data
 }

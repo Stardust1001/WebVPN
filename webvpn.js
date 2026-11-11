@@ -1263,7 +1263,8 @@ class WebVPN {
     // res.data 本就是字符串（来自 res.text()），再次 stringify 会双重编码 JSON 文本，导致客户端拿到被破坏的 JSON。已移除。
     if (this.config.disableSourceMap) {
       if (ctx.meta.mime === 'html' || ctx.meta.mime === 'js') {
-        res.data = res.data.replaceAll('sourceMappingURL', '')
+        res.data = res.data.replace(/^[ \t]*\/\/[#@] sourceMappingURL=\S+.*$/gm, '')
+        res.data = res.data.replace(/\/\*[#@] sourceMappingURL=\S+.*?\*\//g, '')
       }
     }
   }

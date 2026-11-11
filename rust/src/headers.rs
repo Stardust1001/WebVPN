@@ -363,6 +363,13 @@ pub async fn init_response_headers(
         headers.insert("access-control-allow-origin".to_string(), vec!["*".to_string()]);
     }
 
+    if !headers.contains_key("access-control-allow-headers") {
+        headers.insert("access-control-allow-headers".to_string(), vec!["*".to_string()]);
+    }
+    if !headers.contains_key("access-control-allow-methods") {
+        headers.insert("access-control-allow-methods".to_string(), vec!["*".to_string()]);
+    }
+
     // x-frame-options: allowall
     headers.insert("x-frame-options".to_string(), vec!["allowall".to_string()]);
 
