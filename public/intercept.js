@@ -853,60 +853,65 @@
     return go.apply(this, [value])
   }
 
-  /* _navigate 拦截 */
-  window.location._navigate = function (url) {
-    log(
-      '%c_navigate 拦截 : ' + url,
-      'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
-    )
-    if (isBlankNav(url)) return false
-    if (!canJump(url)) return false
-    url = transformUrl(url)
-    return window.navigate(url)
-  }
-  window.location.__navigate__ = window.location._navigate
+  function defineLocationWrappers (win) {
+    if (win.location._navigate && win.location.__navigate__) return
+    /* _navigate 拦截 */
+    win.location._navigate = function (url) {
+      log(
+        '%c_navigate 拦截 : ' + url,
+        'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
+      )
+      if (isBlankNav(url)) return false
+      if (!canJump(url)) return false
+      url = transformUrl(url)
+      return win.navigate(url)
+    }
+    win.location.__navigate__ = win.location._navigate
 
-  /* location _assign 拦截 */
-  window.location._assign = function (url) {
-    log(
-      '%clocation 操作 拦截 _assign : ' + url,
-      'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
-    )
-    if (isBlankNav(url)) return false
-    if (!canJump(url)) return false
-    url = transformUrl(url)
-    return window.location.assign(url)
-  }
-  window.location.__assign__ = window.location._assign
+    /* location _assign 拦截 */
+    win.location._assign = function (url) {
+      log(
+        '%clocation 操作 拦截 _assign : ' + url,
+        'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
+      )
+      if (isBlankNav(url)) return false
+      if (!canJump(url)) return false
+      url = transformUrl(url)
+      return win.location.assign(url)
+    }
+    win.location.__assign__ = win.location._assign
 
-  /* location _replace 拦截 */
-  window.location._replace = function (url) {
-    log(
-      '%clocation 操作 拦截 _replace : ' + url,
-      'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
-    )
-    if (isBlankNav(url)) return false
-    if (!canJump(url)) return false
-    url = transformUrl(url)
-    return window.location.replace(url)
-  }
-  window.location.__replace__ = window.location._replace
+    /* location _replace 拦截 */
+    win.location._replace = function (url) {
+      log(
+        '%clocation 操作 拦截 _replace : ' + url,
+        'color: #606666;background-color: #f56c6c;padding: 5px 10px;'
+      )
+      if (isBlankNav(url)) return false
+      if (!canJump(url)) return false
+      url = transformUrl(url)
+      return win.location.replace(url)
+    }
+    win.location.__replace__ = win.location._replace
 
-  /* location reload */
-  window.location._reload = function () {
-    if (!canJump(location.href)) return false
-    return window.location.reload()
-  }
-  window.location.__reload__ = window.location._reload
+    /* location reload */
+    win.location._reload = function () {
+      if (!canJump(win.location.href)) return false
+      return win.location.reload()
+    }
+    win.location.__reload__ = win.location._reload
 
-  /* location toString */
-  window.location._toString = function () {
-    return window.location.__href__
+    /* location toString */
+    win.location._toString = function () {
+      return win.location.__href__
+    }
+    win.location.__toString__ = win.location._toString
   }
-  window.location.__toString__ = window.location._toString
+  defineLocationWrappers(window)
 
   function redefineGlobals (win) {
     if (!webvpn.target) defineWebvpnLocation()
+    defineLocationWrappers(win)
     /* window.__location__ */
     if (!Object.keys(win.location).length) return
     win.__location__ = {}
@@ -1593,6 +1598,10 @@
         const doc = this.contentWindow.__document__
         const win = this.contentWindow.window
         if (!win.webvpn._js_injected__) {
+          // 跨域 iframe 注入路径：先执行 convertDomainsCode 定义 encodeHost/decodeHost，
+          // 否则 intercept_code 里的 transformUrl 引用 encodeHost 直接 ReferenceError
+          // （srcdoc 注入路径自带这段，此处对齐）。
+          try { win.eval(webvpn.convertDomainsCode || '') } catch {}
           win.eval(webvpn.intercept_code)
           win.webvpn._js_injected__ = true
         }
