@@ -168,6 +168,8 @@ pub struct ProxyOutput {
     pub status: StatusCode,
     pub headers: HeaderMap,
     pub body: Vec<u8>,
+    /// rewrite_this=true 时 AST 转写的耗时（毫秒），由中间件日志追加显示
+    pub rewrite_ms: Option<u128>,
 }
 
 /// 主路由：对应 proxyRoute(ctx, next)
@@ -214,7 +216,7 @@ pub async fn proxy_route(
         let location = format!("{}://{}", scheme, state.config.site_host());
         let mut hm = HeaderMap::new();
         hm.insert("location", HeaderValue::from_str(&location).unwrap());
-        return Ok(Some(ProxyOutput { status: StatusCode::FOUND, headers: hm, body: vec![] }));
+        return Ok(Some(ProxyOutput { status: StatusCode::FOUND, headers: hm, body: vec![], rewrite_ms: None }));
     }
 
     // 5. checkPublic（/public/ 路径优先放行）
@@ -223,7 +225,7 @@ pub async fn proxy_route(
         let mut hm = HeaderMap::new();
         let ct = get_content_type_by_ext(filepath.to_str().unwrap_or(""));
         hm.insert("content-type", HeaderValue::from_static(ct));
-        return Ok(Some(ProxyOutput { status: StatusCode::OK, headers: hm, body: data }));
+        return Ok(Some(ProxyOutput { status: StatusCode::OK, headers: hm, body: data, rewrite_ms: None }));
     }
 
     // 6. routeInit
@@ -236,7 +238,7 @@ pub async fn proxy_route(
             let mut hm = HeaderMap::new();
             let ct = get_content_type_by_ext(path.to_str().unwrap_or(""));
             hm.insert("content-type", HeaderValue::from_static(ct));
-            return Ok(Some(ProxyOutput { status: StatusCode::OK, headers: hm, body: data }));
+            return Ok(Some(ProxyOutput { status: StatusCode::OK, headers: hm, body: data, rewrite_ms: None }));
         }
     }
 
@@ -284,7 +286,7 @@ pub async fn proxy_route(
 
     // 3xx 直接返回
     if res.status.as_u16() >= 300 && res.status.as_u16() < 400 {
-        return Ok(Some(ProxyOutput { status: res.status, headers: out_headers, body: res.data.unwrap_or_default() }));
+        return Ok(Some(ProxyOutput { status: res.status, headers: out_headers, body: res.data.unwrap_or_default(), rewrite_ms: None }));
     }
 
     // 上游已标记 is_done（JSONP/JSON/noTransform）-> 跳过后续改写
@@ -311,10 +313,17 @@ pub async fn proxy_route(
 
     // 11. afterRequest 钩子（这里简化，不做短路）
     // 12. shouldReplaceUrls + customResponse
+    let mut rewrite_ms = None;
     if !meta.is_done && !data.is_empty() {
         let data_str = String::from_utf8_lossy(&data).to_string();
         let mut new_data = replace_urls(&data_str, &meta.mime, &state.config, &meta, &state.codec);
+        // rewrite_this=true 时 custom_response 走 oxc AST 转写，是改写流水线的主要 CPU 开销，
+        // 单独计时并随响应传给中间件日志显示
+        let rewrite_start = std::time::Instant::now();
         new_data = custom_response(&new_data, &meta.mime, state.config.rewrite_this);
+        if state.config.rewrite_this {
+            rewrite_ms = Some(rewrite_start.elapsed().as_millis());
+        }
 
         if meta.mime == "html" {
             new_data = process_html(&new_data);
@@ -342,7 +351,7 @@ pub async fn proxy_route(
     // 14. setCache
     state.disk_cache.set(&meta, &data, CACHE_MIMES).await;
 
-    Ok(Some(ProxyOutput { status: res.status, headers: out_headers, body: data }))
+    Ok(Some(ProxyOutput { status: res.status, headers: out_headers, body: data, rewrite_ms }))
 }
 
 /// 对应 routeInit(ctx)
@@ -436,7 +445,7 @@ async fn serve_www(
         let text = text.replace("'inject_code'", &inject);
         let mut hm = HeaderMap::new();
         hm.insert("content-type", HeaderValue::from_static("text/html; charset=utf-8"));
-        return Ok(ProxyOutput { status: StatusCode::OK, headers: hm, body: text.into_bytes() });
+        return Ok(ProxyOutput { status: StatusCode::OK, headers: hm, body: text.into_bytes(), rewrite_ms: None });
     }
     if uri.starts_with("/share-sessions") {
         if method == Method::POST {
@@ -458,7 +467,7 @@ async fn serve_www(
         hm.insert("access-control-allow-headers", HeaderValue::from_static("*"));
         hm.insert("access-control-allow-methods", HeaderValue::from_static("*"));
         hm.insert("vary", HeaderValue::from_static("origin"));
-        return Ok(ProxyOutput { status: StatusCode::OK, headers: hm, body: vec![] });
+        return Ok(ProxyOutput { status: StatusCode::OK, headers: hm, body: vec![], rewrite_ms: None });
     }
     // 其他 /public/xx
     if let Some(filepath) = state.public_files.check(uri).await {
@@ -466,9 +475,9 @@ async fn serve_www(
         let mut hm = HeaderMap::new();
         let ct = get_content_type_by_ext(filepath.to_str().unwrap_or(""));
         hm.insert("content-type", HeaderValue::from_static(ct));
-        return Ok(ProxyOutput { status: StatusCode::OK, headers: hm, body: data });
+        return Ok(ProxyOutput { status: StatusCode::OK, headers: hm, body: data, rewrite_ms: None });
     }
-    Ok(ProxyOutput { status: StatusCode::NOT_FOUND, headers: HeaderMap::new(), body: vec![] })
+    Ok(ProxyOutput { status: StatusCode::NOT_FOUND, headers: HeaderMap::new(), body: vec![], rewrite_ms: None })
 }
 
 /// 上游响应
@@ -757,7 +766,7 @@ async fn respond_pipe(
         }
     };
     let out_headers = headermap_from(&headers);
-    Ok(ProxyOutput { status, headers: out_headers, body: bytes.to_vec() })
+    Ok(ProxyOutput { status, headers: out_headers, body: bytes.to_vec(), rewrite_ms: None })
 }
 
 /// WebSocket 桥接：连接目标 ws 并双向桥接

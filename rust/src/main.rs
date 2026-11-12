@@ -15,6 +15,7 @@ mod rewrite;
 mod server;
 
 use std::sync::Arc;
+use std::io::Write as _;
 use std::net::SocketAddr;
 
 use axum::{
@@ -41,6 +42,10 @@ async fn main() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format(|buf, record| {
+            // 去掉默认的时间戳前缀，仅保留级别与消息
+            writeln!(buf, "[{} {}] {}", record.target(), record.level(), record.args())
+        })
         .format_module_path(false)
         .try_init();
 
@@ -174,7 +179,13 @@ fn make_router(state: Arc<AppState>, is_tls: bool) -> Router {
             let uri = req.uri().clone();
             let start = std::time::Instant::now();
             let resp = next.run(req).await;
-            log::info!("{} {} -> {} ({} ms)", method, uri, resp.status(), start.elapsed().as_millis());
+            // rewrite_this=true 时 proxy_route 把 AST 转写耗时塞进响应 extensions，
+            // 有则追加到行尾（如 rewrite_ast 45 ms）
+            let rewrite_ms = resp.extensions().get::<Option<u128>>().copied().flatten();
+            match rewrite_ms {
+                Some(ms) => log::info!("{} {} -> {} ({} ms, rewrite_ast {} ms)", method, uri, resp.status(), start.elapsed().as_millis(), ms),
+                None => log::info!("{} {} -> {} ({} ms)", method, uri, resp.status(), start.elapsed().as_millis()),
+            }
             resp
         }))
         .with_state(state)
@@ -233,8 +244,11 @@ async fn root_handler(
             for (k, v) in out.headers.iter() {
                 resp = resp.header(k.clone(), v.clone());
             }
-            resp.body(Body::from(out.body))
-                .unwrap_or_else(|_| (StatusCode::INTERNAL_SERVER_ERROR, "build response failed").into_response())
+            let mut resp = resp
+                .body(Body::from(out.body))
+                .unwrap_or_else(|_| (StatusCode::INTERNAL_SERVER_ERROR, "build response failed").into_response());
+            resp.extensions_mut().insert(out.rewrite_ms);
+            resp
         }
         Ok(None) => (StatusCode::NOT_FOUND, "not found").into_response(),
         Err(e) if e == crate::server::DROP_CONNECTION => {
