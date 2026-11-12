@@ -47,7 +47,7 @@ async fn main() {
             // 级别按 env_logger 默认配色着色（INFO 绿色 / WARN 黄色 / ERROR 红色），
             // 非 TTY 时 default_level_style 返回空样式，不会写出 ANSI 码
             let style = buf.default_level_style(record.level());
-            writeln!(buf, "[{} {style}{}{style:#}] {}", record.target(), record.level(), record.args())
+            writeln!(buf, "[{style}{}{style:#}] {}", record.level(), record.args())
         })
         .format_module_path(false)
         .try_init();
@@ -186,8 +186,8 @@ fn make_router(state: Arc<AppState>, is_tls: bool) -> Router {
             // 有则追加到行尾（如 rewrite_ast 45 ms）
             let rewrite_ms = resp.extensions().get::<Option<u128>>().copied().flatten();
             match rewrite_ms {
-                Some(ms) => log::info!("{} {} -> {} ({} ms, rewrite_ast {} ms)", method, uri, resp.status(), start.elapsed().as_millis(), ms),
-                None => log::info!("{} {} -> {} ({} ms)", method, uri, resp.status(), start.elapsed().as_millis()),
+                Some(ms) => log::info!("{} {} ({} ms, ast {} ms)", method, uri, start.elapsed().as_millis(), ms),
+                None => log::info!("{} {} ({} ms)", method, uri, start.elapsed().as_millis()),
             }
             resp
         }))

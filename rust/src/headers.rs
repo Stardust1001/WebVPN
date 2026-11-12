@@ -281,21 +281,24 @@ pub async fn init_response_headers(
                 .map(|s| format!("*.{}", s))
                 .unwrap_or_else(|| site_host.clone());
 
+            // warn warn warn：frame-ancestors 必须同时从 kept 中剔除 —— 否则同一条策略里
+            // 会保留原值 + 追加改写值两条同名指令，Chrome 报
+            // "Ignoring duplicate Content-Security-Policy directive 'frame-ancestors'"
+            // （wavedash 游戏页实测刷屏）。浏览器对重复指令忽略后者，改写值反而不生效。
             let kept: Vec<&str> = e.split(';').map(|d| d.trim()).filter(|d| {
                 !d.is_empty()
                     && !d.contains("-src")
                     && !d.contains("unsafe-")
                     && !d.contains("require-trusted-types-for")
                     && !d.contains("trusted-types")
+                    && !d.starts_with("frame-ancestors")
             }).collect();
 
             // 检查原始 CSP 是否已有 frame-ancestors 指令
             let has_fa = e.split(';').any(|d| d.trim().starts_with("frame-ancestors"));
             let mut result = kept.join("; ");
             if has_fa {
-                // 已有则替换其值为 WebVPN 主域
-                // 简化处理：直接追加一条新的 frame-ancestors（浏览器以最严格者为准，
-                // 但这里 kept 已剔除原 frame-ancestors，故等价于重写）
+                // 已有则替换其值为 WebVPN 主域（原值已在 kept 中剔除，此处等价于重写）
                 if !result.is_empty() { result.push_str("; "); }
                 result.push_str(&format!("frame-ancestors {}{}", protocol, replaced));
             }

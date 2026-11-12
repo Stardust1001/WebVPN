@@ -844,6 +844,16 @@
     return open.bind(window)(url, name, specs, replace)
   }
 
+  /* window.postMessage 拦截 */
+  const _postMessage = window.postMessage
+  window.postMessage = function (message, targetOrigin, transfer) {
+    log(
+      '%cpostMessage 拦截 : ' + targetOrigin,
+      'color: #606666;background-color: lightblue;padding: 5px 10px;'
+    )
+    return _postMessage.apply(this, [message, transformTargetOrigin(targetOrigin), transfer])
+  }
+
   /* go 拦截 */
   const go = History.prototype.go
   History.prototype.go = function (value) {
