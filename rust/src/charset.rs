@@ -21,13 +21,12 @@ pub fn convert_charset_data(
     content_type: &str,
     mime: &str,
 ) -> (String, String) {
-    // 非 html/js 直接以 utf-8 解码（Node 版走 res.text()）
-    if mime != "html" && mime != "js" {
-        let (text, _, _) = UTF_8.decode(bytes);
-        return (text.into_owned(), content_type.to_string());
-    }
-
-    // zstd 解压
+    // zstd 解压：所有 mime 都要先做。浏览器（Chrome 146+）会在 Accept-Encoding 里带 zstd，
+    // reqwest 不自动解压 zstd，上游（如 Cloudflare）会对 css/text 回 zstd 编码。
+    // 此前仅 html/js 分支解压，css 等 mime 的 zstd 二进制被 utf-8 lossy 解码成 U+FFFD 乱码，
+    // 且 content-length 按乱码长度补写，样式表整体失效（suroi 页面 #splash-modals 不显示）。
+    // 注意 server.rs 非 noTransform 路径（:628）与 noTransform 路径（:606）都会删除
+    // content-encoding 头，所以这里必须依赖调用方传入的原始 content_encoding 解压。
     let (decoded_bytes, used_zstd) = if content_encoding == Some("zstd") {
         match zstd::decode_all(bytes) {
             Ok(d) => (d, true),
@@ -37,7 +36,12 @@ pub fn convert_charset_data(
         (bytes.to_vec(), false)
     };
 
-    // 先按 utf-8 解一次
+    // 非 html/js：解压后直接以 utf-8 解码（Node 版走 res.text()）
+    if mime != "html" && mime != "js" {
+        let (text, _, _) = UTF_8.decode(&decoded_bytes);
+        return (text.into_owned(), content_type.to_string());
+    }
+
     let (text, _, _) = UTF_8.decode(&decoded_bytes);
 
     // 解析 charset（content-type 头中可能带引号，如 charset="gbk"，需去除引号与分号后的多余参数）

@@ -1520,14 +1520,9 @@ class WebVPN {
   }
 
   async convertCharsetData (ctx, headers, res) {
-    if (ctx.meta.mime !== 'html' && ctx.meta.mime !== 'js') {
-      return res.text()
-    }
     let text, buffer
     if (res.headers.get('content-encoding') === 'zstd') {
       res.headers.delete('content-encoding')
-      // 先收集原始字节 Buffer，再统一 decode；此前用 body += chunk 会隐式 toString('utf8')，
-      // 非 utf-8 页面的字节被提前腐蚀，后续 iconv.decode 无法正确还原。
       const chunks = []
       await new Promise(resolve => {
         const stream = res.body.pipe(ZSTDDecompress())
@@ -1536,10 +1531,12 @@ class WebVPN {
         stream.on('error', resolve)
       })
       buffer = Buffer.concat(chunks)
-      text = iconv.decode(buffer, 'utf-8')
     } else {
       buffer = Buffer.from(await res.arrayBuffer())
-      text = iconv.decode(buffer, 'utf-8')
+    }
+    text = iconv.decode(buffer, 'utf-8')
+    if (ctx.meta.mime !== 'html' && ctx.meta.mime !== 'js') {
+      return text
     }
     let contentType = headers['content-type']?.[0] || ''
     let charset = contentType.split('charset=')[1]?.toLowerCase()
