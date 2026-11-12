@@ -43,8 +43,11 @@ async fn main() {
 
     let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format(|buf, record| {
-            // 去掉默认的时间戳前缀，仅保留级别与消息
-            writeln!(buf, "[{} {}] {}", record.target(), record.level(), record.args())
+            // 去掉默认的时间戳前缀，仅保留级别与消息。
+            // 级别按 env_logger 默认配色着色（INFO 绿色 / WARN 黄色 / ERROR 红色），
+            // 非 TTY 时 default_level_style 返回空样式，不会写出 ANSI 码
+            let style = buf.default_level_style(record.level());
+            writeln!(buf, "[{} {style}{}{style:#}] {}", record.target(), record.level(), record.args())
         })
         .format_module_path(false)
         .try_init();

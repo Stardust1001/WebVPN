@@ -283,10 +283,9 @@
   }
 
   const transformHtml = (html, root) => {
-    const childs = html2dom(html, root)
     const doc = document.createDocumentFragment()
-    for (const child of childs) {
-      doc.appendChild(child)
+    for (const child of inertParse(html)) {
+      Node.__appendChild__.call(doc, child)
     }
     html = Array.from(doc.childNodes).map(child => child.outerHTML).join('')
     html = html.replaceAll('&amp;amp;', '&amp;')
@@ -1469,16 +1468,8 @@
     },
     set (html) {
       html = (html || '').toString()
-      // 拒绝清空整个文档的写入（如反调试脚本的惩罚逻辑），保护代理会话
-      if (this === document.documentElement) {
-        log(
-          '%cDOM 操作 拦截 documentElement.innerHTML 清屏 : ' + (html.length > 100 ? (html.slice(0, 100) + '...') : html),
-          'color: #606666;background-color: lightblue;padding: 5px 10px;'
-        )
-        return
-      }
       const self = this instanceof HTMLTemplateElement ? this.content : this
-      const childs = html2dom(html, self)
+      const childs = inertParse(html)
       log(
         '%cDOM 操作 拦截 innerHTML : ' + (html.length > 100 ? (html.slice(0, 100) + '...') : html),
         'color: #606666;background-color: lightblue;padding: 5px 10px;'
@@ -1502,16 +1493,15 @@
     },
     set (html) {
       html = (html || '').toString()
-      const childs = html2dom(html, this)
       log(
         '%cDOM 操作 拦截 outerHTML : ' + (html.length > 100 ? (html.slice(0, 100) + '...') : html),
         'color: #606666;background-color: lightblue;padding: 5px 10px;'
       )
-      const container = document.createElement(this.nodeName)
-      for (const child of childs) {
-        container.appendChild(child)
+      const inert = __document__.createElement('div')
+      for (const child of inertParse(html)) {
+        Node.__appendChild__.call(inert, transformNode(child))
       }
-      ohDescriptor.set.apply(this, [container.innerHTML])
+      ohDescriptor.set.apply(this, [ihDescriptor.get.call(inert)])
     }
   })
 
@@ -1657,10 +1647,10 @@
     return setAttrDescriptor.call(this, name, value)
   }
 
-  const parser = new DOMParser()
-  const html2dom = (html, root) => {
-    const doc = parser.parseFromString(html, 'text/html')
-    return Array.from(doc.body.childNodes)
+  const inertParse = (html) => {
+    const t = __document__.createElement('template')
+    ihDescriptor.set.call(t, html)
+    return Array.from(t.content.childNodes)
   }
 
   const hasEscaped = (text, index) => {
@@ -1716,6 +1706,20 @@
   HTMLDocument.prototype.createTreeWalker = function (node, ...props) {
     if (node === __document__) node = document
     return createTreeWalker.apply(document, [node, ...props])
+  }
+
+  /* Node.isSameNode / contains / compareDocumentPosition，调用前把代理还原为真 document */
+  for (const [proto, name] of [
+    [Node.prototype, 'isSameNode'],
+    [Node.prototype, 'contains'],
+    [Node.prototype, 'compareDocumentPosition'],
+  ]) {
+    const origin = proto[name]
+    proto[name] = function (other, ...rest) {
+      if (other === __document__) other = document
+      else if (other === __window__ && window === other) other = window
+      return origin.apply(this, [other, ...rest])
+    }
   }
 
   window._Blob_ = window.Blob
