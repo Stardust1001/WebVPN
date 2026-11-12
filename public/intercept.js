@@ -501,12 +501,7 @@
     return target
   }
 
-  /* Function 拦截
-     AST 模式（rewriteThis=true）：用 WASM 对 code 做 AST 改写，不包裹 with、不 bind。
-       改写后的代码直接用 __location__/__window__ 等全局标识符（由 redefineGlobals
-       定义在 window 上），Function 作用域可访问。this 由 AST 改写为
-       (this === self ? __self__ : this)，不需 bind。
-     旧模式：with(__self__.__context__) 包裹 + bind(__context__)，与原版完全一致。 */
+  /* Function 拦截 */
   const _Function = window.Function
   const functionProxyGet = (target, prop, receiver) => {
     if (prop === 'toString') {
@@ -515,36 +510,47 @@
     return Reflect.get(target, prop, receiver)
   }
   if (webvpn.rewriteThis && __wasmRewrite) {
+    const rewriteFnCode = (props, codeToString) => {
+      if (props.length) {
+        const code = props[props.length - 1]
+        if (typeof code === 'string') {
+          const rewritten = __wasmRewrite.rewrite(code)
+          if (rewritten !== null) props[props.length - 1] = rewritten
+          codeToString.set(props.length - 1, { original: code, rewritten })
+        }
+      }
+      return props
+    }
+    const patchToString = (fn, argIndex, codeToString) => {
+      const pair = codeToString.get(argIndex)
+      if (!pair) return fn
+      try {
+        Object.defineProperty(fn, 'toString', {
+          value: () => _Function.prototype.toString.call(fn).replace(pair.rewritten, pair.original),
+          writable: true, configurable: true
+        })
+      } catch { return fn }
+      return fn
+    }
     window.Function = new Proxy(_Function, {
       get: functionProxyGet,
       construct (target, props) {
-        if (props.length) {
-          const code = props[props.length - 1]
-          if (typeof code === 'string') {
-            const rewritten = __wasmRewrite.rewrite(code)
-            if (rewritten !== null) props[props.length - 1] = rewritten
-          }
-        }
-        return new _Function(...props)
+        const codeToString = new Map()
+        props = rewriteFnCode(props, codeToString)
+        const fn = new _Function(...props)
+        return patchToString(fn, props.length - 1, codeToString)
       },
       apply (target, thisArg, props) {
-        if (props.length) {
-          const code = props[props.length - 1]
-          if (typeof code === 'string') {
-            const rewritten = __wasmRewrite.rewrite(code)
-            if (rewritten !== null) props[props.length - 1] = rewritten
-          }
-        }
-        return new _Function(...props)
+        const codeToString = new Map()
+        props = rewriteFnCode(props, codeToString)
+        const fn = new _Function(...props)
+        return patchToString(fn, props.length - 1, codeToString)
       }
     })
   } else {
     const contextExcluding = (names) => new Proxy(__self__.__context__, {
       has (target, prop) {
         return !names.includes(prop) && (prop in target || prop in self)
-      },
-      get (target, prop) {
-        return prop in target ? target[prop] : self[prop]
       },
       get (target, prop) {
         return prop in target ? target[prop] : self[prop]
@@ -565,58 +571,45 @@
         .replace(/with \((?:self|window)\.__context_proxy__\) \{/g, 'with (self.__context__.' + excluding.replace('__context__.', '') + ') {')
       return wrapped
     }
+    const funcFromProps = props => {
+      let isWithThis = false
+      if (props.length) {
+        const code = props[props.length - 1]
+        isWithThis = code.includes('with(this === self ? __self__ : this)') || /[\s\{\}\;]?with\s*\(\s*this\s*\)/.test(code)
+        if (isWithThis) {
+          props[props.length - 1] = code.replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(this === self ? __self__ : this)')
+        } else {
+          props[props.length - 1] = wrapCode(code || '', props)
+        }
+      }
+      const func = new _Function(...props)
+      return isWithThis ? func : func.bind(__context__)
+    }
     window.Function = new Proxy(_Function, {
       get: functionProxyGet,
       construct (target, props) {
-        let isWithThis = false
-        if (props.length) {
-          const code = props[props.length - 1]
-          isWithThis = code.includes('with(this === self ? __self__ : this)') || /[\s\{\}\;]?with\s*\(\s*this\s*\)/.test(code)
-          if (isWithThis) {
-            props[props.length - 1] = code.replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(this === self ? __self__ : this)')
-          } else {
-            props[props.length - 1] = wrapCode(code || '', props)
-          }
-        }
-        const func = new _Function(...props)
-        return isWithThis ? func : func.bind(__context__)
+        return funcFromProps(props)
       },
       apply (target, thisArg, props) {
-        let isWithThis = false
-        if (props.length) {
-          const code = props[props.length - 1]
-          isWithThis = code.includes('with(this === self ? __self__ : this)') || /[\s\{\}\;]?with\s*\(\s*this\s*\)/.test(code)
-          if (isWithThis) {
-            props[props.length - 1] = code.replace(/[\s\{\}\;]?with\s*\(\s*this\s*\)/g, ' with(this === self ? __self__ : this)')
-          } else {
-            props[props.length - 1] = wrapCode(code || '', props)
-          }
-        }
-        const func = new _Function(...props)
-        return isWithThis ? func : func.bind(__context__)
+        return funcFromProps(props)
       }
     })
   }
 
-  /* eval 拦截：仅 AST 模式（rewriteThis=true）。
-     旧模式下 eval 不拦截——with(__context_proxy__) 在运行时拦截裸标识符，
-     且 eval 在调用者作用域执行，with 作用域对 eval 内的代码生效。
-     AST 模式取消了 with，eval 代码里的 location/window 等裸标识符拿不到代理值。
-     用 WASM 对 eval 代码做 AST 改写后交给原始 eval 执行。
-
-     已知限制：_eval.call(window, code) 是间接 eval，在全局作用域执行，
-     不保留直接 eval 的调用者作用域语义（无法访问局部变量）。
-     这是拦截 eval 的固有限制——无法既拦截 eval 又保留直接 eval 作用域。
-     this 不受影响——eval 继承调用者的 this，已由外层 AST 改写。 */
   if (webvpn.rewriteThis && __wasmRewrite) {
-    const _eval = window.eval
-    window.eval = function eval (code) {
-      if (typeof code === 'string' && __wasmRewrite) {
-        const rewritten = __wasmRewrite.rewrite(code)
-        if (rewritten !== null) code = rewritten
-        /* 解析失败（返回 null）时原样执行，不破坏功能 */
+    window.__rewrite_js__ = function (code) {
+      if (typeof code !== 'string') return code
+      const rewritten = __wasmRewrite.rewrite(code)
+      return rewritten === null ? code : rewritten
+    }
+    /* setTimeout 拦截 */
+    /* setInterval 拦截 */
+    for (const timerName of ['setTimeout', 'setInterval']) {
+      window['_' + timerName + '_'] = window[timerName]
+      window[timerName] = function (code, ...rest) {
+        if (typeof code === 'string') code = window.__rewrite_js__(code)
+        return window['_' + timerName + '_'].call(this, code, ...rest)
       }
-      return _eval.call(window, code)
     }
   }
 

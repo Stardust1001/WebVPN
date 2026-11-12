@@ -390,6 +390,32 @@ class WebVPN {
           }
           return fetch.apply(self, [input, init])
         }
+
+        const _workerFunction = self.Function
+        const rewriteFnBody = props => {
+          if (props.length) {
+            const code = props[props.length - 1]
+            if (typeof code === 'string') {
+              props[props.length - 1] = self.__rewrite_js__(code)
+            }
+          }
+          return props
+        }
+        self.Function = new Proxy(_workerFunction, {
+          construct (target, props) {
+            return new _workerFunction(...rewriteFnBody(props))
+          },
+          apply (target, thisArg, props) {
+            return new _workerFunction(...rewriteFnBody(props))
+          }
+        })
+        for (const timerName of ['setTimeout', 'setInterval']) {
+          self['_' + timerName + '_'] = self[timerName]
+          self[timerName] = function (code, ...rest) {
+            if (typeof code === 'string') code = self.__rewrite_js__(code)
+            return self['_' + timerName + '_'].call(self, code, ...rest)
+          }
+        }
       }
     `
     this.jsScopePrefixCode = `
@@ -1478,8 +1504,8 @@ class WebVPN {
     return decodeHost(host)
   }
 
-  /// 判断给定的 origin 是否属于 WebVPN 自身域（用于 CORS 白名单）。
-  /// 允许：site.origin、或 host 以 vpnDomain 结尾（含端口后缀）的任意子域。
+  // 判断给定的 origin 是否属于 WebVPN 自身域（用于 CORS 白名单）。
+  // 允许：site.origin、或 host 以 vpnDomain 结尾（含端口后缀）的任意子域。
   isAllowedOrigin (origin) {
     if (!origin) return false
     if (origin === this.site.origin) return true
@@ -1613,9 +1639,9 @@ class WebVPN {
     }
   }
 
-  /// rewriteThis 开启时，对响应中的 JS 代码做 acorn AST 解析，把每个 this 替换为
-  /// (this === self ? __self__ : this)。HTML 响应只解析内联 <script> 内容，避免把
-  /// HTML 标签当 JS 解析导致报错。解析失败时回退到正则 with(this) 改写。
+  // rewriteThis 开启时，对响应中的 JS 代码做 acorn AST 解析，把每个 this 替换为
+  // (this === self ? __self__ : this)。HTML 响应只解析内联 <script> 内容，避免把
+  // HTML 标签当 JS 解析导致报错。解析失败时回退到正则 with(this) 改写。
   rewriteThisInResponse (ctx, res) {
     const acorn = this._acorn
     const MagicString = this._MagicString
@@ -1656,11 +1682,34 @@ class WebVPN {
     }
   }
 
-  /// 用 acorn 解析单段 JS 代码，把每个 ThisExpression 的 this 替换为
-  /// (this === self ? __self__ : this)。解析失败时回退到正则。
+  // 用 acorn 解析单段 JS 代码，做三类 AST 改写（与 rust/src/rewrite.rs 对齐）：
+  // 1. this → (this === self ? __self__ : this)
+  // 2. 7 个作用域标识符（location/window/self/globalThis/document/parent/top）
+  //    的全局引用 → __xxx__（局部声明遮蔽时不改写；用 boundNames 预扫描
+  //    保守近似，见下方说明）
+  // 3. eval 调用首参包裹：直接 eval(arg)、间接 (window|globalThis|top|self|
+  //    parent).eval(arg)、别名（var e = eval / e2 = eval / var e = window.eval
+  //    后的 e(arg)）→ 注入 __rewrite_js__( ... )。间接 eval 全局执行、无调用者
+  //    闭包可破坏，包裹零语义风险。
+  // 解析失败时回退到正则 with(this) 改写。
+  //
+  /* ===== 已标明的遗漏点（机制边界，非实现遗漏，与 rewrite.rs 清单一致）=====
+     1. 任意对象 obj.eval(x)：obj 指向静态不可判定，不包裹（确证全局对象的
+        子集已覆盖）。
+     2. 过程传递 function f(g){g(x)}; f(eval)：需过程间分析，不做。
+     3. 跨 <script> 单元的别名：各单元独立改写，信息物理缺失。
+     4. setTimeout('字符串') / new Function('字符串') 等隐式 eval：参数是运行时
+        表达式，无法静态包裹。已在运行时关闭——intercept.js（主线程）与
+        jsWorkerContextCode（worker）分别包装了这两类入口。
+     5. eval(...spread)：运行时才展开，跳过。
+     残余后果：这些形态下被 eval 的代码在真实全局执行，location/this 伪装缺失。 */
   rewriteThisInJs (code, acorn, MagicString) {
-    // 快速跳过：代码不含 this 关键字时无需启动 acorn（this 总是以字面量 "this" 出现）
-    if (!code.includes('this')) return code
+    // 快速跳过：不含任何改写目标时无需启动 acorn。
+    // 注意用 'eval' 而非 'eval('：别名形态 var e = eval; e('x') 不含 'eval('，
+    // 漏判会跳过别名收集（Rust 版 rewrite.rs 同此修复）。
+    const scopeNames = ['location', 'window', 'self', 'globalThis', 'document', 'parent', 'top']
+    if (!code.includes('this') && !code.includes('eval')
+        && scopeNames.every(n => !code.includes(n))) return code
     let ast
     try {
       ast = acorn.parse(code, {
@@ -1673,21 +1722,131 @@ class WebVPN {
       return code.replace(this.reWithThis, ' with(this === self ? __self__ : this)')
     }
     const ms = new MagicString(code)
-    const walk = node => {
-      if (!node || typeof node !== 'object') return
-      if (node.type === 'ThisExpression') {
-        ms.overwrite(node.start, node.end, '(this === self ? __self__ : this)')
-      }
-      for (const key of Object.keys(node)) {
-        const val = node[key]
-        if (Array.isArray(val)) {
-          for (const child of val) walk(child)
-        } else if (val && typeof val === 'object' && val.type) {
-          walk(val)
+    // 作用域判定的保守近似（acorn 核心无语义分析，oxc 的符号解析不可用）：
+    // 先扫描全代码收集所有绑定名（var/let/const 声明、函数/类声明、函数参数），
+    // 引用命中集合即视为绑定、不改写。
+    // 与 oxc 符号级判定的偏差：跨作用域同名（如 A 函数内 var window、B 函数内
+    // 引用 window）时 oxc 会改写、这里不改写——保守方向，少改写不破坏行为。
+    const boundNames = new Set()
+    {
+      const collectBindings = node => {
+        if (!node || typeof node !== 'object') return
+        if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier') {
+          boundNames.add(node.id.name)
+        } else if (node.type === 'FunctionDeclaration' && node.id) {
+          boundNames.add(node.id.name)
+        } else if (node.type === 'ClassDeclaration' && node.id) {
+          boundNames.add(node.id.name)
+        }
+        // 函数参数与函数 id 是并列关系，不能进 else-if 链
+        // （FunctionDeclaration 会先命中 id 分支，参数会被漏收）
+        if ((node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression'
+            || node.type === 'ArrowFunctionExpression') && node.params) {
+          for (const p of node.params) {
+            if (p.type === 'Identifier') boundNames.add(p.name)
+          }
+        }
+        for (const key of Object.keys(node)) {
+          if (key === 'type' || key === 'start' || key === 'end') continue
+          const val = node[key]
+          if (Array.isArray(val)) {
+            for (const child of val) collectBindings(child)
+          } else if (val && typeof val === 'object' && val.type) {
+            collectBindings(val)
+          }
         }
       }
+      collectBindings(ast)
     }
-    walk(ast)
+    // 必须用 null 原型：普通对象字面量会把 node.name === 'constructor' 查到
+    // Object.prototype.constructor（truthy 非字符串），改写时 overwrite 崩溃
+    const scopeReplacements = Object.assign(Object.create(null), { location: '__location__', window: '__window__', self: '__self__', globalThis: '__globalThis__', document: '__document__', parent: '__parent__', top: '__top__' })
+    const indirectEvalObjects = ['window', 'globalThis', 'top', 'self', 'parent']
+    const isGlobalRef = id => !boundNames.has(id.name)
+    // 表达式是否为可静态判定的 eval（裸全局 eval 或 window.eval 等成员形式），
+    // 供 callee / var init / 赋值右值三处共用
+    const isEvalExpr = e => (e.type === 'Identifier' && e.name === 'eval' && isGlobalRef(e))
+      || (e.type === 'MemberExpression' && !e.computed
+          && e.property.type === 'Identifier' && e.property.name === 'eval'
+          && e.object.type === 'Identifier'
+          && indirectEvalObjects.includes(e.object.name) && isGlobalRef(e.object))
+    // eval 别名收集：root 级 var/let/const e = eval 或 e2 = eval 赋值；
+    // 顶层判定用「祖先链无函数边界」近似 root 作用域
+    const hasFunctionBoundary = ancestors => ancestors.some(n =>
+      n.type === 'FunctionDeclaration' || n.type === 'FunctionExpression' || n.type === 'ArrowFunctionExpression')
+    const evalAliases = new Set()
+    const pendingAliasCalls = []
+    const wrapFirstArg = node => {
+      const arg = node.arguments[0]
+      if (!arg || arg.type === 'SpreadElement') return
+      ms.appendLeft(arg.start, '__rewrite_js__(')
+      ms.appendRight(arg.end, ')')
+    }
+    const walk = (node, ancestors) => {
+      if (!node || typeof node !== 'object') return
+      ancestors.push(node)
+      if (node.type === 'ThisExpression') {
+        ms.overwrite(node.start, node.end, '(this === self ? __self__ : this)')
+      } else if (node.type === 'Identifier' && scopeReplacements[node.name]
+                 && isGlobalRef(node)) {
+        // 父节点是 MemberExpression 且本节点是 property（非表达式位置）时不改写
+        const parent = ancestors[ancestors.length - 2]
+        const isMemberProperty = parent && parent.type === 'MemberExpression'
+          && parent.property === node && !parent.computed
+        const isPropertyKey = parent && parent.type === 'Property' && parent.key === node && !parent.computed
+        if (!isMemberProperty && !isPropertyKey) {
+          ms.overwrite(node.start, node.end, scopeReplacements[node.name])
+        }
+      } else if (node.type === 'CallExpression') {
+        const callee = node.callee
+        if (isEvalExpr(callee)) {
+          // 直接 eval 与间接 eval（window.eval 等）统一包裹首参
+          wrapFirstArg(node)
+        } else if (callee.type === 'Identifier' && callee.name !== 'eval'
+                   && evalAliases.has(callee.name) && !hasFunctionBoundary(ancestors)) {
+          // 别名调用点：记录待定，遍历结束后按 dirty 状态统一解析
+          const arg = node.arguments[0]
+          if (arg && arg.type !== 'SpreadElement') {
+            pendingAliasCalls.push({ name: callee.name, start: arg.start, end: arg.end })
+          }
+        }
+      } else if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier' && node.init
+                 && !hasFunctionBoundary(ancestors)) {
+        const init = node.init
+        const isAliasInit = init.type === 'Identifier' && init.name !== 'eval' && evalAliases.has(init.name)
+        if (isEvalExpr(init) || isAliasInit) evalAliases.add(node.id.name)
+      } else if (node.type === 'AssignmentExpression' && node.operator === '='
+                 && node.left.type === 'Identifier') {
+        if (isEvalExpr(node.right) && !hasFunctionBoundary(ancestors)) evalAliases.add(node.left.name)
+        else if (evalAliases.has(node.left.name)) {
+          // 重赋值为非 eval → 作废（清空该名字的全部别名记录，保守）
+          evalAliases.delete(node.left.name)
+        }
+      } else if (node.type === 'UpdateExpression' && node.argument.type === 'Identifier') {
+        // e++ / --e 等更新目标写入别名变量 → 作废
+        if (evalAliases.has(node.argument.name)) evalAliases.delete(node.argument.name)
+      }
+      for (const key of Object.keys(node)) {
+        if (key === 'type' || key === 'start' || key === 'end') continue
+        const val = node[key]
+        if (Array.isArray(val)) {
+          for (const child of val) walk(child, ancestors)
+        } else if (val && typeof val === 'object' && val.type) {
+          walk(val, ancestors)
+        }
+      }
+      ancestors.pop()
+    }
+    walk(ast, [])
+    // 别名调用点解析：收集阶段结束后别名集合已定（赋值可能在调用点之后），
+    // 但「调用后重赋值作废」顺序信息 acorn 节点上无编号可比，保守处理：
+    // 只要名字仍在别名集合中就包裹（赋值收集先于调用点遍历到达时已 delete）。
+    for (const { name, start, end } of pendingAliasCalls) {
+      if (evalAliases.has(name)) {
+        ms.appendLeft(start, '__rewrite_js__(')
+        ms.appendRight(end, ')')
+      }
+    }
     return ms.toString()
   }
 

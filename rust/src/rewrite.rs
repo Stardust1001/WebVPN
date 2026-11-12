@@ -13,41 +13,41 @@ use crate::context::Meta;
 use crate::domain::DomainCodec;
 use crate::headers::transform_url;
 
-/// 预编译热路径正则（避免每个请求重复 Regex::new）
-/// customResponse: with(this) 重写
+// 预编译热路径正则（避免每个请求重复 Regex::new）
+// customResponse: with(this) 重写
 static WITH_THIS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[\s{};]?with\s*\(\s*this\s*\)").unwrap());
-/// customResponse: location.xxx -> location.__xxx__
+// customResponse: location.xxx -> location.__xxx__
 static LOCATION_PROP_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\blocation\.(hostname|host|origin|href|protocol|navigate|assign|replace|reload|toString)\b").unwrap());
-/// replaceUrls(html): href/src/action/srcset/poster 属性
+// replaceUrls(html): href/src/action/srcset/poster 属性
 static HTML_ATTR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)\s(href|src|action|srcset|poster)=("|')?(http:|https:|http%3A|https%3A|//)[^\s>]*"#).unwrap());
-/// AST 模式：移除 HTML 标签中的 integrity= 属性（SRI 校验）。
-/// 改写后的 JS/CSS 内容哈希变化，SRI 校验会失败导致资源被浏览器拒绝执行。
-/// 仅匹配标签内的 integrity= 属性，不影响 <script> 内联 JS 中的 "integrity" 字符串字面量。
+// AST 模式：移除 HTML 标签中的 integrity= 属性（SRI 校验）。
+// 改写后的 JS/CSS 内容哈希变化，SRI 校验会失败导致资源被浏览器拒绝执行。
+// 仅匹配标签内的 integrity= 属性，不影响 <script> 内联 JS 中的 "integrity" 字符串字面量。
 static INTEGRITY_ATTR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)\s+integrity\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)"#).unwrap());
-/// replaceUrls(html/css): url(...)
+// replaceUrls(html/css): url(...)
 static CSS_URL_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)url\([\"\']?(http|//)[^\"\')]+"#).unwrap());
-/// replaceUrls(html/css): @import
+// replaceUrls(html/css): @import
 static CSS_IMPORT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)@import\s[\"\'](http|//)[^\"\']+"#).unwrap());
-/// replaceMatches: 域名有效性检查
-/// (?-u) 使 \w 仅匹配 ASCII [A-Za-z0-9_]，与 JS 默认（无 u flag）行为一致
+// replaceMatches: 域名有效性检查
+// (?-u) 使 \w 仅匹配 ASCII [A-Za-z0-9_]，与 JS 默认（无 u flag）行为一致
 static WORD_DOT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?-u)[\w]+\.").unwrap());
-/// replaceMatches: &#x 实体解码
-/// (?-u) 同上：JS reHtmlEntity=/&#x\w+;/g 的 \w 是 ASCII-only
+// replaceMatches: &#x 实体解码
+// (?-u) 同上：JS reHtmlEntity=/&#x\w+;/g 的 \w 是 ASCII-only
 static HEX_ENTITY_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?-u)&#x\w+;").unwrap());
-/// calcHoistIdentifiersCode: function/class 名提取
-/// (?-u) 使 \w 仅 ASCII：JS \w 不会匹配 CJK 等 Unicode 标识符，
-/// 若不抑制 Unicode 模式，Rust 会为 `function 名前()` 生成多余的 self.名前 = 名前 提升代码
+// calcHoistIdentifiersCode: function/class 名提取
+// (?-u) 使 \w 仅 ASCII：JS \w 不会匹配 CJK 等 Unicode 标识符，
+// 若不抑制 Unicode 模式，Rust 会为 `function 名前()` 生成多余的 self.名前 = 名前 提升代码
 static HOIST_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?-u)(function|class)\s+([\$\_\w]+)\s*\(").unwrap());
-/// processHtml: CSP meta 去除
+// processHtml: CSP meta 去除
 static CSP_META_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)<meta\s+http-equiv="Content-Security-Policy"[^>]+>"#).unwrap());
-/// processHtmlScopeCodes: <script> 抽取
+// processHtmlScopeCodes: <script> 抽取
 static SCRIPT_TAG_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?is)<script([^>]*)>([\S\s]*?)</script>").unwrap());
-/// getBase: <base href>
+// getBase: <base href>
 static BASE_HREF_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)<base\s+href=("|\')[^"']+"#).unwrap());
-/// appendScript: <!DOCTYPE html> 检测
+// appendScript: <!DOCTYPE html> 检测
 static DOCTYPE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^\s*?<!DOCTYPE html>").unwrap());
 
-/// JS 关键字（对应 this.jsKeywords）
+// JS 关键字（对应 this.jsKeywords）
 pub static JS_KEYWORDS: Lazy<Vec<&'static str>> = Lazy::new(|| {
     vec![
         "break", "case", "catch", "continue", "default", "delete", "do", "else", "finally", "for",
@@ -60,8 +60,8 @@ pub static JS_KEYWORDS: Lazy<Vec<&'static str>> = Lazy::new(|| {
     ]
 });
 
-/// Worker 上下文代码（对应 this.jsWorkerContextCode）
-/// 注意：#targetUrl# / #siteUrl# 是占位符，使用时替换
+// Worker 上下文代码（对应 this.jsWorkerContextCode）
+// 注意：#targetUrl# / #siteUrl# 是占位符，使用时替换
 pub fn js_worker_context_code() -> &'static str {
     r#"
       // worker 里面创造 __context__ 环境
@@ -183,11 +183,41 @@ pub fn js_worker_context_code() -> &'static str {
           }
           return fetch.apply(self, [input, init])
         }
+
+        self.__rewrite_js__ = function (code) {
+          if (typeof code !== 'string') return code
+          return code.replace(/\b(location)\.(hostname|host|origin|href|protocol|pathname|port|search)\b/g, '$1.__$2__')
+        }
+        const _workerFunction = self.Function
+        const rewriteFnBody = props => {
+          if (props.length) {
+            const code = props[props.length - 1]
+            if (typeof code === 'string') {
+              props[props.length - 1] = self.__rewrite_js__(code)
+            }
+          }
+          return props
+        }
+        self.Function = new Proxy(_workerFunction, {
+          construct (target, props) {
+            return new _workerFunction(...rewriteFnBody(props))
+          },
+          apply (target, thisArg, props) {
+            return new _workerFunction(...rewriteFnBody(props))
+          }
+        })
+        for (const timerName of ['setTimeout', 'setInterval']) {
+          self['_' + timerName + '_'] = self[timerName]
+          self[timerName] = function (code, ...rest) {
+            if (typeof code === 'string') code = self.__rewrite_js__(code)
+            return self['_' + timerName + '_'].call(self, code, ...rest)
+          }
+        }
       }
     "#
 }
 
-/// 作用域前缀（对应 this.jsScopePrefixCode）
+// 作用域前缀（对应 this.jsScopePrefixCode）
 pub fn js_scope_prefix_code() -> &'static str {
     r#"
     (function () {
@@ -200,15 +230,15 @@ pub fn js_scope_prefix_code() -> &'static str {
     "#
 }
 
-/// 作用域后缀（对应 this.jsScopeSuffixCode）
+// 作用域后缀（对应 this.jsScopeSuffixCode）
 pub fn js_scope_suffix_code() -> &'static str {
     r#"
     }).call(self.__context__.self)
     "#
 }
 
-/// 对应 calcHoistIdentifiersCode(code)
-/// 扫描 function/class 名，把提升的标识符挂到 self 上
+// 对应 calcHoistIdentifiersCode(code)
+// 扫描 function/class 名，把提升的标识符挂到 self 上
 pub fn calc_hoist_identifiers_code(code: &str) -> String {
     // Node: matches.map(m => m[2]).filter(k => !jsKeywords.includes(k))
     // 不去重——同名 function 出现 N 次会生成 N 行 try{self.X=X}catch{}（无害，仅重复赋值）。
@@ -229,7 +259,7 @@ pub fn calc_hoist_identifiers_code(code: &str) -> String {
         .join("\n")
 }
 
-/// 对应 refactorJsScopeCode(ctx, code, isJsFile)
+// 对应 refactorJsScopeCode(ctx, code, isJsFile)
 pub fn refactor_js_scope_code(
     code: &str,
     is_js_file: bool,
@@ -291,7 +321,7 @@ pub fn refactor_js_scope_code(
     result
 }
 
-/// 对应 processHtml(ctx, res)：去掉 CSP meta
+// 对应 processHtml(ctx, res)：去掉 CSP meta
 pub fn process_html(data: &str) -> String {
     // Node: res.data.match(this.reMetaCsp) 返回首个匹配（无 g 标志），
     // 再 res.data.replace(match[0], '') 删除该首个匹配字符串（String.replace 首匹配）。
@@ -299,8 +329,8 @@ pub fn process_html(data: &str) -> String {
     CSP_META_RE.replace(data, "").to_string()
 }
 
-/// 对应 processHtmlScopeCodes(ctx, code)
-/// 抽取 HTML 中所有内联 <script> 内容，逐个用 refactorJsScopeCode 包裹后回填
+// 对应 processHtmlScopeCodes(ctx, code)
+// 抽取 HTML 中所有内联 <script> 内容，逐个用 refactorJsScopeCode 包裹后回填
 pub fn process_html_scope_codes(
     code: &str,
     config: &Config,
@@ -362,7 +392,7 @@ pub fn process_html_scope_codes(
     code
 }
 
-/// 对应 processJsScopeCode(ctx, code)
+// 对应 processJsScopeCode(ctx, code)
 pub fn process_js_scope_code(
     code: &str,
     config: &Config,
@@ -379,9 +409,9 @@ pub fn process_js_scope_code(
     (refactored, meta.mime.clone())
 }
 
-/// 对应 customResponse(ctx, res)
-/// 禁用 module / 严格模式，关闭 SRI，with(this) 重写，location.xxx 重写
-/// rewrite_this = true 时改用 oxc AST 解析全部 this（覆盖默认的 with(this) 正则改写）
+// 对应 customResponse(ctx, res)
+// 禁用 module / 严格模式，关闭 SRI，with(this) 重写，location.xxx 重写
+// rewrite_this = true 时改用 oxc AST 解析全部 this（覆盖默认的 with(this) 正则改写）
 pub fn custom_response(data: &str, mime: &str, rewrite_this: bool) -> String {
     if rewrite_this {
         // AST 模式：不做任何字符串硬替换（保留 type="module"、use strict），
@@ -408,10 +438,10 @@ pub fn custom_response(data: &str, mime: &str, rewrite_this: bool) -> String {
     data
 }
 
-/// AST 模式（rewrite_this=true）：对响应中的 JS 代码做 oxc AST 解析，
-/// 同时改写 this 和 7 个作用域标识符（location/window/self/globalThis/document/parent/top）。
-/// HTML 响应只解析内联 <script> 内容，避免把 HTML 标签当 JS 解析导致报错。
-/// 解析失败时回退到旧模式（字符串硬替换 + 正则 with(this) 改写），保证不崩。
+// AST 模式（rewrite_this=true）：对响应中的 JS 代码做 oxc AST 解析，
+// 同时改写 this 和 7 个作用域标识符（location/window/self/globalThis/document/parent/top）。
+// HTML 响应只解析内联 <script> 内容，避免把 HTML 标签当 JS 解析导致报错。
+// 解析失败时回退到旧模式（字符串硬替换 + 正则 with(this) 改写），保证不崩。
 fn rewrite_ast_in_response(data: &str, mime: &str) -> String {
     match mime {
         "js" => rewrite_ast_in_js(data).unwrap_or_else(|| legacy_rewrite_js(data)),
@@ -420,18 +450,18 @@ fn rewrite_ast_in_response(data: &str, mime: &str) -> String {
     }
 }
 
-/// AST 模式解析失败时的回退改写。
-/// 仅做不依赖 `with(__context_proxy__)` 包裹的改写：
-/// - `with(this)` → `with(this === self ? __self__ : this)`（正则，处理原代码中的 with 语句）
-/// - `location.xxx` → `location.__xxx__`（正则，处理 location 属性访问）
-///
-/// **不做** ESM 移除 / use strict 移除 / type=module 替换——
-/// 那些是旧模式 `with` 包裹的前置条件，AST 模式不包裹 with，做了反而有害
-/// （破坏 ESM 兼容性、可能误改 JS 字符串字面量中的 "type=module" 等子串）。
-/// integrity 属性的移除在 HTML 层面处理（rewrite_ast_in_html_scripts），不在此函数。
-///
-/// 注意：此回退无法拦截裸 `location`/`window`/`self` 等标识符引用（需 AST 或 with 包裹）。
-/// 解析失败的 JS 会失去这部分拦截能力，但仍可正常运行。
+// AST 模式解析失败时的回退改写。
+// 仅做不依赖 `with(__context_proxy__)` 包裹的改写：
+// - `with(this)` → `with(this === self ? __self__ : this)`（正则，处理原代码中的 with 语句）
+// - `location.xxx` → `location.__xxx__`（正则，处理 location 属性访问）
+//
+// **不做** ESM 移除 / use strict 移除 / type=module 替换——
+// 那些是旧模式 `with` 包裹的前置条件，AST 模式不包裹 with，做了反而有害
+// （破坏 ESM 兼容性、可能误改 JS 字符串字面量中的 "type=module" 等子串）。
+// integrity 属性的移除在 HTML 层面处理（rewrite_ast_in_html_scripts），不在此函数。
+//
+// 注意：此回退无法拦截裸 `location`/`window`/`self` 等标识符引用（需 AST 或 with 包裹）。
+// 解析失败的 JS 会失去这部分拦截能力，但仍可正常运行。
 fn legacy_rewrite_js(code: &str) -> String {
     let data = LOCATION_PROP_RE.replace_all(code, |caps: &regex::Captures| {
         format!("location.__{}__", &caps[1])
@@ -439,8 +469,8 @@ fn legacy_rewrite_js(code: &str) -> String {
     WITH_THIS_RE.replace_all(&data, " with(this === self ? __self__ : this)").to_string()
 }
 
-/// 抽取 HTML 中内联 <script> 内容逐段做 AST 改写（倒序回填避免位置偏移）
-/// 逻辑与 process_html_scope_codes 的脚本抽取一致
+// 抽取 HTML 中内联 <script> 内容逐段做 AST 改写（倒序回填避免位置偏移）
+// 逻辑与 process_html_scope_codes 的脚本抽取一致
 fn rewrite_ast_in_html_scripts(data: &str) -> String {
     // 移除 HTML 标签中的 integrity= 属性（SRI 校验）。
     // 改写后的 JS/CSS 内容哈希变化，SRI 校验失败会导致资源被浏览器拒绝执行。
@@ -508,7 +538,7 @@ fn rewrite_ast_in_html_scripts(data: &str) -> String {
     result
 }
 
-/// 需要改写的 7 个作用域标识符及其替换文本
+// 需要改写的 7 个作用域标识符及其替换文本
 const SCOPE_NAMES: &[(&str, &str)] = &[
     ("location", "__location__"),
     ("window", "__window__"),
@@ -519,28 +549,41 @@ const SCOPE_NAMES: &[(&str, &str)] = &[
     ("top", "__top__"),
 ];
 
-/// this 的替换文本
-/// 比较对象必须用 globalThis 而非 self：注入的裸 `self` 会被局部变量遮蔽
-/// （如 jQuery find 里 `var self = this`，导致 this === self 恒真，
-/// 方法内的 this 全部错误地路由到 __self__，pushStack 等 Crash）。
-/// globalThis 不会被本改写器二次改写（替换是按 span 文本拼接，不重访），
-/// IE 等无 globalThis 的环境下求值为 undefined → 恒走 this 分支，安全降级。
+// this 的替换文本
+// 比较对象必须用 globalThis 而非 self：注入的裸 `self` 会被局部变量遮蔽
+// （如 jQuery find 里 `var self = this`，导致 this === self 恒真，
+// 方法内的 this 全部错误地路由到 __self__，pushStack 等 Crash）。
+// globalThis 不会被本改写器二次改写（替换是按 span 文本拼接，不重访），
+// IE 等无 globalThis 的环境下求值为 undefined → 恒走 this 分支，安全降级。
 const THIS_REPLACEMENT: &str = "(this === globalThis ? __self__ : this)";
 
-/// oxc AST visitor：一次遍历同时收集 ThisExpression 和 7 个作用域标识符的 span
-/// - ThisExpression: this → (this === globalThis ? __self__ : this)
-/// - IdentifierReference: location/window/self/globalThis/document/parent/top → __xxx__
-///   注意：obj.location 中的 location 是 MemberProperty（IdentifierName），
-///   不会触发 visit_identifier_reference，所以属性名不会被误改。
-///
-/// 语义正确性：仅改写**未绑定到任何局部声明**的全局引用（is_global_reference）。
-/// `var top = 5; console.log(top)` 中，第二个 `top` 绑定到 var 声明，
-/// 不应改写——这与旧模式 `with` 语句的词法作用域行为一致（局部变量遮蔽 with 对象）。
+// oxc AST visitor：一次遍历同时收集 ThisExpression 和 7 个作用域标识符的 span
+// - ThisExpression: this → (this === globalThis ? __self__ : this)
+// - IdentifierReference: location/window/self/globalThis/document/parent/top → __xxx__
+//   注意：obj.location 中的 location 是 MemberProperty（IdentifierName），
+//   不会触发 visit_identifier_reference，所以属性名不会被误改。
+//
+// 语义正确性：仅改写**未绑定到任何局部声明**的全局引用（is_global_reference）。
+// `var top = 5; console.log(top)` 中，第二个 `top` 绑定到 var 声明，
+// 不应改写——这与旧模式 `with` 语句的词法作用域行为一致（局部变量遮蔽 with 对象）。
 struct RewriteCollector {
     spans: Vec<(u32, u32, &'static str)>, // (start, end, replacement)
     // Scoping 的原始指针：visitor 持有 &mut self，无法同时持有 &Scoping 借用，
     // 用 raw pointer 绕过借用检查。生命周期由调用方保证（scoping 活跃于整个 visit 期间）。
     scoping: *const oxc_semantic::Scoping,
+    // eval 别名收集（var e = eval / e2 = eval 这类变量别名）：
+    // 仅收根作用域绑定、初始化为全局 eval 引用的符号 id。间接 eval 本就在全局
+    // 作用域执行、无调用者作用域可破坏，包裹其参数是零语义风险的——只改字符串
+    // 内容，由运行时 __rewrite_js__ 补上 this / 标识符伪装。
+    eval_alias_symbols: Vec<usize>,
+    // 未解析的别名名字（`e2 = eval` 无声明，e2 不产生符号）：按名字匹配
+    eval_alias_names: Vec<String>,
+    // 被重新赋值 / 更新 / 非_eval 重新声明的符号 → 别名作废（保守）
+    dirty_symbols: Vec<usize>,
+    // 待定的别名调用点：(SymbolId index | usize::MAX 表示按名字, 名字, 参数 start, 参数 end)。
+    // 遍历期间 dirty 状态可能尚未定（赋值可能出现在调用点之后），
+    // 遍历结束后统一按别名集合 - dirty 解析。
+    pending_alias_calls: Vec<(usize, String, u32, u32)>,
 }
 
 // SAFETY: Scoping 在 rewrite_ast_in_js 中存活于整个 visit_program 期间，
@@ -548,10 +591,155 @@ struct RewriteCollector {
 unsafe impl Send for RewriteCollector {}
 unsafe impl Sync for RewriteCollector {}
 
+// 直接 eval 首参的包裹函数：intercept.js 在 window 上定义
+// `window.__rewrite_js__ = code => WASM改写(code)`，见 public/intercept.js。
+// 运行时对参数求值后做 this / 7 个作用域标识符改写，再交给直接 eval 执行——
+// eval 调用形式不变（仍字面 eval），调用者闭包作用域与 this 全部保留。
+const EVAL_ARG_WRAPPER: &str = "__rewrite_js__(";
+
+// 间接 eval 的成员 callee：obj.eval 形式。obj 必须是这些全局引用之一，
+// 且未被局部变量遮蔽（is_global_reference 判定）才可静态判定为 eval：
+// - window.eval / globalThis.eval：规范定义的全局对象属性访问
+// - top.eval / self.eval / parent.eval：浏览器全局对象别名，与 window 同一对象
+//   （globalThis Proxy 改写发生在文本替换层，与本收集器互不干扰）
+// 遮蔽情形（如 function f(self){ self.eval(x) }）静态不可判定，不收。
+const INDIRECT_EVAL_OBJECTS: &[&str] = &["window", "globalThis", "top", "self", "parent"];
+
+// 判断表达式是否为可静态判定的 eval（直接裸 eval 或 window.eval 等成员形式），
+// 供调用 callee / var init 两处共用。返回 true 时调用方包裹首参——间接 eval
+// 全局执行、无调用者闭包可破坏，包裹零语义风险。
+fn is_eval_callee<'a>(
+    callee: &oxc_ast::ast::Expression<'a>,
+    scoping: &oxc_semantic::Scoping,
+) -> bool {
+    match callee {
+        // 直接 eval：裸全局 eval 标识符
+        oxc_ast::ast::Expression::Identifier(id) => {
+            id.name.as_str() == "eval" && id.is_global_reference(scoping)
+        }
+        // 间接 eval：window.eval / globalThis.eval / top.eval / self.eval / parent.eval
+        oxc_ast::ast::Expression::StaticMemberExpression(member) => {
+            member.property.name.as_str() == "eval"
+                && matches!(&member.object, oxc_ast::ast::Expression::Identifier(obj)
+                    if INDIRECT_EVAL_OBJECTS.contains(&obj.name.as_str())
+                        && obj.is_global_reference(scoping))
+        }
+        _ => false,
+    }
+}
+
 impl<'a> oxc_ast_visit::Visit<'a> for RewriteCollector {
     fn visit_this_expression(&mut self, it: &oxc_ast::ast::ThisExpression) {
         self.spans.push((it.span.start, it.span.end, THIS_REPLACEMENT));
         oxc_ast_visit::walk::walk_this_expression(self, it);
+    }
+
+    // 直接/间接/别名 eval 首参包裹为 eval(__rewrite_js__(arg))。
+    // 间接 eval 全局执行、无调用者闭包可破坏，包裹零语义风险；参数内部的
+    // this / 标识符改写由 visit_identifier_reference 照常完成（两遍改写幂等）。
+    fn visit_call_expression(&mut self, it: &oxc_ast::ast::CallExpression<'a>) {
+        let scoping = unsafe { &*self.scoping };
+        if is_eval_callee(&it.callee, scoping) {
+            self.push_eval_arg_spans(it);
+        } else if let oxc_ast::ast::Expression::Identifier(id) = &it.callee {
+            let name = id.name.as_str();
+            if name != "eval" {
+                // 符号引用（非全局）：可能是 eval 别名变量
+                let sym = scoping.get_reference(id.reference_id()).symbol_id();
+                let sym_idx = sym.map(|s| s.index());
+                if sym_idx.map_or_else(
+                    || self.eval_alias_names.iter().any(|n| n == name),
+                    |i| self.eval_alias_symbols.contains(&i),
+                ) {
+                    // 记录待定调用点，dirty 状态待遍历结束确认
+                    if let Some(arg) = it.arguments.first() {
+                        if !arg.is_spread() {
+                            let span = oxc_span::GetSpan::span(arg);
+                            self.pending_alias_calls.push((
+                                sym_idx.unwrap_or(usize::MAX),
+                                name.to_string(),
+                                span.start,
+                                span.end,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        oxc_ast_visit::walk::walk_call_expression(self, it);
+    }
+
+    // eval 别名收集：根作用域 var/let/const e = eval（或 = window.eval 等成员
+    // 形式，包裹性质相同）→ 记录符号；传递链 var g = e 一并收集。
+    fn visit_variable_declarator(&mut self, it: &oxc_ast::ast::VariableDeclarator<'a>) {
+        if let (Some(init), oxc_ast::ast::BindingPattern::BindingIdentifier(id)) =
+            (&it.init, &it.id)
+        {
+            let scoping = unsafe { &*self.scoping };
+            let init_is_eval = is_eval_callee(init, scoping);
+            // 传递赋值链 var g = e：init 是已记录的别名变量
+            let init_is_alias = match init {
+                oxc_ast::ast::Expression::Identifier(init_id) => {
+                    if init_id.name.as_str() == "eval" {
+                        false
+                    } else {
+                        let by_sym = scoping
+                            .get_reference(init_id.reference_id())
+                            .symbol_id()
+                            .map(|s| s.index())
+                            .map_or(false, |i| self.eval_alias_symbols.contains(&i));
+                        by_sym
+                            || self
+                                .eval_alias_names
+                                .iter()
+                                .any(|n| n.as_str() == init_id.name.as_str())
+                    }
+                }
+                _ => false,
+            };
+            if init_is_eval || init_is_alias {
+                if let Some(sym) = id.symbol_id.get() {
+                    // 仅根作用域声明的别名（顶层/全局），嵌套作用域的别名
+                    // 出界即失效，保守不收
+                    if scoping.symbol_scope_id(sym) == scoping.root_scope_id() {
+                        self.eval_alias_symbols.push(sym.index());
+                    }
+                } else {
+                    // 未解析符号（极端情况）：按名字记录，配合"名字无局部
+                    // 绑定"的调用点检查兜底
+                    self.eval_alias_names.push(id.name.as_str().to_string());
+                }
+            }
+        }
+        oxc_ast_visit::walk::walk_variable_declarator(self, it);
+    }
+
+    // `e2 = eval`（无 var 声明的全局赋值别名）：RHS 是全局 eval 时按名字记录。
+    // 调用点解析时要求该名字无任何局部符号，避免误包同名局部变量。
+    // 注意：收集必须在 walk 之后——赋值目标 e2 自身是写引用，walk 中
+    // mark_dirty_if_alias 会按名字清空别名记录；先 walk 后收集可正确
+    // 作废"重赋值为非 eval"的旧值、保留"赋值为 eval"的新值。
+    fn visit_assignment_expression(&mut self, it: &oxc_ast::ast::AssignmentExpression<'a>) {
+        oxc_ast_visit::walk::walk_assignment_expression(self, it);
+        if let oxc_ast::ast::Expression::Identifier(init_id) = &it.right {
+            let scoping = unsafe { &*self.scoping };
+            if init_id.name.as_str() == "eval" && init_id.is_global_reference(scoping) {
+                if let Some(oxc_ast::ast::SimpleAssignmentTarget::AssignmentTargetIdentifier(id)) =
+                    it.left.as_simple_assignment_target()
+                {
+                    self.eval_alias_names.push(id.name.as_str().to_string());
+                }
+            }
+        }
+    }
+
+    // `e++` / `--e` / `e += 1` 等更新目标写入别名变量 → 作废
+    // （`e = x` 的赋值目标也走 SimpleAssignmentTarget::AssignmentTargetIdentifier）
+    fn visit_simple_assignment_target(&mut self, it: &oxc_ast::ast::SimpleAssignmentTarget<'a>) {
+        if let oxc_ast::ast::SimpleAssignmentTarget::AssignmentTargetIdentifier(id) = it {
+            self.mark_dirty_if_alias(id);
+        }
+        oxc_ast_visit::walk::walk_simple_assignment_target(self, it);
     }
 
     fn visit_identifier_reference(&mut self, it: &oxc_ast::ast::IdentifierReference<'a>) {
@@ -575,11 +763,54 @@ impl<'a> oxc_ast_visit::Visit<'a> for RewriteCollector {
     }
 }
 
-/// 用 oxc 解析单段 JS 代码，同时改写 this 和 7 个作用域标识符。
-/// 解析失败时返回 None，由调用方决定回退策略。
+impl RewriteCollector {
+    // 直接 eval 首参包裹：zero-width 插入 `__rewrite_js__(` 与 `)`
+    fn push_eval_arg_spans<'a>(&mut self, it: &oxc_ast::ast::CallExpression<'a>) {
+        if let Some(arg) = it.arguments.first() {
+            if arg.is_spread() {
+                // eval(...spread) 运行时才展开，无法静态包裹首参，跳过
+            } else {
+                let span = oxc_span::GetSpan::span(arg);
+                let (s, e) = (span.start, span.end);
+                self.spans.push((s, s, EVAL_ARG_WRAPPER));
+                self.spans.push((e, e, ")"));
+            }
+        }
+    }
+
+    // 写引用（is_write）→ 别名作废；读引用是正常调用点，已在 visit_call_expression 处理。
+    // 未解析引用（`e2 = x` 的 e2 无符号）按名字作废。
+    fn mark_dirty_if_alias<'a>(&mut self, id: &oxc_ast::ast::IdentifierReference<'a>) {
+        let scoping = unsafe { &*self.scoping };
+        let name = id.name.as_str();
+        match scoping.get_reference(id.reference_id()).symbol_id() {
+            Some(sym) => {
+                let sym_idx = sym.index();
+                if self.eval_alias_symbols.contains(&sym_idx)
+                    && scoping.get_reference(id.reference_id()).is_write()
+                {
+                    self.dirty_symbols.push(sym_idx);
+                }
+            }
+            None => {
+                if self.eval_alias_names.iter().any(|n| n == name) {
+                    self.eval_alias_names.clear();
+                }
+            }
+        }
+    }
+}
+
+// 用 oxc 解析单段 JS 代码，同时改写 this 和 7 个作用域标识符。
+// 解析失败时返回 None，由调用方决定回退策略。
 fn rewrite_ast_in_js(code: &str) -> Option<String> {
-    // 快速跳过：不含任何需改写的关键字时无需启动 oxc
-    if !code.contains("this") && SCOPE_NAMES.iter().all(|(n, _)| !code.contains(n)) {
+    // 快速跳过：不含任何需改写的关键字时无需启动 oxc。
+    // eval( 改为 eval：别名形态 var e = eval; e('x') 不含 'eval('，
+    // 漏判会跳过别名收集（Node 版 webvpn.js 同此修复）
+    if !code.contains("this")
+        && !code.contains("eval")
+        && SCOPE_NAMES.iter().all(|(n, _)| !code.contains(n))
+    {
         return Some(code.to_string());
     }
 
@@ -614,12 +845,40 @@ fn rewrite_ast_in_js(code: &str) -> Option<String> {
     let mut collector = RewriteCollector {
         spans: Vec::new(),
         scoping: scoping as *const _,
+        eval_alias_symbols: Vec::new(),
+        eval_alias_names: Vec::new(),
+        dirty_symbols: Vec::new(),
+        pending_alias_calls: Vec::new(),
     };
     collector.visit_program(program);
 
+    // 遍历结束后解析别名调用点：别名集合 - 作废集合（赋值可能出现在调用点之后，
+    // 保守起见只要存在任何写引用就作废该别名的所有调用点）。
+    // 名字匹配（usize::MAX）还需通过"该名字在根作用域有别名记录"这一关，
+    // 且存在同名局部符号时不可用名字兜底（避免误包遮蔽变量的调用点）。
+    let dirty = std::mem::take(&mut collector.dirty_symbols);
+    let pending = std::mem::take(&mut collector.pending_alias_calls);
+    for (sym, name, s, e) in pending {
+        if sym == usize::MAX {
+            // 名字兜底仅当该名字没有任何局部符号绑定（有绑定说明是同名局部
+            // 变量的调用点，符号机制已精确区分，不能按名字误包）
+            let name_has_local_symbol = (0..scoping.symbols_len())
+                .any(|i| scoping.symbol_name(oxc_semantic::SymbolId::new(i)) == name);
+            if name_has_local_symbol || !collector.eval_alias_names.iter().any(|n| n.as_str() == name) {
+                continue;
+            }
+        } else if dirty.contains(&sym) {
+            continue;
+        }
+        collector.spans.push((s, s, EVAL_ARG_WRAPPER));
+        collector.spans.push((e, e, ")"));
+    }
+
     let mut spans = collector.spans.clone();
     spans.sort_by_key(|&(s, _, _)| s);
-    spans.dedup_by(|a, b| a.0 == b.0);
+    // 零宽插入（eval 参数包裹）与标识符替换可能 start 相同（如 eval(location)），
+    // 去重必须按 (start, end) 完整 span，否则同 start 的两个替换会丢一个
+    spans.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
 
     if spans.is_empty() {
         // 解析成功但无 this/标识符（可能仅出现在字符串/注释中）
@@ -646,7 +905,7 @@ fn rewrite_ast_in_js(code: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// 与 Node 版 acorn 行为对齐验证：顶层 return + this 应被正确改写
+    // 与 Node 版 acorn 行为对齐验证：顶层 return + this 应被正确改写
     #[test]
     fn test_toplevel_return_and_this() {
         let code = "return this;";
@@ -658,7 +917,7 @@ mod tests {
         );
     }
 
-    /// 损坏的 JS 应返回 None（由调用方回退到旧模式字符串替换）
+    // 损坏的 JS 应返回 None（由调用方回退到旧模式字符串替换）
     #[test]
     fn test_malformed_js_returns_none() {
         // 语法错误：function 后缺括号。oxc 应判定 fatal_error。
@@ -667,7 +926,7 @@ mod tests {
         assert!(out.is_none(), "malformed JS should return None, got: {:?}", out);
     }
 
-    /// 不含 this/作用域标识符的代码应 fast-skip 原样返回
+    // 不含 this/作用域标识符的代码应 fast-skip 原样返回
     #[test]
     fn test_no_targets_fast_skip() {
         let code = "const x = 42; function add(a, b) { return a + b; }";
@@ -675,7 +934,7 @@ mod tests {
         assert_eq!(out, code, "code without targets should be returned unchanged");
     }
 
-    /// 字符串/注释中的 this 不应被改写（AST 解析识别真正的 ThisExpression）
+    // 字符串/注释中的 this 不应被改写（AST 解析识别真正的 ThisExpression）
     #[test]
     fn test_this_in_string_and_comment_preserved() {
         let code = "var s = \"this is a string\"; // this is a comment\nconsole.log(this);";
@@ -689,8 +948,8 @@ mod tests {
         );
     }
 
-    /// with(this) 经 AST 改写后应为 with((this === globalThis ? __self__ : this))
-    /// （AST 路径只替换 this 表达式本身，保留外层 with(...) 结构）
+    // with(this) 经 AST 改写后应为 with((this === globalThis ? __self__ : this))
+    // （AST 路径只替换 this 表达式本身，保留外层 with(...) 结构）
     #[test]
     fn test_with_this_ast_rewrite() {
         let code = "with(this) { foo(); }";
@@ -702,7 +961,7 @@ mod tests {
         );
     }
 
-    /// 裸 location 标识符应被改写为 __location__
+    // 裸 location 标识符应被改写为 __location__
     #[test]
     fn test_ast_rewrites_location_identifier() {
         let code = "location.href = 'http://example.com';";
@@ -719,7 +978,7 @@ mod tests {
         );
     }
 
-    /// 裸 window 标识符应被改写为 __window__
+    // 裸 window 标识符应被改写为 __window__
     #[test]
     fn test_ast_rewrites_window_identifier() {
         let code = "window.location = 'http://example.com';";
@@ -731,7 +990,7 @@ mod tests {
         );
     }
 
-    /// obj.location 中的 location 是属性名，不应被改写
+    // obj.location 中的 location 是属性名，不应被改写
     #[test]
     fn test_ast_preserves_property_names() {
         let code = "const x = obj.location;";
@@ -748,12 +1007,12 @@ mod tests {
         );
     }
 
-    /// 声明名（BindingIdentifier）不应被改写；且引用局部声明的同名变量也不应被改写。
-    /// `var location = 1; console.log(location)` 中：
-    /// - `var location` 的声明名是 BindingIdentifier，不改写
-    /// - `console.log(location)` 中的 location 是 IdentifierReference，
-    ///   但它绑定到 var 声明（is_global_reference = false），也不改写。
-    ///   这与旧模式 `with` 的词法作用域行为一致——局部变量遮蔽 with 对象的属性。
+    // 声明名（BindingIdentifier）不应被改写；且引用局部声明的同名变量也不应被改写。
+    // `var location = 1; console.log(location)` 中：
+    // - `var location` 的声明名是 BindingIdentifier，不改写
+    // - `console.log(location)` 中的 location 是 IdentifierReference，
+    //   但它绑定到 var 声明（is_global_reference = false），也不改写。
+    //   这与旧模式 `with` 的词法作用域行为一致——局部变量遮蔽 with 对象的属性。
     #[test]
     fn test_ast_preserves_binding_identifiers() {
         let code = "var location = 1; console.log(location);";
@@ -770,8 +1029,8 @@ mod tests {
         );
     }
 
-    /// 局部变量遮蔽：`var top = 5; console.log(top)` 中的 top 绑定到局部 var 声明，
-    /// 不应改写为 __top__。这是语义分析的核心价值——避免误改局部变量。
+    // 局部变量遮蔽：`var top = 5; console.log(top)` 中的 top 绑定到局部 var 声明，
+    // 不应改写为 __top__。这是语义分析的核心价值——避免误改局部变量。
     #[test]
     fn test_ast_local_variable_shadowing_not_rewritten() {
         let code = "var top = 5; console.log(top);";
@@ -788,8 +1047,8 @@ mod tests {
         );
     }
 
-    /// 对比：全局引用（无局部声明遮蔽）应被改写。
-    /// `console.log(top)` 中 top 无局部声明，是全局引用，应改写为 __top__。
+    // 对比：全局引用（无局部声明遮蔽）应被改写。
+    // `console.log(top)` 中 top 无局部声明，是全局引用，应改写为 __top__。
     #[test]
     fn test_ast_global_reference_is_rewritten() {
         let code = "console.log(top);";
@@ -801,8 +1060,8 @@ mod tests {
         );
     }
 
-    /// 函数参数遮蔽：`function f(self) { return self; }` 中 self 是参数，绑定到局部，
-    /// 不应改写。这覆盖了函数作用域的引用解析。
+    // 函数参数遮蔽：`function f(self) { return self; }` 中 self 是参数，绑定到局部，
+    // 不应改写。这覆盖了函数作用域的引用解析。
     #[test]
     fn test_ast_function_param_shadowing() {
         let code = "function f(self) { return self; }";
@@ -814,7 +1073,7 @@ mod tests {
         );
     }
 
-    /// AST 模式应保留 type="module" 和 use strict（不做字符串硬替换）
+    // AST 模式应保留 type="module" 和 use strict（不做字符串硬替换）
     #[test]
     fn test_ast_preserves_esm_and_strict() {
         let data = r#"<script type="module">"use strict"; this.foo();</script>"#;
@@ -831,7 +1090,7 @@ mod tests {
         );
     }
 
-    /// 旧模式应移除 type="module" 和 use strict
+    // 旧模式应移除 type="module" 和 use strict
     #[test]
     fn test_legacy_removes_esm_and_strict() {
         let data = r#"<script type="module">"use strict"; this.foo();</script>"#;
@@ -848,7 +1107,7 @@ mod tests {
         );
     }
 
-    /// self 和 document 标识符应被改写
+    // self 和 document 标识符应被改写
     #[test]
     fn test_ast_rewrites_self_and_document() {
         let code = "self.document.title = document.title;";
@@ -867,8 +1126,8 @@ mod tests {
         );
     }
 
-    /// 箭头函数中的 this 应被改写（箭头函数不绑定自己的 this，继承外层）。
-    /// 这验证 visitor 能正确进入箭头函数体。
+    // 箭头函数中的 this 应被改写（箭头函数不绑定自己的 this，继承外层）。
+    // 这验证 visitor 能正确进入箭头函数体。
     #[test]
     fn test_ast_rewrites_this_in_arrow_function() {
         let code = "const f = () => this.foo;";
@@ -880,9 +1139,9 @@ mod tests {
         );
     }
 
-    /// 闭包（普通函数）中的 this 应被改写。
-    /// 虽然普通函数的 this 是动态绑定的，但 AST 层面 ThisExpression 都应被改写——
-    /// 与旧模式 with(this) 正则的行为一致（正则无法区分函数内外）。
+    // 闭包（普通函数）中的 this 应被改写。
+    // 虽然普通函数的 this 是动态绑定的，但 AST 层面 ThisExpression 都应被改写——
+    // 与旧模式 with(this) 正则的行为一致（正则无法区分函数内外）。
     #[test]
     fn test_ast_rewrites_this_in_closure() {
         let code = "function f() { return this; }";
@@ -894,10 +1153,10 @@ mod tests {
         );
     }
 
-    /// jQuery find 的崩溃回归测试：局部 `var self = this` 遮蔽全局 self。
-    /// 注入的比较引用必须是 globalThis（不可被局部变量遮蔽），
-    /// 否则方法内 this === self 恒真，this 全部错误路由到 __self__，
-    /// 导致 `__self__.pushStack is not a function` 一类的全局崩溃。
+    // jQuery find 的崩溃回归测试：局部 `var self = this` 遮蔽全局 self。
+    // 注入的比较引用必须是 globalThis（不可被局部变量遮蔽），
+    // 否则方法内 this === self 恒真，this 全部错误路由到 __self__，
+    // 导致 `__self__.pushStack is not a function` 一类的全局崩溃。
     #[test]
     fn test_this_with_local_self_shadow() {
         let code = "find: function(selector) {\n  var i, ret, self = this;\n  ret = this.pushStack('', 'find', selector);\n}";
@@ -920,9 +1179,9 @@ mod tests {
         );
     }
 
-    /// 解构赋值中的全局标识符引用应被改写。
-    /// `const { href } = location` 中 location 是全局引用（无局部遮蔽），应改写为 __location__。
-    /// href 是解构的 BindingIdentifier，不改写。
+    // 解构赋值中的全局标识符引用应被改写。
+    // `const { href } = location` 中 location 是全局引用（无局部遮蔽），应改写为 __location__。
+    // href 是解构的 BindingIdentifier，不改写。
     #[test]
     fn test_ast_rewrites_in_destructuring() {
         let code = "const { href } = location;";
@@ -939,8 +1198,8 @@ mod tests {
         );
     }
 
-    /// 对象解构中用同名 key 提取全局变量：`const { self } = window`
-    /// window 是全局引用 → __window__；self 是 BindingIdentifier → 不改写。
+    // 对象解构中用同名 key 提取全局变量：`const { self } = window`
+    // window 是全局引用 → __window__；self 是 BindingIdentifier → 不改写。
     #[test]
     fn test_ast_destructuring_same_name_key() {
         let code = "const { self } = window;";
@@ -959,9 +1218,9 @@ mod tests {
         );
     }
 
-    /// 嵌套作用域：外层 var 遮蔽 + 内层裸引用。
-    /// `var top = 1; function f() { return top; }` 中，
-    /// 函数内的 top 仍绑定到外层 var 声明（闭包捕获），不应改写。
+    // 嵌套作用域：外层 var 遮蔽 + 内层裸引用。
+    // `var top = 1; function f() { return top; }` 中，
+    // 函数内的 top 仍绑定到外层 var 声明（闭包捕获），不应改写。
     #[test]
     fn test_ast_nested_scope_closure_capture() {
         let code = "var top = 1; function f() { return top; }";
@@ -973,8 +1232,8 @@ mod tests {
         );
     }
 
-    /// let/const 块级作用域遮蔽：`let self = {}; console.log(self)`
-    /// self 绑定到 let 声明，不应改写。
+    // let/const 块级作用域遮蔽：`let self = {}; console.log(self)`
+    // self 绑定到 let 声明，不应改写。
     #[test]
     fn test_ast_let_block_scope_shadowing() {
         let code = "let self = {}; console.log(self);";
@@ -986,10 +1245,10 @@ mod tests {
         );
     }
 
-    /// 混合场景：局部变量 + 全局引用共存。
-    /// `var top = 1; console.log(top, window)` 中：
-    /// - top 绑定到局部 var，不改写
-    /// - window 是全局引用，改写为 __window__
+    // 混合场景：局部变量 + 全局引用共存。
+    // `var top = 1; console.log(top, window)` 中：
+    // - top 绑定到局部 var，不改写
+    // - window 是全局引用，改写为 __window__
     #[test]
     fn test_ast_mixed_local_and_global() {
         let code = "var top = 1; console.log(top, window);";
@@ -1006,11 +1265,11 @@ mod tests {
         );
     }
 
-    /// with + use strict 是语法错误（严格模式禁止 with）。
-    /// oxc 应将其判为 fatal_error → 返回 None → 回退到 legacy_rewrite_js。
-    /// legacy_rewrite_js 不移除 use strict（AST 模式回退不做 ESM/strict 移除），
-    /// 但这不影响——原代码本身就有语法错误，浏览器也会报错。
-    /// 关键是：AST 路径不崩溃，返回 None 让调用方回退。
+    // with + use strict 是语法错误（严格模式禁止 with）。
+    // oxc 应将其判为 fatal_error → 返回 None → 回退到 legacy_rewrite_js。
+    // legacy_rewrite_js 不移除 use strict（AST 模式回退不做 ESM/strict 移除），
+    // 但这不影响——原代码本身就有语法错误，浏览器也会报错。
+    // 关键是：AST 路径不崩溃，返回 None 让调用方回退。
     #[test]
     fn test_ast_with_strict_returns_none_or_fallback() {
         let code = r#""use strict"; with({foo: 1}) { console.log(foo); }"#;
@@ -1029,9 +1288,9 @@ mod tests {
         // None 也是可接受的（fatal_error → 回退）
     }
 
-    /// legacy_rewrite_js 不应破坏 JS 字符串字面量中的 "type=module" 等子串。
-    /// 此前旧版 legacy_rewrite_js 会做 type="module" → type="mod" 替换，
-    /// 可能误改 JS 代码中的字符串。修复后仅做 with(this) + location.xxx 正则。
+    // legacy_rewrite_js 不应破坏 JS 字符串字面量中的 "type=module" 等子串。
+    // 此前旧版 legacy_rewrite_js 会做 type="module" → type="mod" 替换，
+    // 可能误改 JS 代码中的字符串。修复后仅做 with(this) + location.xxx 正则。
     #[test]
     fn test_legacy_rewrite_preserves_string_literals() {
         let code = r#"var s = 'type="module" use strict integrity'; with(this) { foo(); }"#;
@@ -1060,8 +1319,8 @@ mod tests {
         );
     }
 
-    /// AST 模式下 HTML 中的 integrity= 属性必须被移除。
-    /// 改写后的 JS/CSS 内容哈希变化，SRI 校验失败会导致资源被浏览器拒绝执行。
+    // AST 模式下 HTML 中的 integrity= 属性必须被移除。
+    // 改写后的 JS/CSS 内容哈希变化，SRI 校验失败会导致资源被浏览器拒绝执行。
     #[test]
     fn test_ast_html_removes_integrity() {
         let html = r#"<html><head>
@@ -1083,8 +1342,8 @@ mod tests {
         );
     }
 
-    /// AST 模式下内联 <script> 中的 "integrity" 字符串字面量不应被移除。
-    /// INTEGRITY_ATTR_RE 只匹配标签属性，不匹配 JS 字符串。
+    // AST 模式下内联 <script> 中的 "integrity" 字符串字面量不应被移除。
+    // INTEGRITY_ATTR_RE 只匹配标签属性，不匹配 JS 字符串。
     #[test]
     fn test_ast_html_preserves_integrity_in_js_string() {
         let html = r#"<script>var s = "integrity"; console.log(s)</script>"#;
@@ -1096,10 +1355,10 @@ mod tests {
         );
     }
 
-    /// catch 子句的异常变量是 BindingIdentifier，不应被改写。
-    /// `try {} catch(self) { console.log(self) }` 中：
-    /// - catch(self) 的 self 是绑定名，不改写
-    /// - console.log(self) 中的 self 绑定到 catch 变量，不改写
+    // catch 子句的异常变量是 BindingIdentifier，不应被改写。
+    // `try {} catch(self) { console.log(self) }` 中：
+    // - catch(self) 的 self 是绑定名，不改写
+    // - console.log(self) 中的 self 绑定到 catch 变量，不改写
     #[test]
     fn test_ast_catch_clause_variable() {
         let code = "try { foo() } catch(self) { console.log(self) }";
@@ -1116,9 +1375,9 @@ mod tests {
         );
     }
 
-    /// labeled statement 的标签不应被改写。
-    /// `top: for(;;) { break top; }` 中 top 是标签（IdentifierLabel），
-    /// 不是 IdentifierReference，不应被改写。
+    // labeled statement 的标签不应被改写。
+    // `top: for(;;) { break top; }` 中 top 是标签（IdentifierLabel），
+    // 不是 IdentifierReference，不应被改写。
     #[test]
     fn test_ast_labeled_statement_not_rewritten() {
         let code = "top: for(;;) { break top; }";
@@ -1130,9 +1389,9 @@ mod tests {
         );
     }
 
-    /// computed member expression 中的标识符是值引用，应被改写。
-    /// `obj[self]` 中 self 在方括号内，是 IdentifierReference，应改写为 __self__。
-    /// 对比：`obj.self` 中 self 是属性名（IdentifierName），不改写。
+    // computed member expression 中的标识符是值引用，应被改写。
+    // `obj[self]` 中 self 在方括号内，是 IdentifierReference，应改写为 __self__。
+    // 对比：`obj.self` 中 self 是属性名（IdentifierName），不改写。
     #[test]
     fn test_ast_computed_member_expression() {
         let code = "const x = obj[self]; const y = obj.self;";
@@ -1151,10 +1410,10 @@ mod tests {
         );
     }
 
-    /// 对象简写属性：`{ location }` 等价于 `{ location: location }`。
-    /// 简写中的 location 既是 key 又是 value reference。
-    /// oxc 应将其解析为 IdentifierReference（value 部分），应被改写。
-    /// 注意：这与旧模式 with 的行为可能不同——with 无法拦截对象字面量简写中的 value。
+    // 对象简写属性：`{ location }` 等价于 `{ location: location }`。
+    // 简写中的 location 既是 key 又是 value reference。
+    // oxc 应将其解析为 IdentifierReference（value 部分），应被改写。
+    // 注意：这与旧模式 with 的行为可能不同——with 无法拦截对象字面量简写中的 value。
     #[test]
     fn test_ast_object_shorthand_property() {
         let code = "const obj = { location };";
@@ -1169,8 +1428,8 @@ mod tests {
         );
     }
 
-    /// 对象字面量中的普通属性名不应被改写。
-    /// `{ location: 1, window: 2 }` 中 location 和 window 是属性键，不是引用。
+    // 对象字面量中的普通属性名不应被改写。
+    // `{ location: 1, window: 2 }` 中 location 和 window 是属性键，不是引用。
     #[test]
     fn test_ast_object_property_keys_not_rewritten() {
         let code = "const obj = { location: 1, window: 2 };";
@@ -1188,9 +1447,9 @@ mod tests {
         );
     }
 
-    /// import 语句中的绑定不应被改写。
-    /// `import self from './mod'` 中 self 是 import 绑定（BindingIdentifier）。
-    /// 后续引用 self 应绑定到 import，不应改写为 __self__。
+    // import 语句中的绑定不应被改写。
+    // `import self from './mod'` 中 self 是 import 绑定（BindingIdentifier）。
+    // 后续引用 self 应绑定到 import，不应改写为 __self__。
     #[test]
     fn test_ast_import_binding_not_rewritten() {
         let code = "import self from './mod'; console.log(self);";
@@ -1207,9 +1466,9 @@ mod tests {
         // None 也是可接受的（script 模式不支持 import → 回退）
     }
 
-    /// 多层嵌套作用域：全局引用在深层函数内仍应被改写。
-    /// `function a() { function b() { function c() { return location; } } }`
-    /// 最内层的 location 无局部声明，是全局引用，应改写。
+    // 多层嵌套作用域：全局引用在深层函数内仍应被改写。
+    // `function a() { function b() { function c() { return location; } } }`
+    // 最内层的 location 无局部声明，是全局引用，应改写。
     #[test]
     fn test_ast_deeply_nested_global_reference() {
         let code = "function a() { function b() { function c() { return location; } return b(); } return a(); }";
@@ -1221,9 +1480,9 @@ mod tests {
         );
     }
 
-    /// 变量声明中的初始值引用全局变量应被改写。
-    /// `var x = window` 中 window 是全局引用，应改写。
-    /// `var x = location.href` 中 location 是全局引用，应改写。
+    // 变量声明中的初始值引用全局变量应被改写。
+    // `var x = window` 中 window 是全局引用，应改写。
+    // `var x = location.href` 中 location 是全局引用，应改写。
     #[test]
     fn test_ast_variable_initializer_global_reference() {
         let code = "var x = window; var y = location.href;";
@@ -1240,9 +1499,9 @@ mod tests {
         );
     }
 
-    /// 函数表达式赋值给变量：变量名是 BindingIdentifier，不改写。
-    /// `var self = function() {}` 中 var self 的 self 不改写。
-    /// 函数体内的 this 应改写。
+    // 函数表达式赋值给变量：变量名是 BindingIdentifier，不改写。
+    // `var self = function() {}` 中 var self 的 self 不改写。
+    // 函数体内的 this 应改写。
     #[test]
     fn test_ast_function_expression_binding() {
         let code = "var self = function() { return this; };";
@@ -1261,9 +1520,9 @@ mod tests {
         );
     }
 
-    /// TypeScript 语法（类型注解、泛型、接口）无法被 SourceType::script() 解析。
-    /// 应返回 None，由调用方回退到 legacy_rewrite_js（仅做 with(this) + location.xxx 正则）。
-    /// 回退后代码原样保留 TS 语法（浏览器自己也会报错，但不会崩服务）。
+    // TypeScript 语法（类型注解、泛型、接口）无法被 SourceType::script() 解析。
+    // 应返回 None，由调用方回退到 legacy_rewrite_js（仅做 with(this) + location.xxx 正则）。
+    // 回退后代码原样保留 TS 语法（浏览器自己也会报错，但不会崩服务）。
     #[test]
     fn test_typescript_falls_back_to_legacy() {
         // 类型注解 `: string` 是 TS 语法
@@ -1288,8 +1547,8 @@ mod tests {
         }
     }
 
-    /// JSX 语法（<Component />）无法被 SourceType::script() 解析。
-    /// 应返回 None，回退到 legacy_rewrite_js。
+    // JSX 语法（<Component />）无法被 SourceType::script() 解析。
+    // 应返回 None，回退到 legacy_rewrite_js。
     #[test]
     fn test_jsx_falls_back_to_legacy() {
         let jsx_code = "const el = <div onClick={() => window.alert(1)}>hello</div>;";
@@ -1305,9 +1564,9 @@ mod tests {
         }
     }
 
-    /// 性能测试：大文件 AST + semantic 分析的耗时。
-    /// 生成 ~500KB JS（5000 个函数，混合全局引用 + 局部变量），
-    /// 确保 rewrite_ast_in_js 在合理时间内完成（debug < 5s，release < 1s）。
+    // 性能测试：大文件 AST + semantic 分析的耗时。
+    // 生成 ~500KB JS（5000 个函数，混合全局引用 + 局部变量），
+    // 确保 rewrite_ast_in_js 在合理时间内完成（debug < 5s，release < 1s）。
     #[test]
     fn test_ast_performance_large_file() {
         let mut code = String::from("\"use strict\";\n");
@@ -1351,10 +1610,236 @@ mod tests {
             cfg!(debug_assertions)
         );
     }
+
+    // 直接 eval 首参应被包裹为 __rewrite_js__(...)，eval 调用本身保持不变
+    #[test]
+    fn test_direct_eval_arg_wrapped() {
+        let out = rewrite_ast_in_js("eval('location.href');").expect("parse should succeed");
+        assert!(
+            out.contains("eval(__rewrite_js__('location.href'))"),
+            "direct eval arg should be wrapped, got: {}",
+            out
+        );
+    }
+
+    // eval 参数为表达式（含 this / 标识符）时：包裹生效，参数内部照常改写
+    #[test]
+    fn test_eval_expression_arg() {
+        let out = rewrite_ast_in_js("eval('x' + this.name + location.pathname);")
+            .expect("parse should succeed");
+        assert!(out.contains("eval(__rewrite_js__("), "arg should be wrapped, got: {}", out);
+        assert!(out.contains("(this === globalThis ? __self__ : this)"), "this inside arg rewritten");
+        assert!(out.contains("__location__"), "location inside arg rewritten");
+    }
+
+    // eval(location) 同 start 零宽包裹 + 标识符替换共存（dedup 按 (start,end)）
+    #[test]
+    fn test_eval_arg_same_start_dedup() {
+        let out = rewrite_ast_in_js("eval(location);").expect("parse should succeed");
+        assert_eq!(
+            out, "eval(__rewrite_js__(__location__));",
+            "zero-width wrap and identifier replace at same start must coexist, got: {}",
+            out
+        );
+    }
+
+    // 变量别名调用点在收集前不包裹、任意 obj.eval 不包裹。
+    // window.eval 等确证全局对象形态现在按间接 eval 包裹
+    // （见 test_indirect_eval_wrapped / test_eval_alias_wrapped）。
+    #[test]
+    fn test_indirect_eval_not_wrapped() {
+        for code in ["obj.eval('x');", "foo.bar.eval('x');"] {
+            let out = rewrite_ast_in_js(code).expect("parse should succeed");
+            assert!(
+                !out.contains("__rewrite_js__"),
+                "non-global obj.eval must not be wrapped, code: {}, got: {}",
+                code,
+                out
+            );
+        }
+        // var e = eval：单独出现时无调用点，本身不改写
+        let out = rewrite_ast_in_js("var e = eval;").expect("parse should succeed");
+        assert!(
+            !out.contains("__rewrite_js__"),
+            "alias declaration without call must not be wrapped, got: {}",
+            out
+        );
+    }
+
+    // 局部 eval 函数遮蔽全局 eval：调用的是局部函数，不包裹
+    #[test]
+    fn test_local_eval_not_wrapped() {
+        let code = "function eval(x) { return x }; eval('location');";
+        let out = rewrite_ast_in_js(code).expect("parse should succeed");
+        assert!(
+            !out.contains("__rewrite_js__"),
+            "shadowed eval must not be wrapped, got: {}",
+            out
+        );
+        // 注意：字符串参数里的 location 是字面量，不受影响
+        assert!(out.contains("'location'"), "string literal preserved, got: {}", out);
+    }
+
+    // 嵌套作用域内的直接 eval 同样包裹
+    #[test]
+    fn test_nested_direct_eval_wrapped() {
+        let code = "function f() { var v = 1; eval('v'); }";
+        let out = rewrite_ast_in_js(code).expect("parse should succeed");
+        assert!(
+            out.contains("eval(__rewrite_js__('v'))"),
+            "direct eval inside function should be wrapped, got: {}",
+            out
+        );
+    }
+
+    // eval 变量别名：根作用域 var e = eval 后的调用点包裹首参。
+    // 间接 eval 本就全局执行、无调用者作用域可破坏，包裹零语义风险，
+    // 运行时由 __rewrite_js__ 补 this / 标识符伪装。
+    #[test]
+    fn test_eval_alias_wrapped() {
+        for code in [
+            "var e = eval; e('location.href');",
+            "let e = eval; e('location.href');",
+            "const e = eval; e('location.href');",
+            "e2 = eval; e2('location.href');",
+            // 无 location/this 等标记的纯别名形态：曾因 fast-skip 判据 'eval(' 漏过
+            "var e = eval; e('x');",
+            // 传递赋值链
+            "var e = eval; var g = e; g('location.href');",
+            // 别名与直接 eval 混用
+            "var e = eval; eval('x'); e('y');",
+        ] {
+            let out = rewrite_ast_in_js(code).expect("parse should succeed");
+            assert!(
+                out.contains("__rewrite_js__("),
+                "eval alias call should be wrapped, code: {}, got: {}",
+                code,
+                out
+            );
+        }
+    }
+
+    // 间接 eval（obj.eval 形式）：obj 为确证的全局对象别名时包裹首参。
+    // 间接 eval 全局执行，包裹零语义风险。
+    #[test]
+    fn test_indirect_eval_wrapped() {
+        for code in [
+            "window.eval('location.href');",
+            "globalThis.eval('location.href');",
+            "top.eval('location.href');",
+            "self.eval('location.href');",
+            "parent.eval('location.href');",
+        ] {
+            let out = rewrite_ast_in_js(code).expect("parse should succeed");
+            assert!(
+                out.contains("eval(__rewrite_js__("),
+                "indirect eval should be wrapped, code: {}, got: {}",
+                code,
+                out
+            );
+        }
+    }
+
+    // obj 被局部变量遮蔽 / 非 eval 属性：静态不可判定或非 eval，不包裹
+    #[test]
+    fn test_indirect_eval_shadowed_not_wrapped() {
+        for code in [
+            // self 是函数参数（局部绑定），self.eval 不是全局对象
+            "function f(self) { self.eval('x'); } f(window);",
+            // var top 局部声明遮蔽全局 top
+            "var top = {}; top.eval('x');",
+            // 非全局对象的同名属性
+            "var obj = {}; obj.eval('x');",
+        ] {
+            let out = rewrite_ast_in_js(code).expect("parse should succeed");
+            assert!(
+                !out.contains("__rewrite_js__("),
+                "shadowed/non-global obj.eval must not be wrapped, code: {}, got: {}",
+                code,
+                out
+            );
+        }
+    }
+
+    // 成员形式初始化的别名：var e = window.eval 等，调用点包裹首参
+    #[test]
+    fn test_eval_member_alias_wrapped() {
+        for code in [
+            "var e = window.eval; e('location.href');",
+            "const e = globalThis.eval; e('location.href');",
+            "var e = top.eval; e('location.href');",
+            "var e = self.eval; e('location.href');",
+            "var e = parent.eval; e('location.href');",
+            // 成员别名传递链
+            "var e = window.eval; var g = e; g('location.href');",
+        ] {
+            let out = rewrite_ast_in_js(code).expect("parse should succeed");
+            assert!(
+                out.contains("__rewrite_js__("),
+                "member-initialized eval alias call should be wrapped, code: {}, got: {}",
+                code,
+                out
+            );
+        }
+    }
+
+    // 别名被重新赋值后作废：不再包裹（保守，避免包错非 eval 函数）
+    #[test]
+    fn test_eval_alias_reassigned_not_wrapped() {
+        for code in [
+            "var e = eval; e = console.log; e('x');",
+            "var e = eval; e++; e('x');",
+        ] {
+            let out = rewrite_ast_in_js(code).expect("parse should succeed");
+            assert!(
+                !out.contains("__rewrite_js__("),
+                "reassigned alias must not be wrapped, code: {}, got: {}",
+                code,
+                out
+            );
+        }
+    }
+
+    // 同名变量遮蔽：嵌套作用域的局部同名变量不是别名符号，不包裹
+    #[test]
+    fn test_eval_alias_shadowed_not_wrapped() {
+        let code = "var e = eval; function f() { var e = function(x){return x}; e('x'); } f();";
+        let out = rewrite_ast_in_js(code).expect("parse should succeed");
+        // 顶层别名在函数外没有调用点；函数内的 e 是不同符号
+        assert!(
+            !out.contains("__rewrite_js__("),
+            "shadowed alias call must not be wrapped, got: {}",
+            out
+        );
+    }
+
+    /*
+     * ===== 已标明的遗漏点（机制边界，非实现遗漏）=====
+     *
+     * 1. 对象别名 obj.eval(x)：obj 为任意表达式时指向静态不可判定，不包裹。
+     *    已覆盖的子集：obj 为确证全局引用（window/globalThis/top/self/parent，
+     *    且未被局部变量遮蔽）时按间接 eval 包裹（见 INDIRECT_EVAL_OBJECTS）；
+     *    var e = window.eval 等成员形式初始化的别名同样收集。
+     * 2. 过程传递 function f(g){g(x)}; f(eval)：需要过程间数据流分析，
+     *    不做。跨函数传递 eval 的代码同时放弃了闭包访问，出现率趋近于零。
+     * 3. 跨 <script> 单元：单元 A 里 var e = eval、单元 B 里 e(x)——
+     *    每个 script 独立编译改写，A 的信息在 B 中物理不存在，无法覆盖。
+     *    （var 声明会挂到 window，跨单元调用点在 B 内是"非全局、无绑定
+     *    信息的裸引用"，同样不包裹。）
+     * 4. setTimeout('字符串') / new Function('字符串') 等隐式 eval：参数是运行时
+     *    表达式，无法静态包裹。已在运行时关闭——intercept.js（主线程）与
+     *    jsWorkerContextCode（worker）分别包装了这两类入口，对字符串参数做
+     *    __rewrite_js__ 改写。静态改写不再列为遗漏。
+     * 5. eval(...spread)：运行时才展开，无法静态包裹首参，跳过（见上）。
+     *
+     * 残余后果：这些形态下被 eval 的代码在真实全局执行，location/this
+     * 伪装缺失。覆盖 window.eval 可关掉此缺口，但必然破坏直接 eval 的
+     * 闭包作用域（规范互斥），故不做。
+     */
 }
 
-/// 对应 replaceUrls(ctx, res)：抽取匹配 + 替换
-/// 返回新的 data
+// 对应 replaceUrls(ctx, res)：抽取匹配 + 替换
+// 返回新的 data
 pub fn replace_urls(data: &str, mime: &str, config: &Config, meta: &Meta, codec: &DomainCodec) -> String {
     // 用 HashSet 去重，避免 O(n) 的 Vec.contains 查找在大页面上成为热点。
     use std::collections::HashSet;
@@ -1384,7 +1869,7 @@ pub fn replace_urls(data: &str, mime: &str, config: &Config, meta: &Meta, codec:
     replace_matches(data, &matches, config, meta, codec)
 }
 
-/// 对应 replaceMatches(ctx, res, matches)
+// 对应 replaceMatches(ctx, res, matches)
 fn replace_matches(
     data: &str,
     matches: &[String],
@@ -1514,7 +1999,7 @@ fn replace_matches(
     }).to_string()
 }
 
-/// 对应 getBase(ctx, res)
+// 对应 getBase(ctx, res)
 pub fn get_base(data: &str, meta: &Meta) -> String {
     if let Some(m) = BASE_HREF_RE.find(data) {
         let text = m.as_str();
@@ -1541,9 +2026,9 @@ pub fn get_base(data: &str, meta: &Meta) -> String {
     s
 }
 
-/// 对应 processOthers(ctx, res)
-/// 此前有 JSON.stringify(res.data) 的死分支：res.data 本就是字符串（来自 res.text()），
-/// 再次 stringify 会双重编码 JSON 文本，导致客户端拿到被破坏的 JSON。已移除（与 Node 版一致）。
+// 对应 processOthers(ctx, res)
+// 此前有 JSON.stringify(res.data) 的死分支：res.data 本就是字符串（来自 res.text()），
+// 再次 stringify 会双重编码 JSON 文本，导致客户端拿到被破坏的 JSON。已移除（与 Node 版一致）。
 pub fn process_others(data: &str, mime: &str, disable_source_map: bool) -> String {
     let mut data = data.to_string();
     if disable_source_map && (mime == "html" || mime == "js") {
@@ -1571,8 +2056,8 @@ pub fn process_others(data: &str, mime: &str, disable_source_map: bool) -> Strin
     data
 }
 
-/// 对应 appendScript(ctx, res)：在 HTML 头部注入运行时脚本
-/// 返回新的 HTML
+// 对应 appendScript(ctx, res)：在 HTML 头部注入运行时脚本
+// 返回新的 HTML
 pub async fn append_script(
     data: &str,
     config: &Config,
