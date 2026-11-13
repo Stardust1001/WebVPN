@@ -200,7 +200,15 @@
       const u = new URL(targetOrigin)
       const vpnDomain = u.protocol === 'https:' ? httpsVpnDomain : httpVpnDomain
       if (u.host.endsWith(vpnDomain)) return targetOrigin
-      return u.origin.replace(u.host, encodeHost(u.host) + vpnDomain)
+      let subdomain = encodeHost(u.host)
+      // 会话共享模式下当前页 host 带 -main-<shareId> / -share-<shareId> 后缀，
+      // postMessage targetOrigin 必须带上同样后缀，否则对端 origin 校验不通过
+      // （与 transformUrl 的尾缀逻辑保持一致）
+      const hostPrefix = location.host.replace(vpnDomain, '')
+      if (!hostPrefix.includes('.') && /-(?:main|share)-/.test(hostPrefix)) {
+        subdomain += '-' + hostPrefix.split('-').slice(-2).join('-')
+      }
+      return u.origin.replace(u.host, subdomain + vpnDomain)
     } catch {
       return targetOrigin
     }

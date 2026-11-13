@@ -28,6 +28,7 @@ pub static IGNORE_RESPONSE_HEADER_REGEXPS: Lazy<Vec<Regex>> = Lazy::new(|| {
         Regex::new(r"(?i)cross-origin-resource-policy").unwrap(),
         Regex::new(r"(?i)cross-origin-opener-policy").unwrap(),
         Regex::new(r"(?i)cross-origin-embedder-policy").unwrap(),
+        Regex::new(r"(?i)document-isolation-policy").unwrap(),
         Regex::new(r"(?i)content-security-policy-report-only").unwrap(),
         // hop-by-hop 逐跳头不能透传：响应体是完整缓冲的 Bytes，hyper 自己决定分帧
         // （自动补 content-length）。透传上游的 transfer-encoding: chunked 会触发

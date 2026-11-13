@@ -208,6 +208,7 @@ class WebVPN {
       /cross-origin-resource-policy/i,
       /cross-origin-opener-policy/i,
       /cross-origin-embedder-policy/i,
+      /document-isolation-policy/i,
       /content-security-policy-report-only/i,
     ]
 
@@ -262,36 +263,64 @@ class WebVPN {
       const wildcardDict = {}
       const domainMode = ${JSON.stringify(config.domainMode)}
       Object.entries(subdomains).forEach(([sub, name]) => {
-        if (name.startsWith('*')) {
-          // 通配映射：'*aaa.com' 匹配 '<任意前缀>aaa.com'，
-          // 编码 = 通配前缀原样保留 + (把 'aaa.com' 整体替换为 key)。
-          // 用于下划线模式下编码后单标签会超 63 字符的长域名（如动态域名）。
-          wildcardDict[name.slice(1)] = sub
-        } else {
+        // 含 '*' 的条目走通配映射：key 与 value 都按 '*' 切段且段数一致，逐段配对；
+        // 段数不一致（配置错误，启动时已警告）该条目直接忽略
+        if (!name.includes('*')) {
           domainDict[name] = sub
+        } else if (sub.split('*').length === name.split('*').length) {
+          wildcardDict[sub] = name.split('*')
         }
       })
-      // 通配映射仅用于 underline 模式：original 模式域名原样拆多级子域，
-      // 标签天然 <=63，不存在超长问题；subdomains 本身是为无泛解析环境服务的
+      const findParts = (text, parts) => {
+        // 字面段锚定匹配：首段为前缀，末段为后缀，中间段按序出现（最左优先，回溯），
+        // 段间为动态段（间隙）。返回各间隙内容（无则 ''），不匹配返回 null
+        if (parts.length < 2 || !text.startsWith(parts[0])) return null
+        const gaps = new Array(parts.length - 1).fill('')
+        const walk = (i, pos) => {
+          if (i === parts.length) return pos === text.length
+          const rest = text.slice(pos)
+          if (i + 1 === parts.length) {
+            if (rest.length >= parts[i].length && rest.endsWith(parts[i])) {
+              gaps[i - 1] = rest.slice(0, rest.length - parts[i].length)
+              return true
+            }
+            return false
+          }
+          let from = 0
+          for (;;) {
+            const idx = rest.slice(from).indexOf(parts[i])
+            if (idx === -1) return false
+            const at = from + idx
+            gaps[i - 1] = rest.slice(0, at)
+            if (walk(i + 1, pos + at + parts[i].length)) return true
+            from = at + 1
+          }
+        }
+        return walk(1, parts[0].length) ? gaps : null
+      }
+      const joinParts = (segs, gaps) => {
+        // 段与间隙交错直接拼接（无分隔符）
+        let out = segs[0]
+        gaps.forEach((gap, j) => { out += gap + segs[j + 1] })
+        return out
+      }
       const _encode_host_original_ = text => {
         return domainDict[text] || text.replace(':', '_._')
       }
       const _decode_host_original_ = text => {
         return subdomains[text] || text.replace('_._', ':')
       }
-      const matchWildcard = text => {
-        for (const [suffix, sub] of Object.entries(wildcardDict)) {
-          if (text.endsWith(suffix)) return [sub, suffix]
-        }
-        return null
-      }
       const _encode_host_underline_ = text => {
         let value = domainDict[text]
         if (!value) {
-          const m = matchWildcard(text)
-          if (m) {
-            value = text.slice(0, text.length - m[1].length) + m[0]
-          } else {
+          for (const [sub, parts] of Object.entries(wildcardDict)) {
+            const gaps = findParts(text, parts)
+            if (gaps) {
+              value = joinParts(sub.split('*'), gaps)
+              break
+            }
+          }
+          if (!value) {
             value = text.replaceAll('.', '__').replaceAll('-', '_h_').replace(':', '_c_')
           }
         }
@@ -299,16 +328,12 @@ class WebVPN {
       }
       const _decode_host_underline_ = text => {
         let value = subdomains[text]
-        if (value) return value.startsWith('*') ? value.slice(1) : value
+        if (value) return value
         value = undefined
-        // 通配编码的子域以 '.<key>' 结尾（key 不会出现在普通编码结果末尾，
-        // 普通编码结果末尾是 '__'、'_h_' 或裸标识符），反向替换回 '*<suffix>'。
-        // 通配后缀不以 . 开头，编码时前缀保留了结尾的 '.'，此处已随 suffix 一起剥掉，补回。
-        for (const [sub, name] of Object.entries(subdomains)) {
-          if (!name.startsWith('*')) continue
-          const suffix = '.' + sub
-          if (text.endsWith(suffix) && text.length > suffix.length) {
-            value = text.slice(0, text.length - suffix.length) + '.' + name.slice(1)
+        for (const [sub, parts] of Object.entries(wildcardDict)) {
+          const gaps = findParts(text, sub.split('*'))
+          if (gaps) {
+            value = joinParts(parts, gaps).replace('_c_', ':').replaceAll('_h_', '-').replaceAll('__', '.')
             break
           }
         }

@@ -3,9 +3,11 @@
 // 本文件的 Config::default() 仅是兜底默认值；运行时优先用 config.toml 覆盖
 // （查找顺序：rust/config.toml → config.toml → 默认值）。
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use url::Url;
+// 保序 HashMap：subdomains 必须按配置顺序保存（通配项先配置者先赢，
+// 注入前端的 JSON 也按配置顺序序列化），普通 HashMap 会丢顺序
+use indexmap::IndexMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,8 +58,8 @@ pub struct Config {
     pub connect_timeout: u64,
     /// 域名编码模式 original | underline
     pub domain_mode: String,
-    /// 单域名代理映射
-    pub subdomains: HashMap<String, String>,
+    /// 单域名代理映射（保序：按配置文件中的书写顺序）
+    pub subdomains: IndexMap<String, String>,
 
     // ===== 下面是派生字段（构造函数里计算），序列化为 camelCase 以兼容前端 =====
     pub vpn_domain: String,
@@ -91,7 +93,7 @@ impl Default for Config {
             domain_mode: "underline".to_string(),
             // 兜底默认映射（正式配置以 rust/config.toml 的 [subdomains] 为准）
             subdomains: {
-                let mut m = HashMap::new();
+                let mut m = IndexMap::new();
                 m.insert("baidu".to_string(), "www.baidu.com".to_string());
                 m.insert("im".to_string(), "im.qq.com".to_string());
                 m
@@ -175,7 +177,7 @@ struct ConfigToml {
     request_timeout: Option<u64>,
     connect_timeout: Option<u64>,
     domain_mode: Option<String>,
-    subdomains: Option<HashMap<String, String>>,
+    subdomains: Option<IndexMap<String, String>>,
 }
 
 impl ConfigToml {

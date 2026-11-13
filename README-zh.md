@@ -61,7 +61,7 @@ WebVPN 可以"完全彻底"地转发和代理任何第三方网站。它不仅�
 
 ## 单域名代理
 
-如果你不擅长 dnsmasq 等工具，并且只想要代理某几个域名，可以实现！在 `config.js` 配置文件里修改 `subdomains` 即可：
+如果你无法使用域名 DNS 泛解析，或本地测试不熟悉 dnsmasq 等工具，并且只想要代理某些域名，可以实现！在 `config.js` 配置文件里修改 `subdomains` 即可：
 
 ```js
 // config.js
@@ -69,10 +69,22 @@ WebVPN 可以"完全彻底"地转发和代理任何第三方网站。它不仅�
   subdomains: {
     'baidu': 'www.baidu.com',   // baidu.<你的域名> 指向 www.baidu.com
     'im': 'im.qq.com',          // im.<你的域名>    指向 im.qq.com
-    'weixin': 'weixin.qq.com'   // weixin.<你的域名> 指向 weixin.qq.com
   }
 }
 ```
+
+通配符模式（domainMode: 'underline' 时）：key 与 value 中的 `*` 各代表域名里会变化的一段，可写多个，两边数量一致、按顺序一一对应，其余字面部分原样对应。编码时把 value 的各变化段换成 key 中对应位置的段，解码反向还原。注意动态段中若恰好出现 key 的字面量，解码会取最左匹配。key 中不能出现 `.`（underline 编码后的子域名是单段标签，不含 `.`）：
+
+```js
+{
+  subdomains: {
+    'wave-*dashcdn': 'mx7ba9zy4tvjtdjkzj1em8ecwh8dbg61-*.builds.wavedashcdn.com'
+    // mx7ba9zy4tvjtdjkzj1em8ecwh8dbg61-abc123.builds.wavedashcdn.com → wave-abc123dashcdn.<你的域名>
+  }
+}
+```
+
+适用于 domainMode: 'underline' 模式编码后单标签超 63 字符（DNS 标签上限）的长域名——典型是每次都变的动态长域名（如 `xxxxxxxx-12345678-87654321.xxx.yyy.zzz.com` 这类启动型构建域名，或某一段本身就有 60 多字符），无法逐一登记，只能通配。
 
 
 

@@ -61,7 +61,7 @@ If it helps you, you can buy me a cup of milk tea. Thank you very much — I spe
 
 ## Single-Domain Proxy
 
-If you don't want to deal with dnsmasq / pan-DNS and only need to proxy a few domains, you can use the `subdomains` config:
+If you can't use DNS pan-resolution, or you're unfamiliar with tools like dnsmasq for local testing and only want to proxy certain domains, you can use the `subdomains` config:
 
 ```js
 // config.js
@@ -69,10 +69,22 @@ If you don't want to deal with dnsmasq / pan-DNS and only need to proxy a few do
   subdomains: {
     'baidu': 'www.baidu.com',   // baidu.<your-domain> → www.baidu.com
     'im': 'im.qq.com',          // im.<your-domain>    → im.qq.com
-    'weixin': 'weixin.qq.com'   // weixin.<your-domain> → weixin.qq.com
   }
 }
 ```
+
+Wildcard mode (when domainMode: 'underline'): each `*` in key and value stands for one varying segment of the domain; you can use multiple, and both sides must have the same number, matched one-to-one in order. All literal parts map verbatim. Encoding replaces each varying segment in the value with the segment at the corresponding position in key; decoding reverses it. Note: if a dynamic segment happens to contain a key literal, decoding takes the leftmost match. The key must not contain `.` (an underline-encoded subdomain is a single DNS label without dots):
+
+```js
+{
+  subdomains: {
+    'wave-*dashcdn': 'mx7ba9zy4tvjtdjkzj1em8ecwh8dbg61-*.builds.wavedashcdn.com'
+    // mx7ba9zy4tvjtdjkzj1em8ecwh8dbg61-abc123.builds.wavedashcdn.com → wave-abc123dashcdn.<your-domain>
+  }
+}
+```
+
+Use it when the host encoded with domainMode: 'underline' would exceed the 63-char DNS label limit — typically dynamic long domains (e.g. per-launch build hosts like `xxxxxxxx-12345678-87654321.xxx.yyy.zzz.com`, or hosts where a single segment itself is 60+ chars) that can't be registered one by one.
 
 
 

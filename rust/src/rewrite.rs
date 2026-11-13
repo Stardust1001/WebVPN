@@ -116,7 +116,12 @@ pub fn js_worker_context_code() -> &'static str {
         self.__location__ = {}
         locationAttrs.forEach(attr => {
           self.location['__' + attr + '__'] = webvpn.target[attr]
-          const getter = () => webvpn.target[attr] || location[attr]
+          // worker（含 ServiceWorker）里真实请求 URL 都是 vpn 域名：
+        // 裸 location 各属性必须先取真实 worker location（vpn 域），
+        // 否则源站脚本的同源判断（如 request.url.origin === location.origin）
+        // 永远为 false，SW 的 fetch 拦截与鉴权头（X-Wd-Sw / Authorization）全部失效。
+        // 源站伪装值保留在 location.__attr__ 上。
+        const getter = () => location[attr] || webvpn.target[attr]
           Object.defineProperty(self.__location__, attr, { get: getter })
           Object.defineProperty(self.__location__, '__' + attr + '__', { get: getter })
         })

@@ -47,6 +47,9 @@ percent-encoding = "2"
 flate2 = "1"
 zstd = "0.13"
 toml = "0.8"
+# 保序 HashMap：subdomains 必须按 TOML 配置顺序保存——
+# Rust 端通配项匹配先配置者先赢，注入前端的 JSON 也按配置顺序序列化
+indexmap = { version = "2", features = ["serde"] }
 # oxc: JS AST parser for astRewrite（this 完整改写，默认关闭）
 # 仅 config.ast_rewrite = true 时在运行时使用
 oxc_allocator = "0.151"

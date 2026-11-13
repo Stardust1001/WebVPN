@@ -36,7 +36,7 @@ enable_plugins = true
 # 是否开启调试（注入 vConsole）
 debug = false
 # 是否禁用浏览器开发者工具
-# 注意：disable-devtool 库在 CDP 驱动的浏览器（Webot、headless 自动化）下会误判并清空页面跳 about:blank
+# 注意：disable-devtool 库在 CDP 驱动的浏览器下可能会误判并清空页面跳 about:blank
 disable_devtools = false
 # AST 改写模式（原名 rewrite_this，已改名 ast_rewrite——它控制的早已不只是 this 改写，
 # 而是整套服务端 JS 改写架构的选择）：
@@ -56,12 +56,13 @@ connect_timeout = 10
 # 域名编码模式 original（多级子域名，支持 cookie domain=）| underline（压平单段，不支持）
 domain_mode = "underline"
 
-# 单域名代理映射：无法配置泛解析 DNS 时，用固定二级域名代理指定网站
+# 单域名代理映射：无法配置泛解析 DNS 时，用单个二级域名代理指定网站
 # 访问 http://baidu.webvpn.info/ 即代理 www.baidu.com
 # 注意：被代理网站若引用第三方资源域名，第三方域名也要在此登记
-# 通配符模式（值以 '*' 开头）：'*aaa.com' 匹配 '<任意前缀>aaa.com'，
-# 编码 = 前缀原样保留 + ('aaa.com' 替换为 key)，
-# 可解决 underline 模式下编码后单标签超 63 字符（DNS 上限）的动态长域名
+# 通配符模式（domainMode: 'underline' 时）：key 与 value 都按 '*' 切段且段数一致，逐段配对，可缩短超长域名 (DNS 63字符限制)
+# 比如：'wave-*dashcdn': 'mx7ba9zy4tvjtdjkzj1em8ecwh8dbg61-*.builds.wavedashcdn.com'：
+#   mx7ba9zy4tvjtdjkzj1em8ecwh8dbg61-abc123.builds.wavedashcdn.com -> wave-abc123dashcdn.webvpn.info
 [subdomains]
 baidu = "www.baidu.com"
 im = "im.qq.com"
+"wave-*dashcdn" = "mx7ba9zy4tvjtdjkzj1em8ecwh8dbg61-*.builds.wavedashcdn.com"
