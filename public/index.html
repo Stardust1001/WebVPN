@@ -282,6 +282,11 @@ function calcUrl () {
   if (url.indexOf(location.hostname.replace(/^www\./, '')) > 0) {
     url = decodeUrl(url)
   } else {
+    const { host } = new URL(url)
+    const subdomain = encodeHost(host)
+    if (subdomain.length > 63) {
+      alert('警告：目标域名编码后为 ' + subdomain.length + ' 字符，超过 DNS 单段上限 63，无法解析。\n请在服务端 config 的 subdomains 中为 "' + host + '" 登记一个短子域。')
+    }
     url = transformUrl(url)
   }
   const shareId = shareIdInput.value?.trim()

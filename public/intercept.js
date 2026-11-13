@@ -177,6 +177,14 @@
       return url
     }
     let subdomain = encodeHost(u.host)
+    if (subdomain.length > 63) {
+      console.warn(
+        '%c[WebVPN] 警告：目标域名 "' + u.host + '" 编码后 ' + subdomain.length +
+        ' 字符，超过 DNS 单段上限 63，无法解析。\n' +
+        '请在在服务端 config 的 subdomains 中为该域名登记一个短子域。',
+        'background-color: red; color: white; padding: 5px 10px;'
+      )
+    }
     const hostPrefix = location.host.replace(vpnDomain, '')
     if (!hostPrefix.includes('.') && hostPrefix.includes('-')) {
       subdomain += '-' + hostPrefix.split('-').slice(-2).join('-')
