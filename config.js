@@ -51,6 +51,9 @@ export default {
   domainMode: 'underline', // underline 不支持 cookie 的 domain 设置 ！！！！！！
   // 无法使用泛解析情况下，可使用单个二级域名代理指定网站
   // 但请注意，有些网站会引用第三方网站的资源，那么第三方网站你也要代理
+  // 通配符模式（值以 '*' 开头）：'*aaa.com' 匹配 '<任意前缀>aaa.com'，
+  // 编码 = 前缀原样保留 + ('aaa.com' 替换为 key)，
+  // 可解决 underline 模式下编码后单标签超 63 字符（DNS 上限）的动态长域名
   subdomains: {
     'baidu': 'www.baidu.com',
     'im': 'im.qq.com'

@@ -59,6 +59,9 @@ domain_mode = "underline"
 # 单域名代理映射：无法配置泛解析 DNS 时，用固定二级域名代理指定网站
 # 访问 http://baidu.webvpn.info/ 即代理 www.baidu.com
 # 注意：被代理网站若引用第三方资源域名，第三方域名也要在此登记
+# 通配符模式（值以 '*' 开头）：'*aaa.com' 匹配 '<任意前缀>aaa.com'，
+# 编码 = 前缀原样保留 + ('aaa.com' 替换为 key)，
+# 可解决 underline 模式下编码后单标签超 63 字符（DNS 上限）的动态长域名
 [subdomains]
 baidu = "www.baidu.com"
 im = "im.qq.com"

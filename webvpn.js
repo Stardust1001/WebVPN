@@ -259,23 +259,59 @@ class WebVPN {
       const httpsVpnDomain = ${JSON.stringify(config.httpsVpnDomain)}
       const subdomains = ${JSON.stringify(config.subdomains)}
       const domainDict = {}
+      const wildcardDict = {}
       const domainMode = ${JSON.stringify(config.domainMode)}
-      Object.entries(subdomains).forEach(([sub, name]) => domainDict[name] = sub)
+      Object.entries(subdomains).forEach(([sub, name]) => {
+        if (name.startsWith('*')) {
+          // 通配映射：'*aaa.com' 匹配 '<任意前缀>aaa.com'，
+          // 编码 = 通配前缀原样保留 + (把 'aaa.com' 整体替换为 key)。
+          // 用于下划线模式下编码后单标签会超 63 字符的长域名（如动态域名）。
+          wildcardDict[name.slice(1)] = sub
+        } else {
+          domainDict[name] = sub
+        }
+      })
+      // 通配映射仅用于 underline 模式：original 模式域名原样拆多级子域，
+      // 标签天然 <=63，不存在超长问题；subdomains 本身是为无泛解析环境服务的
       const _encode_host_original_ = text => {
         return domainDict[text] || text.replace(':', '_._')
       }
       const _decode_host_original_ = text => {
         return subdomains[text] || text.replace('_._', ':')
       }
+      const matchWildcard = text => {
+        for (const [suffix, sub] of Object.entries(wildcardDict)) {
+          if (text.endsWith(suffix)) return [sub, suffix]
+        }
+        return null
+      }
       const _encode_host_underline_ = text => {
         let value = domainDict[text]
         if (!value) {
-          value = text.replaceAll('.', '__').replaceAll('-', '_h_').replace(':', '_c_')
+          const m = matchWildcard(text)
+          if (m) {
+            value = text.slice(0, text.length - m[1].length) + m[0]
+          } else {
+            value = text.replaceAll('.', '__').replaceAll('-', '_h_').replace(':', '_c_')
+          }
         }
         return value
       }
       const _decode_host_underline_ = text => {
         let value = subdomains[text]
+        if (value) return value.startsWith('*') ? value.slice(1) : value
+        value = undefined
+        // 通配编码的子域以 '.<key>' 结尾（key 不会出现在普通编码结果末尾，
+        // 普通编码结果末尾是 '__'、'_h_' 或裸标识符），反向替换回 '*<suffix>'。
+        // 通配后缀不以 . 开头，编码时前缀保留了结尾的 '.'，此处已随 suffix 一起剥掉，补回。
+        for (const [sub, name] of Object.entries(subdomains)) {
+          if (!name.startsWith('*')) continue
+          const suffix = '.' + sub
+          if (text.endsWith(suffix) && text.length > suffix.length) {
+            value = text.slice(0, text.length - suffix.length) + '.' + name.slice(1)
+            break
+          }
+        }
         if (!value) {
           value = text.replace('_c_', ':').replaceAll('_h_', '-').replaceAll('__', '.')
         }
