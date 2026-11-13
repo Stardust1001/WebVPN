@@ -1647,11 +1647,15 @@
   })
 
   const srcdocDescriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'srcdoc')
+  /* srcdoc 内容可能字面包含 'self.webvpn'（服务端 Worker 上下文前缀被 URL 编码后
+     嵌入 srcdoc），宽松 includes 会误判「已注入」而
+     跳过，srcdoc iframe 内无任何拦截运行时。注入由本函数完成，用固定常量标记判重。 */
+  const srcdocMarker = '/*webvpn-srcdoc-inject*/'
   const injectSrcdoc = (value) => {
-    if (typeof value === 'string' && value && !value.includes('self.webvpn')) {
+    if (typeof value === 'string' && value && !value.includes(srcdocMarker)) {
       const config = { ...webvpn, isMainSession: false, shareId: '' }
       for (const k of ['intercept_code', 'convertDomainsCode', 'worker_wrapper_code', 'logs']) delete config[k]
-      value = '<scr' + 'ipt>self.webvpn = ' + JSON.stringify(config) + ';'
+      value = '<scr' + 'ipt>' + srcdocMarker + 'self.webvpn = ' + JSON.stringify(config) + ';'
         + 'new Function(' + JSON.stringify(webvpn.convertDomainsCode || '') + ')();'
         + 'eval(' + JSON.stringify(webvpn.intercept_code) + ')<\/scr' + 'ipt>' + value
     }

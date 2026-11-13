@@ -916,7 +916,10 @@ class WebVPN {
   }
 
   async respondFile (ctx, filepath) {
-    ctx.res.writeHead(200, { 'Content-Type': this.getContentTypeByExt(filepath) })
+    ctx.res.writeHead(200, {
+      'Content-Type': this.getContentTypeByExt(filepath),
+      'access-control-allow-origin': '*'
+    })
     const stream = fs.createReadStream(filepath)
     // 此前仅监听 error；客户端中途断开会触发 close 而非 error，
     // stream 继续读取并写入已关闭的 socket 导致泄漏与 write-after-end 警告。

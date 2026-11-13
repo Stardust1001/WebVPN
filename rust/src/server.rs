@@ -225,6 +225,7 @@ pub async fn proxy_route(
         let mut hm = HeaderMap::new();
         let ct = get_content_type_by_ext(filepath.to_str().unwrap_or(""));
         hm.insert("content-type", HeaderValue::from_static(ct));
+        hm.insert("access-control-allow-origin", HeaderValue::from_static("*"));
         return Ok(Some(ProxyOutput { status: StatusCode::OK, headers: hm, body: data, rewrite_ms: None }));
     }
 
