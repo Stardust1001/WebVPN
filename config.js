@@ -36,10 +36,17 @@ export default {
   debug: false,
   // 是否禁用 devtools
   disableDevtools: false,
-  // 是否启用 this 完整改写（acorn AST 解析，把每个 this 替换为 (this === self ? __self__ : this)）
-  // 默认 false：仅用正则改写 with(this) 模式（性能更好）
-  // true：用 acorn 解析全部 JS，拦截任何 this 穿透获得 window 的可能（更安全但更慢）
-  rewriteThis: false,
+  // AST 改写模式（原名 rewriteThis，已改名 astRewrite——它控制的早已不只是 this 改写，
+  // 而是整套服务端 JS 改写架构的选择）：
+  // false = 旧模式（默认）：customResponse 用字符串硬替换（type="module"→"mod"、
+  //         抹 use strict、正则 location.xxx→location.__xxx__、正则 with(this)），
+  //         refactorJsScopeCode 对每段 JS 包裹 with(__context_proxy__) + hoisting；
+  //         浏览器端不加载 rewrite.wasm，运行时动态注入的 module script 转 type="mod"
+  // true  = AST 模式：customResponse 用 acorn 解析整份响应，精准改写 this 与
+  //         7 个作用域标识符（location/window/self/globalThis/document/parent/top）
+  //         及 eval 别名调用；refactorJsScopeCode 不包裹 with；保留 ESM/use strict；
+  //         浏览器端同步加载 public/rewrite.wasm 改写 eval/Function/定时器字符串代码
+  astRewrite: false,
   // 域名编码模式，original (域名原名直接作为多级子域名) | underline（域名原名去除 . :）
   domainMode: 'underline', // underline 不支持 cookie 的 domain 设置 ！！！！！！
   // 无法使用泛解析情况下，可使用单个二级域名代理指定网站

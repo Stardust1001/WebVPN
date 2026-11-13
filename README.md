@@ -151,7 +151,7 @@ Honest failures are part of the history too: eval can't be reliably intercepted;
 
 ## Rust Version
 
-A server-side rewrite in Rust lives under `rust/`, with feature parity to the Node.js version: domain encoding (original / underline modes, single-domain proxy), server-side full-chain rewriting (reusing `public/intercept.js`), session sharing, WebSocket proxy, local caching, non-UTF-8 charset decoding, zstd decompression, upstream timeouts, etc. Built on axum + tokio + reqwest (rustls TLS); the AST `this` rewriting is powered by oxc (enabled with `rewrite_this = true`; build `public/rewrite.wasm` via `rust/build-wasm.sh` for browser-side eval/Function rewriting). Configuration lives in `rust/config.toml`, fully independent of the Node version's `config.js`.
+A server-side rewrite in Rust lives under `rust/`, with feature parity to the Node.js version: domain encoding (original / underline modes, single-domain proxy), server-side full-chain rewriting (reusing `public/intercept.js`), session sharing, WebSocket proxy, local caching, non-UTF-8 charset decoding, zstd decompression, upstream timeouts, etc. Built on axum + tokio + reqwest (rustls TLS); the AST `this` rewriting is powered by oxc (enabled with `ast_rewrite = true`; build `public/rewrite.wasm` via `rust/build-wasm.sh` for browser-side eval/Function rewriting). Configuration lives in `rust/config.toml`, fully independent of the Node version's `config.js`.
 
 ```bash
 cd rust && cargo run --release

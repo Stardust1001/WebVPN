@@ -38,6 +38,13 @@ static HEX_ENTITY_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?-u)&#x\w+;").unw
 // (?-u) 使 \w 仅 ASCII：JS \w 不会匹配 CJK 等 Unicode 标识符，
 // 若不抑制 Unicode 模式，Rust 会为 `function 名前()` 生成多余的 self.名前 = 名前 提升代码
 static HOIST_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?-u)(function|class)\s+([\$\_\w]+)\s*\(").unwrap());
+// refactor_js_scope_code: 检测 ES module 语法（import/export 声明），
+// module 代码强制 strict mode，不能包 with。
+// Vite/Rollup 产物是单行压缩代码，import/export 声明不在行首，
+// 所以不能用 ^ 锚定；用前一字符边界排除标识符引用（如 `x.import`、`myexport`）。
+// `import(`（动态导入）也按 module 处理：虽然语法合法，但页面主脚本多为
+// 顶层 import + 动态 import 混合的压缩产物，一并交给不包裹路径更稳。
+static MODULE_SYNTAX_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?:^|[^$\_\w.])(import|export)[\s{"'(*]|(?:^|[^$\_\w.])import\s*\("#).unwrap());
 // processHtml: CSP meta 去除
 static CSP_META_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)<meta\s+http-equiv="Content-Security-Policy"[^>]+>"#).unwrap());
 // processHtmlScopeCodes: <script> 抽取
@@ -280,9 +287,16 @@ pub fn refactor_js_scope_code(
     };
     let site_url = format!("{}:{}", if https_enabled { scheme } else { "http" }, prefix);
 
-    if config.rewrite_this {
-        // AST 模式：不包裹 with（兼容 ESM/严格模式），不做 hoisting。
-        // 仍需 worker context（定义 __location__ 等，供 AST 改写后的代码引用）。
+    // warn warn warn：ES module 代码（含 import/export 声明）强制 strict mode，
+    // 包裹 with 会直接语法错误
+    //   ast_rewrite = true  → oxc AST 改写（按 module 解析），把裸
+    //     location/window/self/globalThis/document/parent/top 精确替换为
+    //     __location__/__window__ 等——这些是 intercept.js redefineGlobals
+    //     装在真实 window 上的属性，不依赖 with 作用域即可生效。
+    //   ast_rewrite = false → 任何改写都不做，原样透传（warn warn warn：模块内
+    //     裸 location/window 等将看到 vpn 域名而非源站，伪装缺失）。
+    let is_module_code = MODULE_SYNTAX_RE.is_match(code);
+    if is_module_code && !config.ast_rewrite {
         let mut result = String::new();
         if is_js_file {
             let worker_code = js_worker_context_code()
@@ -293,7 +307,41 @@ pub fn refactor_js_scope_code(
                 .replace("#targetUrl#", target.as_str())
                 .replace("#siteUrl#", &site_url);
             result.push_str(&worker_code);
-            let _ = site;
+        }
+        result.push_str(code);
+        return result;
+    }
+    if is_module_code {
+        let rewritten = rewrite_ast_in_js_module(code)
+            .unwrap_or_else(|| legacy_rewrite_js(code));
+        let mut result = String::new();
+        if is_js_file {
+            let worker_code = js_worker_context_code()
+                .replace(
+                    "if (!self.window) {",
+                    &format!("if (!self.window) {{\n{}", convert_domains_code),
+                )
+                .replace("#targetUrl#", target.as_str())
+                .replace("#siteUrl#", &site_url);
+            result.push_str(&worker_code);
+        }
+        result.push_str(&rewritten);
+        return result;
+    }
+    if config.ast_rewrite {
+        // AST 模式：不包裹 with（兼容 ESM/严格模式），不做 hoisting。
+        // custom_response 已对整份响应做过 oxc AST 改写（this + 作用域标识符），
+        // 这里只需保留 worker context 前缀。
+        let mut result = String::new();
+        if is_js_file {
+            let worker_code = js_worker_context_code()
+                .replace(
+                    "if (!self.window) {",
+                    &format!("if (!self.window) {{\n{}", convert_domains_code),
+                )
+                .replace("#targetUrl#", target.as_str())
+                .replace("#siteUrl#", &site_url);
+            result.push_str(&worker_code);
         }
         result.push_str(code);
         return result;
@@ -411,9 +459,9 @@ pub fn process_js_scope_code(
 
 // 对应 customResponse(ctx, res)
 // 禁用 module / 严格模式，关闭 SRI，with(this) 重写，location.xxx 重写
-// rewrite_this = true 时改用 oxc AST 解析全部 this（覆盖默认的 with(this) 正则改写）
-pub fn custom_response(data: &str, mime: &str, rewrite_this: bool) -> String {
-    if rewrite_this {
+// ast_rewrite = true 时改用 oxc AST 解析全部 this（覆盖默认的 with(this) 正则改写）
+pub fn custom_response(data: &str, mime: &str, ast_rewrite: bool) -> String {
+    if ast_rewrite {
         // AST 模式：不做任何字符串硬替换（保留 type="module"、use strict），
         // 用 oxc AST 精准改写 this 和 7 个作用域标识符（location/window/self/globalThis/document/parent/top）。
         // 不再用 with 包裹，兼容 ESM 和严格模式。
@@ -438,7 +486,7 @@ pub fn custom_response(data: &str, mime: &str, rewrite_this: bool) -> String {
     data
 }
 
-// AST 模式（rewrite_this=true）：对响应中的 JS 代码做 oxc AST 解析，
+// AST 模式（ast_rewrite=true）：对响应中的 JS 代码做 oxc AST 解析，
 // 同时改写 this 和 7 个作用域标识符（location/window/self/globalThis/document/parent/top）。
 // HTML 响应只解析内联 <script> 内容，避免把 HTML 标签当 JS 解析导致报错。
 // 解析失败时回退到旧模式（字符串硬替换 + 正则 with(this) 改写），保证不崩。
@@ -882,6 +930,88 @@ fn rewrite_ast_in_js(code: &str) -> Option<String> {
 
     if spans.is_empty() {
         // 解析成功但无 this/标识符（可能仅出现在字符串/注释中）
+        return Some(code.to_string());
+    }
+
+    let mut out = String::with_capacity(code.len() + spans.len() * 30);
+    let mut cursor: usize = 0;
+    for (start, end, replacement) in spans {
+        let s = start as usize;
+        let e = end as usize;
+        if s < cursor || e < s || e > code.len() {
+            continue;
+        }
+        out.push_str(&code[cursor..s]);
+        out.push_str(replacement);
+        cursor = e;
+    }
+    out.push_str(&code[cursor..]);
+    Some(out)
+}
+
+// 与 rewrite_ast_in_js 相同的 AST 改写，但按 ES module 解析。
+// 用于 module 语法检测命中的代码：module 强制 strict mode 不能包 with，
+// 改为标识符级替换（裸 location → __location__ 等，与 ast_rewrite 模式一致）。
+// import/export 声明保持原样——__xxx__ 是真实 window 属性，跨模块引用不受影响。
+fn rewrite_ast_in_js_module(code: &str) -> Option<String> {
+    // 快速跳过：不含任何需改写的关键字时无需启动 oxc（与 rewrite_ast_in_js 一致）
+    if !code.contains("this")
+        && !code.contains("eval")
+        && SCOPE_NAMES.iter().all(|(n, _)| !code.contains(n))
+    {
+        return Some(code.to_string());
+    }
+
+    use oxc_allocator::Allocator;
+    use oxc_parser::{Parser, ParseOptions};
+    use oxc_span::SourceType;
+
+    let allocator = Allocator::default();
+    let source_type = SourceType::mjs();
+    let options = ParseOptions::default();
+    let ret = Parser::new(&allocator, code, source_type).with_options(options).parse();
+
+    if ret.fatal_error {
+        return None;
+    }
+
+    let program = &ret.program;
+
+    use oxc_semantic::SemanticBuilder;
+    let semantic_ret = SemanticBuilder::new().with_build_nodes(false).build(program);
+    let scoping = semantic_ret.semantic.scoping();
+
+    let mut collector = RewriteCollector {
+        spans: Vec::new(),
+        scoping: scoping as *const _,
+        eval_alias_symbols: Vec::new(),
+        eval_alias_names: Vec::new(),
+        dirty_symbols: Vec::new(),
+        pending_alias_calls: Vec::new(),
+    };
+    collector.visit_program(program);
+
+    let dirty = std::mem::take(&mut collector.dirty_symbols);
+    let pending = std::mem::take(&mut collector.pending_alias_calls);
+    for (sym, name, s, e) in pending {
+        if sym == usize::MAX {
+            let name_has_local_symbol = (0..scoping.symbols_len())
+                .any(|i| scoping.symbol_name(oxc_semantic::SymbolId::new(i)) == name);
+            if name_has_local_symbol || !collector.eval_alias_names.iter().any(|n| n.as_str() == name) {
+                continue;
+            }
+        } else if dirty.contains(&sym) {
+            continue;
+        }
+        collector.spans.push((s, s, EVAL_ARG_WRAPPER));
+        collector.spans.push((e, e, ")"));
+    }
+
+    let mut spans = collector.spans.clone();
+    spans.sort_by_key(|&(s, _, _)| s);
+    spans.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
+
+    if spans.is_empty() {
         return Some(code.to_string());
     }
 
@@ -2091,7 +2221,7 @@ pub async fn append_script(
     // 注意：convertDomainsCode 不拼进字符串，而是运行时用 JS 变量引用相加（与 Node 版一致），
     // 否则会导致 convertDomainsCode 内容被重复拼接。
     let worker_context = js_worker_context_code().replace("#siteUrl#", &site_url);
-    let worker_wrapper_code = if config.rewrite_this {
+    let worker_wrapper_code = if config.ast_rewrite {
         // AST 模式：不包裹 with（worker 代码可能是 ESM/严格模式，with 会报语法错误）
         format!("\n{}\n  #CODE#\n", worker_context)
     } else {
@@ -2138,7 +2268,7 @@ pub async fn append_script(
         confirmJump: {},
         isMainSession: {},
         shareId: {},
-        rewriteThis: {},
+        astRewrite: {},
       }};
       const convertDomainsCode = {}
       ;new Function(convertDomainsCode)()
@@ -2153,7 +2283,7 @@ pub async fn append_script(
         site_url_json, protocol_json, source_url_json, page_url_json, hostname_json,
         http_vpn_json, https_vpn_json, base_json,
         debug_log, disable_jump, confirm_jump, is_main_session, share_id_json,
-        config.rewrite_this,
+        config.ast_rewrite,
         convert_domains_json,
         custom_code,
         intercept_code_json,
@@ -2202,4 +2332,68 @@ pub async fn append_script(
     let has_doctype = DOCTYPE_RE.is_match(data);
     let _ = codec;
     format!("{}{}{}", if has_doctype { "<!DOCTYPE html>\n" } else { "" }, code, data)
+}
+
+#[cfg(test)]
+mod module_scope_tests {
+    use super::*;
+
+    // ES module 代码（顶层 import/export）强制 strict mode，包裹 with 会语法错误。
+    // ast_rewrite = true：应走 oxc AST 改写：不包裹，且裸标识符被替换为 __location__ 等。
+    #[test]
+    fn module_code_not_wrapped_with_but_ast_rewritten() {
+        let mut config = Config::default();
+        config.ast_rewrite = true;
+        let meta = Meta::default();
+        let code = "import{x}from\"./y.js\";export const z=location.href;";
+        let out = refactor_js_scope_code(code, false, &config, &meta, "");
+        assert!(!out.contains("__context_proxy__"), "module code must not be wrapped with __context_proxy__, got: {}", out);
+        assert!(out.contains("__location__.href"), "bare location must be AST-rewritten to __location__, got: {}", out);
+        assert!(out.contains("import{x}from"), "import declaration preserved");
+    }
+
+    // ast_rewrite = false：module 代码不改写、不包裹，原样透传。
+    #[test]
+    fn module_code_passthrough_when_ast_rewrite_off() {
+        let config = Config::default();
+        let meta = Meta::default();
+        let code = "import{x}from\"./y.js\";export const z=location.href;";
+        let out = refactor_js_scope_code(code, false, &config, &meta, "");
+        assert_eq!(out, code, "module code must be passed through verbatim when ast_rewrite is off");
+    }
+
+    // 普通脚本仍应被 with 包裹
+    #[test]
+    fn plain_script_still_wrapped() {
+        let config = Config::default();
+        let meta = Meta::default();
+        let code = "console.log('hello');";
+        let out = refactor_js_scope_code(code, false, &config, &meta, "");
+        assert!(out.contains("__context_proxy__"), "plain script should be wrapped");
+    }
+
+    // 动态 import() 表达式（非顶层声明）也按 module 对象处理：
+    // 页面主初始化脚本多为 Vite 产物（顶层 import + with 不兼容），
+    // 'import(' 出现在字符串字面量时误判代价是不包 with，不影响运行。
+    #[test]
+    fn dynamic_import_not_wrapped() {
+        let mut config = Config::default();
+        config.ast_rewrite = true;
+        let meta = Meta::default();
+        let code = "import('./lazy.js').then(m => m.init(location))";
+        let out = refactor_js_scope_code(code, false, &config, &meta, "");
+        assert!(!out.contains("__context_proxy__"), "dynamic import code not wrapped, got: {}", out);
+        assert!(out.contains("m.init(__location__)"), "bare location AST-rewritten, got: {}", out);
+    }
+
+    // 文本检测无法区分字符串字面量：'please import this' 也会命中（import 前是空格）。
+    // 已知误判代价：该脚本改走 AST 改写（不包 with），行为等价，不破坏代码本身。
+    #[test]
+    fn import_in_string_falls_back_to_unwrapped() {
+        let config = Config::default();
+        let meta = Meta::default();
+        let code = "var s = 'please import this module';\nfoo();";
+        let out = refactor_js_scope_code(code, false, &config, &meta, "");
+        assert!(out.contains(code), "code content preserved verbatim, got: {}", out);
+    }
 }

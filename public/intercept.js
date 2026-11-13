@@ -72,11 +72,11 @@
   const disableJump = webvpn.disableJump
   const confirmJump = webvpn.confirmJump
 
-  /* AST 模式（rewriteThis=true）：同步加载 WASM AST 改写模块。
-     旧模式（rewriteThis=false）不加载，行为完全不变。
+  /* AST 模式（astRewrite=true）：同步加载 WASM AST 改写模块。
+     旧模式（astRewrite=false）不加载，行为完全不变。
      方案 C：同步 XHR + 同步 WebAssembly 实例化，避免异步竞态。 */
   let __wasmRewrite = null
-  if (webvpn.rewriteThis) {
+  if (webvpn.astRewrite) {
     try {
       const xhr = new XMLHttpRequest()
       // 同源加载：从当前代理子域请求 /public/rewrite.wasm（checkPublic 在所有子域生效）。
@@ -181,7 +181,7 @@
       console.warn(
         '%c[WebVPN] 警告：目标域名 "' + u.host + '" 编码后 ' + subdomain.length +
         ' 字符，超过 DNS 单段上限 63，无法解析。\n' +
-        '请在在服务端 config 的 subdomains 中为该域名登记一个短子域。',
+        '请在服务端 config 的 subdomains 中为该域名登记一个短子域。',
         'background-color: red; color: white; padding: 5px 10px;'
       )
     }
@@ -243,13 +243,13 @@
   }
 
   // script type="module" 转换：运行时动态注入的 module script 服务端改不到
-  // （customResponse 只处理静态 HTML 文本），而旧模式（rewriteThis=false）服务端包裹的
+  // （customResponse 只处理静态 HTML 文本），而旧模式（astRewrite=false）服务端包裹的
   // js 含 with 语句（严格模式禁用），module 的强制严格模式下直接 SyntaxError，
   // 需转为普通脚本执行（与服务端 customResponse 的 module→mod 语义对齐）。
-  // AST 模式（rewriteThis=true）服务端不用 with 包裹、保留 ESM，不转换。
+  // AST 模式（astRewrite=true）服务端不用 with 包裹、保留 ESM，不转换。
   // 非 module 值原样返回。
   const convertScriptModuleType = (value) => {
-    if (webvpn.rewriteThis || !/^(?:no)?module$/i.test(value || '')) return value
+    if (webvpn.astRewrite || !/^(?:no)?module$/i.test(value || '')) return value
     return String(value).toLowerCase() === 'module' ? 'mod' : 'nomod'
   }
 
@@ -274,7 +274,7 @@
         try {
           JSON.parse(node.textContent)
         } catch {
-          if (webvpn.rewriteThis && __wasmRewrite) {
+          if (webvpn.astRewrite && __wasmRewrite) {
             // AST 模式：WASM 改写后直接作为脚本内容（服务端已做过一次 AST 改写，这里是 DOM 动态插入的兜底）
             const rewritten = __wasmRewrite.rewrite(node.textContent)
             if (rewritten !== null) node.textContent = rewritten
@@ -516,7 +516,7 @@
     }
     return Reflect.get(target, prop, receiver)
   }
-  if (webvpn.rewriteThis && __wasmRewrite) {
+  if (webvpn.astRewrite && __wasmRewrite) {
     const rewriteFnCode = (props, codeToString) => {
       if (props.length) {
         const code = props[props.length - 1]
@@ -603,7 +603,7 @@
     })
   }
 
-  if (webvpn.rewriteThis && __wasmRewrite) {
+  if (webvpn.astRewrite && __wasmRewrite) {
     window.__rewrite_js__ = function (code) {
       if (typeof code !== 'string') return code
       const rewritten = __wasmRewrite.rewrite(code)
@@ -744,7 +744,7 @@
       )
       value = transformUrl(value)
     }
-    // script type="module" 转换（convertScriptModuleType 含 rewriteThis 门控与注释）
+    // script type="module" 转换（convertScriptModuleType 含 astRewrite 门控与注释）
     if (this.nodeName === 'SCRIPT' && attr === 'type') {
       value = convertScriptModuleType(value)
     }
@@ -1356,7 +1356,7 @@
     })
   })
 
-  /* script 的 type 属性 拦截：旧模式（rewriteThis=false）下 module 会强制严格模式，
+  /* script 的 type 属性 拦截：旧模式（astRewrite=false）下 module 会强制严格模式，
      与服务端 with 包裹的代码冲突；AST 模式保留 ESM，不转换 */
   const scriptTypeDescriptor = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'type')
   Object.defineProperty(HTMLScriptElement.prototype, 'type', {

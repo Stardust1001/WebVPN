@@ -13,7 +13,7 @@ import iconv from 'iconv-lite'
 
 import { fsUtils } from '@wp1001/node'
 
-// rewriteThis 开启时才需要 acorn + magic-string，用动态 import 懒加载避免影响默认路径
+// astRewrite 开启时才需要 acorn + magic-string，用动态 import 懒加载避免影响默认路径
 let _acornPromise
 function getAcorn () {
   if (!_acornPromise) _acornPromise = import('acorn').then(m => m.default || m)
@@ -227,6 +227,14 @@ class WebVPN {
     this.reCookieDomain = /domain=/i
     this.reWithThis = /[\s\{\}\;]?with\s*\(\s*this\s*\)/g
     this.reLocationProps = /\blocation\.(hostname|host|origin|href|protocol|navigate|assign|replace|reload|toString)\b/g
+    // refactorJsScopeCode: 检测 ES module 语法（import/export 声明），
+    // module 代码强制 strict mode，不能包 with。
+    // Vite/Rollup 产物是单行压缩代码，import/export 声明不在行首，
+    // 所以不能用 ^ 锚定；用前一字符边界排除标识符引用（如 `x.import`、`myexport`）。
+    // `import(`（动态导入）也按 module 处理：页面主脚本多为顶层 import +
+    // 动态 import 混合的压缩产物，一并交给不包裹路径更稳。
+    // 与 rust/src/rewrite.rs 的 MODULE_SYNTAX_RE 保持一致。
+    this.reModuleSyntax = /(?:^|[^^$_\w.])(import|export)[\s"'{(*]|(?:^|[^^$_\w.])import\s*\(/
     this.reJsonp = /^[\w\$_]+\((\{|\[)/
 
     this.noTransformMimes = ['wasm', 'font', 'json', 'image', 'video', 'audio', 'pdf-office', 'stream', 'event-stream']
@@ -237,13 +245,13 @@ class WebVPN {
 
     // jsInterceptCode 在 start() 里经 fsUtils 异步读入（Buffer），监听端口前必定就绪
 
-    // rewriteThis 开启时预加载 acorn + magic-string，并缓存解析后的 AST 改写器
-    this.rewriteThis = !!config.rewriteThis
+    // astRewrite 开启时预加载 acorn + magic-string，并缓存解析后的 AST 改写器
+    this.astRewrite = !!config.astRewrite
     this._acorn = null
     this._MagicString = null
-    if (this.rewriteThis) {
-      getAcorn().then(acorn => { this._acorn = acorn }).catch(e => { console.error('[WebVPN] rewriteThis: failed to load acorn:', e) })
-      getMagicString().then(MagicString => { this._MagicString = MagicString }).catch(e => { console.error('[WebVPN] rewriteThis: failed to load magic-string:', e) })
+    if (this.astRewrite) {
+      getAcorn().then(acorn => { this._acorn = acorn }).catch(e => { console.error('[WebVPN] astRewrite: failed to load acorn:', e) })
+      getMagicString().then(MagicString => { this._MagicString = MagicString }).catch(e => { console.error('[WebVPN] astRewrite: failed to load magic-string:', e) })
     }
 
     this.convertDomainsCode = `
@@ -752,12 +760,12 @@ class WebVPN {
       this.customResponse(ctx, res)
       if (ctx.meta.mime === 'html') {
         res.data = this.processHtml(ctx, res)
-        res.data = this.processHtmlScopeCodes(ctx, res.data)
+        res.data = await this.processHtmlScopeCodes(ctx, res.data)
         if (!ctx.meta.isXHR) {
           res.data = await this.appendScript(ctx, res)
         }
       } else if (ctx.meta.mime === 'js') {
-        res.data = this.processJsScopeCode(ctx, res.data)
+        res.data = await this.processJsScopeCode(ctx, res.data)
       }
     }
 
@@ -1134,7 +1142,7 @@ class WebVPN {
     return res.data
   }
 
-  processHtmlScopeCodes (ctx, code) {
+  async processHtmlScopeCodes (ctx, code) {
     const matches = [...code.matchAll(this.reScriptTags)].filter(match => {
       const typeIndex = match[1].indexOf('type=')
       let isScript = true
@@ -1152,14 +1160,14 @@ class WebVPN {
       return isScript && match[2]
     })
     matches.sort((a, b) => b.index - a.index)
-    matches.forEach(match => {
+    for (const match of matches) {
       const index = match[0].length - match[2].length - 9 + match.index
-      code = code.slice(0, index) + this.refactorJsScopeCode(ctx, match[2]) + code.slice(index + match[2].length)
-    })
+      code = code.slice(0, index) + await this.refactorJsScopeCode(ctx, match[2]) + code.slice(index + match[2].length)
+    }
     return code
   }
 
-  processJsScopeCode (ctx, code) {
+  async processJsScopeCode (ctx, code) {
     if (code[0] === '{' || code[0] === '[') {
       try {
         JSON.parse(code)
@@ -1170,15 +1178,49 @@ class WebVPN {
     return this.refactorJsScopeCode(ctx, code, true)
   }
 
-  refactorJsScopeCode (ctx, code, isJsFile = false) {
+  async refactorJsScopeCode (ctx, code, isJsFile = false) {
     const { httpsEnabled, site } = this.config
     const { scheme, target } = ctx.meta
     const prefix = site.origin.slice(site.origin.indexOf('//'))
     const siteUrl = (httpsEnabled ? scheme : 'http') + ':' + prefix
+    // warn warn warn：ES module 代码（含 import/export 声明）强制 strict mode，
+    // 包裹 with 会直接语法错误
+    //   astRewrite = true  → acorn AST 改写（sourceType: 'module'），把裸
+    //     location/window/self/globalThis/document/parent/top 精确替换为
+    //     __location__/__window__ 等——这些是 intercept.js redefineGlobals
+    //     装在真实 window 上的属性，不依赖 with 作用域即可生效。
+    //   astRewrite = false → 任何改写都不做，原样透传（warn warn warn：模块内
+    //     裸 location/window 等将看到 vpn 域名而非源站，伪装缺失）。
+    const isModuleCode = this.reModuleSyntax.test(code)
     let result = ''
     if (isJsFile) {
       result += this.jsWorkerContextCode.replace('if (!self.window) {', 'if (!self.window) {\n' + this.convertDomainsCode)
         .replace('#targetUrl#', target.href).replace('#siteUrl#', siteUrl)
+    }
+    if (isModuleCode && !this.config.astRewrite) {
+      result += code
+      return result
+    }
+    if (isModuleCode) {
+      const acorn = this._acorn
+      const MagicString = this._MagicString
+      // acorn/magic-string 尚未预加载（astRewrite 关闭或启动瞬间）：
+      // 动态加载一次；仍失败则原样透传（模块至少能运行，只是失去标识符伪装）
+      let rewritten = null
+      if (acorn && MagicString) {
+        rewritten = this.astRewriteInJs(code, acorn, MagicString, 'module')
+      } else {
+        try {
+          const [a, m] = await Promise.all([getAcorn(), getMagicString()])
+          this._acorn = a
+          this._MagicString = m
+          rewritten = this.astRewriteInJs(code, a, m, 'module')
+        } catch (e) {
+          console.error('[WebVPN] module AST rewrite failed to load acorn:', e)
+        }
+      }
+      result += rewritten ?? code
+      return result
     }
     result += this.jsScopePrefixCode
             + code
@@ -1222,7 +1264,7 @@ class WebVPN {
         confirmJump: ${confirmJump},
         isMainSession: ${isMainSession},
         shareId: ${JSON.stringify(shareId)},
-        rewriteThis: ${this.rewriteThis},
+        astRewrite: ${this.astRewrite},
       };
       const convertDomainsCode = ${JSON.stringify(this.convertDomainsCode)}
       ;new Function(convertDomainsCode)()
@@ -1625,10 +1667,10 @@ class WebVPN {
                 // 仅改写 location.<prop> 形式的属性访问，避免命中字符串/注释中的文本
                 // 通过词法边界 (\\b) 与点号约束，降低误匹配
                 .replace(this.reLocationProps, 'location.__$1__')
-      if (this.rewriteThis) {
-        // 开启 rewriteThis：用 acorn AST 解析所有 this，替换为 (this === self ? __self__ : this)
+      if (this.astRewrite) {
+        // 开启 astRewrite：用 acorn AST 解析所有 this，替换为 (this === self ? __self__ : this)
         // 覆盖默认的 with(this) 正则改写（更彻底，拦截任何 this 穿透获得 window 的可能）
-        this.rewriteThisInResponse(ctx, res)
+        this.astRewriteInResponse(ctx, res)
       } else {
         // 默认：仅用正则改写 with(this) 模式（性能更好）
         res.data = res.data.replace(this.reWithThis, ' with(this === self ? __self__ : this)')
@@ -1636,10 +1678,10 @@ class WebVPN {
     }
   }
 
-  // rewriteThis 开启时，对响应中的 JS 代码做 acorn AST 解析，把每个 this 替换为
+  // astRewrite 开启时，对响应中的 JS 代码做 acorn AST 解析，把每个 this 替换为
   // (this === self ? __self__ : this)。HTML 响应只解析内联 <script> 内容，避免把
   // HTML 标签当 JS 解析导致报错。解析失败时回退到正则 with(this) 改写。
-  rewriteThisInResponse (ctx, res) {
+  astRewriteInResponse (ctx, res) {
     const acorn = this._acorn
     const MagicString = this._MagicString
     // 模块尚未加载完成（启动瞬间）：回退到正则，保证不漏改
@@ -1648,7 +1690,7 @@ class WebVPN {
       return
     }
     if (ctx.meta.mime === 'js') {
-      res.data = this.rewriteThisInJs(res.data, acorn, MagicString)
+      res.data = this.astRewriteInJs(res.data, acorn, MagicString)
     } else if (ctx.meta.mime === 'html') {
       // 快速跳过：整个 HTML 都不含 this 时无需做脚本抽取与解析
       if (!res.data.includes('this')) return
@@ -1669,7 +1711,7 @@ class WebVPN {
       let data = res.data
       for (const match of matches) {
         const index = match[0].length - match[2].length - 9 + match.index
-        const rewritten = this.rewriteThisInJs(match[2], acorn, MagicString)
+        const rewritten = this.astRewriteInJs(match[2], acorn, MagicString)
         data = data.slice(0, index) + rewritten + data.slice(index + match[2].length)
       }
       res.data = data
@@ -1700,7 +1742,7 @@ class WebVPN {
         jsWorkerContextCode（worker）分别包装了这两类入口。
      5. eval(...spread)：运行时才展开，跳过。
      残余后果：这些形态下被 eval 的代码在真实全局执行，location/this 伪装缺失。 */
-  rewriteThisInJs (code, acorn, MagicString) {
+  astRewriteInJs (code, acorn, MagicString, sourceType = 'script') {
     // 快速跳过：不含任何改写目标时无需启动 acorn。
     // 注意用 'eval' 而非 'eval('：别名形态 var e = eval; e('x') 不含 'eval('，
     // 漏判会跳过别名收集（Rust 版 rewrite.rs 同此修复）。
@@ -1711,7 +1753,10 @@ class WebVPN {
     try {
       ast = acorn.parse(code, {
         ecmaVersion: 'latest',
-        sourceType: 'script',
+        // sourceType 'module'：ES module 代码（含 import/export）不能包 with，
+        // 由 refactorJsScopeCode 检测 module 语法后传入。module 顶层 this 为
+        // undefined，this 改写无副作用（求值恒走 this 分支）。
+        sourceType,
         allowReturnOutsideFunction: true
       })
     } catch {

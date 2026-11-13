@@ -48,7 +48,7 @@ pub struct Config {
     /// 是否启用 this 完整改写（oxc AST 解析，把每个 this 替换为 (this === self ? __self__ : this)）
     /// 默认 false：仅用正则改写 with(this) 模式（性能更好）
     /// true：用 oxc 解析全部 JS，拦截任何 this 穿透获得 window 的可能（更安全但更慢）
-    pub rewrite_this: bool,
+    pub ast_rewrite: bool,
     /// 上游请求超时（秒），对应 Node 版 requestTimeout || 60000
     pub request_timeout: u64,
     /// 上游 TCP 连接超时（秒）。对端 SYN 黑洞时内核默认要等 keepinit（macOS 75s）才报错，
@@ -85,7 +85,7 @@ impl Default for Config {
             enable_plugins: true,
             debug: false,
             disable_devtools: true,
-            rewrite_this: false,
+            ast_rewrite: false,
             request_timeout: 60,
             connect_timeout: 10,
             domain_mode: "underline".to_string(),
@@ -171,7 +171,7 @@ struct ConfigToml {
     enable_plugins: Option<bool>,
     debug: Option<bool>,
     disable_devtools: Option<bool>,
-    rewrite_this: Option<bool>,
+    ast_rewrite: Option<bool>,
     request_timeout: Option<u64>,
     connect_timeout: Option<u64>,
     domain_mode: Option<String>,
@@ -197,7 +197,7 @@ impl ConfigToml {
         if let Some(v) = self.enable_plugins { c.enable_plugins = v; }
         if let Some(v) = self.debug { c.debug = v; }
         if let Some(v) = self.disable_devtools { c.disable_devtools = v; }
-        if let Some(v) = self.rewrite_this { c.rewrite_this = v; }
+        if let Some(v) = self.ast_rewrite { c.ast_rewrite = v; }
         if let Some(v) = self.request_timeout { c.request_timeout = v; }
         if let Some(v) = self.connect_timeout { c.connect_timeout = v; }
         if let Some(v) = &self.domain_mode { c.domain_mode = v.clone(); }

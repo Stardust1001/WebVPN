@@ -38,11 +38,17 @@ debug = false
 # 是否禁用浏览器开发者工具
 # 注意：disable-devtool 库在 CDP 驱动的浏览器（Webot、headless 自动化）下会误判并清空页面跳 about:blank
 disable_devtools = false
-# AST 改写模式（rewriteThis）：
-#   false = 旧模式：with(__context_proxy__) 包裹 + 正则替换（禁用 ESM/use strict）
-#   true  = AST 模式：oxc 解析 JS，精准改写 this 与 7 个作用域标识符，
-#           保留 ESM/严格模式；浏览器端同步加载 public/rewrite.wasm 改写 eval/Function
-rewrite_this = false
+# AST 改写模式（原名 rewrite_this，已改名 ast_rewrite——它控制的早已不只是 this 改写，
+# 而是整套服务端 JS 改写架构的选择）：
+#   false = 旧模式（默认）：custom_response 用字符串硬替换（type="module"→"mod"、
+#           抹 use strict、正则 location.xxx→location.__xxx__、正则 with(this)），
+#           refactor_js_scope_code 对每段 JS 包裹 with(__context_proxy__) + hoisting；
+#           浏览器端不加载 rewrite.wasm，运行时动态注入的 module script 转 type="mod"
+#   true  = AST 模式：custom_response 用 oxc 解析整份响应，精准改写 this 与
+#           7 个作用域标识符（location/window/self/globalThis/document/parent/top）
+#           及 eval 别名调用；refactor_js_scope_code 不包裹 with；保留 ESM/use strict；
+#           浏览器端同步加载 public/rewrite.wasm 改写 eval/Function/定时器字符串代码
+ast_rewrite = false
 # 上游请求超时（秒）
 request_timeout = 60
 # 上游 TCP 连接超时（秒）：对端 SYN 黑洞时避免等内核 keepinit（macOS 默认 75s）才报错

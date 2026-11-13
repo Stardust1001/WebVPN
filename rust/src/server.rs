@@ -168,7 +168,7 @@ pub struct ProxyOutput {
     pub status: StatusCode,
     pub headers: HeaderMap,
     pub body: Vec<u8>,
-    /// rewrite_this=true 时 AST 转写的耗时（毫秒），由中间件日志追加显示
+    /// ast_rewrite=true 时 AST 转写的耗时（毫秒），由中间件日志追加显示
     pub rewrite_ms: Option<u128>,
 }
 
@@ -317,11 +317,11 @@ pub async fn proxy_route(
     if !meta.is_done && !data.is_empty() {
         let data_str = String::from_utf8_lossy(&data).to_string();
         let mut new_data = replace_urls(&data_str, &meta.mime, &state.config, &meta, &state.codec);
-        // rewrite_this=true 时 custom_response 走 oxc AST 转写，是改写流水线的主要 CPU 开销，
+        // ast_rewrite=true 时 custom_response 走 oxc AST 转写，是改写流水线的主要 CPU 开销，
         // 单独计时并随响应传给中间件日志显示
         let rewrite_start = std::time::Instant::now();
-        new_data = custom_response(&new_data, &meta.mime, state.config.rewrite_this);
-        if state.config.rewrite_this {
+        new_data = custom_response(&new_data, &meta.mime, state.config.ast_rewrite);
+        if state.config.ast_rewrite {
             rewrite_ms = Some(rewrite_start.elapsed().as_millis());
         }
 

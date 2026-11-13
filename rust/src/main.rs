@@ -182,7 +182,7 @@ fn make_router(state: Arc<AppState>, is_tls: bool) -> Router {
             let uri = req.uri().clone();
             let start = std::time::Instant::now();
             let resp = next.run(req).await;
-            // rewrite_this=true 时 proxy_route 把 AST 转写耗时塞进响应 extensions，
+            // ast_rewrite=true 时 proxy_route 把 AST 转写耗时塞进响应 extensions，
             // 有则追加到行尾（如 rewrite_ast 45 ms）
             let rewrite_ms = resp.extensions().get::<Option<u128>>().copied().flatten();
             match rewrite_ms {
